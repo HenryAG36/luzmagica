@@ -1,0 +1,138 @@
+[
+    {
+        "id": "1",
+        "name": "Proyector de Nebulosa Estrellas",
+        "price": 89900,
+        "originalPrice": 129900,
+        "category": "proyectores",
+        "room": "dormitorio",
+        "images": [
+            "/images/products/nebula-1.jpg",
+            "/images/products/nebula-2.jpg",
+            "/images/products/nebula-3.jpg"
+        ],
+        "badge": "sale",
+        "description": "Transforma tu habitación en un cielo estrellado con nuestro proyector de nebulosa. Con 16 colores, control remoto y temporizador. Perfecto para crear un ambiente mágico de relajación.",
+        "stock": 24,
+        "type": "proyector"
+    },
+    {
+        "id": "2",
+        "name": "Tira LED RGB 5m para TV",
+        "price": 45000,
+        "originalPrice": 65000,
+        "category": "tiras-led",
+        "room": "sala",
+        "images": [
+            "/images/products/led-strip-1.jpg",
+            "/images/products/led-strip-2.jpg",
+            "/images/products/led-strip-3.jpg"
+        ],
+        "badge": "sale",
+        "description": "Tira LED RGB de 5 metros con control por app y sincronización musical. Adhesivo 3M de alta calidad. Compatible con Alexa y Google Home.",
+        "stock": 56,
+        "type": "tira-led"
+    },
+    {
+        "id": "3",
+        "name": "Lámpara Luna 3D",
+        "price": 72000,
+        "originalPrice": null,
+        "category": "lamparas",
+        "room": "dormitorio",
+        "images": [
+            "/images/products/moon-lamp-1.jpg",
+            "/images/products/moon-lamp-2.jpg",
+            "/images/products/moon-lamp-3.jpg"
+        ],
+        "badge": "new",
+        "description": "Réplica exacta de la luna impresa en 3D con 16 colores. Incluye base de madera, control remoto y carga USB. Diámetro de 15cm.",
+        "stock": 18,
+        "type": "lampara"
+    },
+    {
+        "id": "4",
+        "name": "Panel LED Hexagonal para Pared",
+        "price": 110000,
+        "originalPrice": 145000,
+        "category": "paneles",
+        "room": "gaming",
+        "images": [
+            "/images/products/hex-panel-1.jpg",
+            "/images/products/hex-panel-2.jpg",
+            "/images/products/hex-panel-3.jpg"
+        ],
+        "badge": "sale",
+        "description": "Set de 6 paneles LED hexagonales modulares con control táctil. Reactivos al sonido con más de 300 combinaciones de colores. Ideales para setups gaming.",
+        "stock": 12,
+        "type": "panel"
+    },
+    {
+        "id": "5",
+        "name": "Guirnalda LED Exterior 10m",
+        "price": 58000,
+        "originalPrice": null,
+        "category": "guirnaldas",
+        "room": "cocina",
+        "images": [
+            "/images/products/garland-1.jpg",
+            "/images/products/garland-2.jpg",
+            "/images/products/garland-3.jpg"
+        ],
+        "badge": "new",
+        "description": "Guirnalda de luces LED cálidas de 10 metros resistente al agua (IP65). 100 LEDs de luz cálida. Perfecta para terrazas, jardines y eventos.",
+        "stock": 42,
+        "type": "guirnalda"
+    },
+    {
+        "id": "6",
+        "name": "Lámpara de Atardecer 360°",
+        "price": 68000,
+        "originalPrice": 89000,
+        "category": "lamparas",
+        "room": "sala",
+        "images": [
+            "/images/products/sunset-1.jpg",
+            "/images/products/sunset-2.jpg",
+            "/images/products/sunset-3.jpg"
+        ],
+        "badge": "sale",
+        "description": "Proyector de luz tipo atardecer con rotación 360°. Crea un efecto de golden hour en cualquier espacio. USB recargable con 4 modos de iluminación.",
+        "stock": 31,
+        "type": "lampara"
+    },
+    {
+        "id": "7",
+        "name": "Tira LED Neon Flex 3m",
+        "price": 95000,
+        "originalPrice": null,
+        "category": "tiras-led",
+        "room": "gaming",
+        "images": [
+            "/images/products/neon-flex-1.jpg",
+            "/images/products/neon-flex-2.jpg",
+            "/images/products/neon-flex-3.jpg"
+        ],
+        "badge": "new",
+        "description": "Tira LED tipo neón flexible de 3 metros. Efecto neón suave y continuo. Incluye control remoto con 120+ modos de color. Ideal para decoración gaming.",
+        "stock": 20,
+        "type": "tira-led"
+    },
+    {
+        "id": "8",
+        "name": "Lámpara Cristal de Roca LED",
+        "price": 125000,
+        "originalPrice": 159000,
+        "category": "lamparas",
+        "room": "sala",
+        "images": [
+            "/images/products/crystal-1.jpg",
+            "/images/products/crystal-2.jpg",
+            "/images/products/crystal-3.jpg"
+        ],
+        "badge": null,
+        "description": "Elegante lámpara de cristal de sal del Himalaya con base LED de colores. Purifica el aire y crea un ambiente de spa en tu hogar. Incluye cable USB.",
+        "stock": 15,
+        "type": "lampara"
+    }
+]
