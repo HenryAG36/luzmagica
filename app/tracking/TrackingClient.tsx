@@ -1,16 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { motion } from "framer-motion";
 import {
     Search,
     Truck,
     PackageCheck,
     Clock,
     MapPin,
-    ShieldCheck,
     RotateCcw,
     Star,
     MessageCircle,
@@ -23,7 +20,7 @@ import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
-import { Order, OrderStatus } from "@/lib/types";
+import { OrderStatus } from "@/lib/types";
 
 export default function TrackingClient() {
     const searchParams = useSearchParams();
@@ -31,8 +28,9 @@ export default function TrackingClient() {
     const { addItem } = useCartStore();
     const { awardPoints } = useLoyaltyStore();
 
-    const [searchInput, setSearchInput] = useState("");
+    const queryOrderId = searchParams.get("orderId");
     const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+    const [searchInput, setSearchInput] = useState("");
     const [reordered, setReordered] = useState(false);
 
     // Review form state
@@ -40,17 +38,11 @@ export default function TrackingClient() {
     const [comment, setComment] = useState("");
     const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
-    // Initial order selection from searchParams or default to first
-    useEffect(() => {
-        const queryOrderId = searchParams.get("orderId");
-        if (queryOrderId) {
-            setSelectedOrderId(queryOrderId.trim().toUpperCase());
-        } else if (orders.length > 0) {
-            setSelectedOrderId(orders[0].id);
-        }
-    }, [searchParams, orders]);
+    const activeOrderId =
+        selectedOrderId ||
+        (queryOrderId ? queryOrderId.trim().toUpperCase() : orders.length > 0 ? orders[0].id : "");
 
-    const currentOrder = getOrderById(selectedOrderId) || (orders.length > 0 ? orders[0] : null);
+    const currentOrder = getOrderById(activeOrderId) || (orders.length > 0 ? orders[0] : null);
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -338,7 +330,7 @@ export default function TrackingClient() {
                                                 ))}
                                             </div>
                                             <p className="text-white italic">
-                                                "{currentOrder.review?.comment || comment}"
+                                                &ldquo;{currentOrder.review?.comment || comment}&rdquo;
                                             </p>
                                             <span className="text-[10px] text-green-400 block mt-2">
                                                 ✓ Reseña verificada y publicada con éxito.

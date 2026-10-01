@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Truck, Sparkles, ShieldCheck } from "lucide-react";
@@ -8,8 +8,10 @@ import { useCartStore } from "@/store/useCartStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 
+const emptySubscribe = () => () => {};
+
 export default function CartClient() {
-    const [mounted, setMounted] = useState(false);
+    const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
     const {
         items,
         removeItem,
@@ -19,8 +21,6 @@ export default function CartClient() {
         getTotalPrice,
         getFreeShippingProgress,
     } = useCartStore();
-
-    useEffect(() => setMounted(true), []);
 
     if (!mounted) {
         return (

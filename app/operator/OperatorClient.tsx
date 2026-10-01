@@ -2,24 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import {
     TrendingUp,
-    Users,
     RotateCcw,
     MessageCircle,
-    CheckCircle2,
-    Clock,
     AlertCircle,
     Truck,
     DollarSign,
     Sparkles,
     ShieldCheck,
     Check,
-    ChevronRight,
     ExternalLink,
     Store,
-    Layers,
     Send,
 } from "lucide-react";
 import { useOrderStore } from "@/store/useOrderStore";
@@ -274,7 +268,7 @@ export default function OperatorClient() {
                                 </div>
 
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-white/5">
-                                    <span className="text-muted block mb-1">Re-compras "Pedir de Nuevo"</span>
+                                    <span className="text-muted block mb-1">Re-compras &ldquo;Pedir de Nuevo&rdquo;</span>
                                     <span className="font-bold text-white text-sm">
                                         {formatCOP(repeatRevenue > 0 ? repeatRevenue : 139500)}
                                     </span>
@@ -424,7 +418,12 @@ export default function OperatorClient() {
                                         const isEditing = editingOrderId === o.id;
 
                                         return (
-                                            <tr key={o.id} className="hover:bg-white/5 transition-colors">
+                                            <tr
+                                                key={o.id}
+                                                className={`transition-colors ${
+                                                    isEditing ? "bg-primary/20" : "hover:bg-white/5"
+                                                }`}
+                                            >
                                                 <td className="py-3.5 px-4 font-mono font-bold text-white">
                                                     <Link href={`/tracking?orderId=${o.id}`} className="hover:text-primary flex items-center gap-1">
                                                         #{o.id}

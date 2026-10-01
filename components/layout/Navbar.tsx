@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingCart, Menu, X, Sparkles, Truck, LayoutDashboard } from "lucide-react";
+import { ShoppingCart, Menu, X, Sparkles, LayoutDashboard } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+
+const emptySubscribe = () => () => {};
 
 const navLinks = [
     { href: "/", label: "Inicio" },
@@ -16,13 +18,12 @@ const navLinks = [
 export default function Navbar() {
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
-    const [mounted, setMounted] = useState(false);
+    const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
     const getTotalItems = useCartStore((s) => s.getTotalItems);
     const { account, openModal } = useLoyaltyStore();
 
     useEffect(() => {
-        setMounted(true);
         const handleScroll = () => setIsScrolled(window.scrollY > 20);
         window.addEventListener("scroll", handleScroll);
         return () => window.removeEventListener("scroll", handleScroll);

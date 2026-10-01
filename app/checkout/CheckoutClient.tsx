@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
 import {
     ShieldCheck,
     ArrowLeft,
-    Check,
     ShoppingBag,
     Sparkles,
     Truck,
@@ -25,10 +23,12 @@ import { useOperatorStore } from "@/store/useOperatorStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 
+const emptySubscribe = () => () => {};
+
 export default function CheckoutClient() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [mounted, setMounted] = useState(false);
+    const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
     const {
         items,
@@ -47,7 +47,6 @@ export default function CheckoutClient() {
         getTotalPrice,
         getFreeShippingProgress,
         clearCart,
-        restoreFromRecovery,
     } = useCartStore();
 
     const { account, awardPoints, redeemPoints } = useLoyaltyStore();
@@ -60,17 +59,15 @@ export default function CheckoutClient() {
         "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega"
     >("nequi");
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [recoveryCartId, setRecoveryCartId] = useState<string | null>(null);
 
-    // Auto-recover session from URL if present
+    const recoverParam = searchParams.get("recover");
+    const [recoveryCartId] = useState<string | null>(() => recoverParam);
+
     useEffect(() => {
-        setMounted(true);
-        const recover = searchParams.get("recover");
-        if (recover) {
-            setRecoveryCartId(recover);
+        if (recoverParam && !couponCode) {
             applyCoupon("RETORNO10");
         }
-    }, [searchParams, applyCoupon]);
+    }, [recoverParam, couponCode, applyCoupon]);
 
     if (!mounted) {
         return (

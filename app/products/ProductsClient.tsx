@@ -7,7 +7,6 @@ import { SlidersHorizontal, X } from "lucide-react";
 import ProductCard from "@/components/products/ProductCard";
 import FadeIn from "@/components/common/FadeIn";
 import { Product } from "@/lib/types";
-import { formatCOP } from "@/lib/utils";
 
 const rooms = [
     { value: "", label: "Todas" },
