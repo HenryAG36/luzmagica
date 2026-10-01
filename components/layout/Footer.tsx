@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Send, Instagram } from "lucide-react";
+import { Sparkles, Send, Instagram, Truck, ShieldCheck, Award } from "lucide-react";
+import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 
 const footerLinks = {
     tienda: [
@@ -13,20 +14,20 @@ const footerLinks = {
         { label: "Gaming", href: "/products?room=gaming" },
         { label: "Cocina", href: "/products?room=cocina" },
     ],
-    info: [
-        { label: "Sobre Nosotros", href: "#" },
-        { label: "Envíos", href: "#" },
-        { label: "Devoluciones", href: "#" },
-        { label: "Preguntas Frecuentes", href: "#" },
-        { label: "Contacto", href: "#" },
+    retencion: [
+        { label: "Rastrear mi Pedido en Vivo", href: "/tracking" },
+        { label: "Garantía de Entrega 30 Días", href: "/tracking" },
+        { label: "Portal del Operador (Admin)", href: "/operator" },
     ],
 };
 
-const paymentMethods = ["Visa", "Mastercard", "PSE", "Nequi", "Daviplata"];
+const trustCarriers = ["Coordinadora", "Servientrega", "Interrapidísimo"];
+const paymentMethods = ["Nequi", "PSE", "Bancolombia", "Visa", "Mastercard"];
 
 export default function Footer() {
     const [email, setEmail] = useState("");
     const [subscribed, setSubscribed] = useState(false);
+    const { openModal } = useLoyaltyStore();
 
     const handleSubscribe = (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,36 +54,36 @@ export default function Footer() {
                                 <span className="gradient-text">Mágica</span>
                             </span>
                         </Link>
-                        <p className="text-muted text-sm leading-relaxed mb-6">
-                            Ilumina tu vida con estilo. Líderes en decoración LED para toda Latinoamérica.
+                        <p className="text-muted text-xs leading-relaxed mb-6">
+                            Líderes en ambientación e iluminación LED en Colombia. Envíos asegurados con transportadoras nacionales y programa de recompensas LuzClub VIP.
                         </p>
                         <div className="flex gap-3">
                             <a
                                 href="#"
                                 className="w-10 h-10 rounded-full glass flex items-center justify-center text-muted hover:text-primary hover:glow-purple transition-all"
+                                aria-label="Instagram"
                             >
                                 <Instagram className="w-5 h-5" />
                             </a>
-                            <a
-                                href="#"
-                                className="w-10 h-10 rounded-full glass flex items-center justify-center text-muted hover:text-primary hover:glow-purple transition-all"
+                            <button
+                                onClick={openModal}
+                                className="px-3 py-1.5 rounded-full bg-surface-card hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 border border-primary/30"
                             >
-                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.18 8.18 0 0 0 4.76 1.52V6.84a4.83 4.83 0 0 1-1-.15z" />
-                                </svg>
-                            </a>
+                                <Award className="w-4 h-4 text-accent" />
+                                <span>LuzClub VIP</span>
+                            </button>
                         </div>
                     </div>
 
                     {/* Links - Tienda */}
                     <div>
-                        <h3 className="font-heading font-semibold text-white mb-4">Tienda</h3>
-                        <ul className="space-y-3">
+                        <h3 className="font-heading font-semibold text-white text-sm mb-4">Colecciones</h3>
+                        <ul className="space-y-2.5">
                             {footerLinks.tienda.map((link) => (
                                 <li key={link.label}>
                                     <Link
                                         href={link.href}
-                                        className="text-sm text-muted hover:text-primary transition-colors"
+                                        className="text-xs text-muted hover:text-primary transition-colors"
                                     >
                                         {link.label}
                                     </Link>
@@ -91,28 +92,36 @@ export default function Footer() {
                         </ul>
                     </div>
 
-                    {/* Links - Info */}
+                    {/* Links - Retención & Servicio */}
                     <div>
-                        <h3 className="font-heading font-semibold text-white mb-4">Información</h3>
-                        <ul className="space-y-3">
-                            {footerLinks.info.map((link) => (
+                        <h3 className="font-heading font-semibold text-white text-sm mb-4">Servicio & Rastreo</h3>
+                        <ul className="space-y-2.5">
+                            {footerLinks.retencion.map((link) => (
                                 <li key={link.label}>
                                     <Link
                                         href={link.href}
-                                        className="text-sm text-muted hover:text-primary transition-colors"
+                                        className="text-xs text-muted hover:text-secondary transition-colors"
                                     >
                                         {link.label}
                                     </Link>
                                 </li>
                             ))}
+                            <li>
+                                <button
+                                    onClick={openModal}
+                                    className="text-xs text-accent hover:underline text-left cursor-pointer"
+                                >
+                                    Mis Puntos y Recompensas
+                                </button>
+                            </li>
                         </ul>
                     </div>
 
-                    {/* Newsletter */}
+                    {/* Newsletter / Win-back capture */}
                     <div>
-                        <h3 className="font-heading font-semibold text-white mb-4">Newsletter</h3>
-                        <p className="text-sm text-muted mb-4">
-                            Recibe ofertas exclusivas y las últimas novedades en iluminación LED.
+                        <h3 className="font-heading font-semibold text-white text-sm mb-2">Club VIP LuzMágica</h3>
+                        <p className="text-xs text-muted mb-4">
+                            Recibe un cupón del 10% en tu primer pedido y acumula puntos con cada compra.
                         </p>
                         <form onSubmit={handleSubscribe} className="flex gap-2">
                             <input
@@ -120,13 +129,14 @@ export default function Footer() {
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="tu@email.com"
-                                className="flex-1 px-4 py-2.5 rounded-lg bg-surface border border-primary/20 text-sm text-white placeholder-muted focus:outline-none focus:border-primary transition-colors"
+                                className="flex-1 px-3 py-2 rounded-xl bg-surface border border-primary/20 text-xs text-white placeholder-muted focus:outline-none focus:border-primary transition-colors"
                             />
                             <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 type="submit"
-                                className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary-light text-white transition-colors"
+                                className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-light text-white transition-colors"
+                                aria-label="Suscribirme"
                             >
                                 <Send className="w-4 h-4" />
                             </motion.button>
@@ -135,29 +145,47 @@ export default function Footer() {
                             <motion.p
                                 initial={{ opacity: 0, y: 5 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="text-sm text-secondary mt-2"
+                                className="text-xs text-green-400 mt-2"
                             >
-                                ¡Suscrito exitosamente! ✨
+                                ¡Bienvenido al Club! Tu código de bienvenida es MAGIA10 ✨
                             </motion.p>
                         )}
                     </div>
                 </div>
 
-                {/* Bottom */}
-                <div className="mt-16 pt-8 border-t border-primary/10 flex flex-col md:flex-row items-center justify-between gap-4">
-                    <p className="text-xs text-muted">
-                        © 2026 LuzMágica. Todos los derechos reservados.
-                    </p>
-                    <div className="flex items-center gap-3">
-                        {paymentMethods.map((method) => (
-                            <span
-                                key={method}
-                                className="text-[10px] px-2 py-1 rounded glass text-muted"
-                            >
-                                {method}
-                            </span>
-                        ))}
+                {/* Logistics & Trust Bar */}
+                <div className="mt-12 pt-6 border-t border-white/5 flex flex-wrap items-center justify-between gap-4 text-xs text-muted">
+                    <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-primary" />
+                        <span>Transporte Nacional:</span>
+                        <div className="flex gap-1.5">
+                            {trustCarriers.map((carrier) => (
+                                <span key={carrier} className="font-medium text-white/80">
+                                    {carrier} •
+                                </span>
+                            ))}
+                        </div>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-secondary" />
+                        <span>Pagos Protegidos:</span>
+                        <div className="flex gap-1.5">
+                            {paymentMethods.map((method) => (
+                                <span key={method} className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white">
+                                    {method}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom Copyright */}
+                <div className="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between text-[11px] text-muted gap-2">
+                    <p>© 2026 LuzMágica Colombia. Arquitectura de Comercio & Retención de Audiencia.</p>
+                    <Link href="/operator" className="text-primary hover:underline">
+                        Acceso Operador
+                    </Link>
                 </div>
             </div>
         </footer>

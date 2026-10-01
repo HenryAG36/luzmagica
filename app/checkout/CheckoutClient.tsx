@@ -2,63 +2,80 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ShieldCheck, ArrowLeft, Check, ShoppingBag } from "lucide-react";
+import {
+    ShieldCheck,
+    ArrowLeft,
+    Check,
+    ShoppingBag,
+    Sparkles,
+    Truck,
+    CreditCard,
+    Smartphone,
+    Building2,
+    Tag,
+    X,
+    Lock,
+} from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
+import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+import { useOrderStore } from "@/store/useOrderStore";
+import { useOperatorStore } from "@/store/useOperatorStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 
 export default function CheckoutClient() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const [mounted, setMounted] = useState(false);
-    const { items, getTotalPrice, clearCart } = useCartStore();
-    const [submitted, setSubmitted] = useState(false);
-    const [form, setForm] = useState({
-        name: "",
-        email: "",
-        phone: "",
-        address: "",
-        city: "",
-        notes: "",
-    });
 
-    useEffect(() => setMounted(true), []);
+    const {
+        items,
+        customerProfile,
+        setCustomerProfile,
+        couponCode,
+        discountPercent,
+        applyCoupon,
+        removeCoupon,
+        pointsRedeemed,
+        setPointsRedeemed,
+        getSubtotal,
+        getCouponDiscountCOP,
+        getPointsDiscountCOP,
+        getShippingFee,
+        getTotalPrice,
+        getFreeShippingProgress,
+        clearCart,
+        restoreFromRecovery,
+    } = useCartStore();
+
+    const { account, awardPoints, redeemPoints } = useLoyaltyStore();
+    const { createOrder } = useOrderStore();
+    const { markCartRecovered } = useOperatorStore();
+
+    const [couponInput, setCouponInput] = useState("");
+    const [couponMessage, setCouponMessage] = useState<{ text: string; error?: boolean } | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<
+        "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega"
+    >("nequi");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [recoveryCartId, setRecoveryCartId] = useState<string | null>(null);
+
+    // Auto-recover session from URL if present
+    useEffect(() => {
+        setMounted(true);
+        const recover = searchParams.get("recover");
+        if (recover) {
+            setRecoveryCartId(recover);
+            applyCoupon("RETORNO10");
+        }
+    }, [searchParams, applyCoupon]);
 
     if (!mounted) {
         return (
             <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
-                <div className="animate-pulse text-muted">Cargando...</div>
-            </div>
-        );
-    }
-
-    if (submitted) {
-        return (
-            <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
-                <FadeIn>
-                    <div className="text-center max-w-md mx-auto">
-                        <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ type: "spring", duration: 0.6 }}
-                            className="w-20 h-20 rounded-full bg-green-600/20 flex items-center justify-center mx-auto mb-6"
-                        >
-                            <Check className="w-10 h-10 text-green-500" />
-                        </motion.div>
-                        <h1 className="font-heading text-3xl font-bold text-white mb-3">
-                            ¡Pedido Confirmado! 🎉
-                        </h1>
-                        <p className="text-muted mb-8">
-                            Te enviaremos un email con los detalles de tu pedido. ¡Gracias por
-                            comprar en LuzMágica!
-                        </p>
-                        <Link
-                            href="/"
-                            className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all"
-                        >
-                            Volver al Inicio
-                        </Link>
-                    </div>
-                </FadeIn>
+                <div className="animate-pulse text-muted">Cargando checkout seguro...</div>
             </div>
         );
     }
@@ -67,16 +84,19 @@ export default function CheckoutClient() {
         return (
             <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
                 <FadeIn>
-                    <div className="text-center">
+                    <div className="text-center max-w-md mx-auto">
                         <ShoppingBag className="w-16 h-16 text-muted mx-auto mb-6" />
                         <h1 className="font-heading text-3xl font-bold text-white mb-3">
                             No hay items en el carrito
                         </h1>
+                        <p className="text-muted text-sm mb-6">
+                            Agrega productos mágicos de iluminación LED para continuar.
+                        </p>
                         <Link
                             href="/products"
-                            className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all mt-6"
+                            className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all"
                         >
-                            Ver Productos
+                            Explorar Iluminación
                         </Link>
                     </div>
                 </FadeIn>
@@ -84,193 +104,512 @@ export default function CheckoutClient() {
         );
     }
 
+    const subtotal = getSubtotal();
+    const couponDiscount = getCouponDiscountCOP();
+    const pointsDiscount = getPointsDiscountCOP();
+    const shipping = getShippingFee();
     const total = getTotalPrice();
-    const shipping = total >= 150000 ? 0 : 15000;
+    const shippingProgress = getFreeShippingProgress();
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Potential points earned on this purchase
+    const pointsToEarn = Math.floor(total / 1000);
+
+    const handleApplyCoupon = (e: React.FormEvent) => {
         e.preventDefault();
-        clearCart();
-        setSubmitted(true);
+        if (!couponInput.trim()) return;
+        const result = applyCoupon(couponInput);
+        setCouponMessage({ text: result.message, error: !result.success });
+        if (result.success) setCouponInput("");
     };
 
-    const updateField = (field: string, value: string) => {
-        setForm((prev) => ({ ...prev, [field]: value }));
+    const handlePointsToggle = (pts: number) => {
+        if (pointsRedeemed === pts) {
+            setPointsRedeemed(0);
+        } else {
+            // Check max points permitted (cannot exceed subtotal)
+            const maxPointsForSubtotal = Math.floor(subtotal / 10);
+            const actual = Math.min(pts, account.points, maxPointsForSubtotal);
+            setPointsRedeemed(actual);
+        }
+    };
+
+    const handleSubmitOrder = (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+
+        try {
+            // Redeem points if applied
+            if (pointsRedeemed > 0) {
+                redeemPoints(pointsRedeemed, "Descuento aplicado en Checkout");
+            }
+
+            // Create order in store
+            const newOrder = createOrder({
+                customer: customerProfile,
+                items,
+                subtotal,
+                discountAmount: couponDiscount + pointsDiscount,
+                shippingFee: shipping,
+                total,
+                paymentMethod,
+                loyaltyPointsEarned: pointsToEarn,
+                loyaltyPointsUsed: pointsRedeemed,
+                recoveredFromCartId: recoveryCartId || undefined,
+            });
+
+            // Award points for the purchase
+            awardPoints(total, newOrder.id);
+
+            // If came from abandoned cart recovery, mark as recovered in operator dashboard
+            if (recoveryCartId) {
+                markCartRecovered(recoveryCartId);
+            }
+
+            // Clear current cart
+            clearCart();
+
+            // Redirect to live order tracking page
+            router.push(`/tracking?orderId=${newOrder.id}&new=1`);
+        } catch (err) {
+            console.error("Error creating order:", err);
+            setIsSubmitting(false);
+        }
     };
 
     const inputClass =
-        "w-full px-4 py-3 rounded-xl bg-surface border border-primary/20 text-white placeholder-muted focus:outline-none focus:border-primary transition-colors text-sm";
+        "w-full px-4 py-3 rounded-xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary transition-colors text-sm";
 
     return (
         <div className="pt-28 pb-16 px-4">
-            <div className="max-w-5xl mx-auto">
+            <div className="max-w-6xl mx-auto">
                 <FadeIn>
-                    <Link
-                        href="/cart"
-                        className="inline-flex items-center gap-2 text-sm text-muted hover:text-white transition-colors mb-8"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Volver al carrito
-                    </Link>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                        <div>
+                            <Link
+                                href="/cart"
+                                className="inline-flex items-center gap-2 text-xs text-muted hover:text-white transition-colors mb-2"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
+                                Volver al carrito
+                            </Link>
+                            <h1 className="font-heading text-3xl sm:text-4xl font-bold">
+                                <span className="gradient-text">Checkout Seguro</span>
+                            </h1>
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-card border border-white/10 text-xs text-muted">
+                            <Lock className="w-3.5 h-3.5 text-green-400" />
+                            <span>Encriptación SSL 256-bit</span>
+                        </div>
+                    </div>
 
-                    <h1 className="font-heading text-4xl sm:text-5xl font-bold mb-12">
-                        <span className="gradient-text">Checkout</span>
-                    </h1>
+                    {/* Free shipping bar */}
+                    <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
+                        <div className="flex items-center justify-between text-xs mb-2">
+                            <span className="flex items-center gap-2 text-white font-medium">
+                                <Truck className="w-4 h-4 text-primary" />
+                                {shippingProgress.isFree
+                                    ? "¡Felicidades! Tienes Envío Gratis Nacional"
+                                    : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en toda Colombia`}
+                            </span>
+                            <span className="text-muted font-mono">{shippingProgress.percent}%</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                                className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
+                                style={{ width: `${shippingProgress.percent}%` }}
+                            />
+                        </div>
+                    </div>
                 </FadeIn>
 
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmitOrder}>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        {/* Form */}
-                        <div className="lg:col-span-2">
-                            <FadeIn>
+                        {/* Left column: Customer info & payment */}
+                        <div className="lg:col-span-2 space-y-6">
+                            {/* Customer information (Auto-fills and remembers for 1-click repeat) */}
+                            <FadeIn delay={0.1}>
                                 <div className="glass rounded-2xl p-6 sm:p-8">
-                                    <h2 className="font-heading text-xl font-bold text-white mb-6">
-                                        Información de Envío
-                                    </h2>
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="font-heading text-lg font-bold text-white flex items-center gap-2">
+                                            <span>1. Datos de Envío & Destinatario</span>
+                                        </h2>
+                                        <span className="text-[11px] text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20">
+                                            Perfil Guardado
+                                        </span>
+                                    </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="sm:col-span-2">
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Nombre completo *
-                                            </label>
+                                            <label className="text-xs text-muted mb-1 block">Nombre completo *</label>
                                             <input
                                                 type="text"
                                                 required
-                                                value={form.name}
-                                                onChange={(e) => updateField("name", e.target.value)}
-                                                placeholder="Tu nombre"
+                                                value={customerProfile.name}
+                                                onChange={(e) => setCustomerProfile({ name: e.target.value })}
+                                                placeholder="Ej: Carolina Mejía"
                                                 className={inputClass}
                                             />
                                         </div>
+
                                         <div>
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Email *
-                                            </label>
-                                            <input
-                                                type="email"
-                                                required
-                                                value={form.email}
-                                                onChange={(e) => updateField("email", e.target.value)}
-                                                placeholder="tu@email.com"
-                                                className={inputClass}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Teléfono *
-                                            </label>
+                                            <label className="text-xs text-muted mb-1 block">Teléfono / WhatsApp *</label>
                                             <input
                                                 type="tel"
                                                 required
-                                                value={form.phone}
-                                                onChange={(e) => updateField("phone", e.target.value)}
-                                                placeholder="+57 300 000 0000"
+                                                value={customerProfile.phone}
+                                                onChange={(e) => setCustomerProfile({ phone: e.target.value })}
+                                                placeholder="310 456 7890"
                                                 className={inputClass}
                                             />
                                         </div>
+
+                                        <div>
+                                            <label className="text-xs text-muted mb-1 block">Cédula / Documento *</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={customerProfile.cedula}
+                                                onChange={(e) => setCustomerProfile({ cedula: e.target.value })}
+                                                placeholder="Requerido por transportadora"
+                                                className={inputClass}
+                                            />
+                                        </div>
+
                                         <div className="sm:col-span-2">
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Dirección *
-                                            </label>
+                                            <label className="text-xs text-muted mb-1 block">Email para confirmación *</label>
                                             <input
-                                                type="text"
+                                                type="email"
                                                 required
-                                                value={form.address}
-                                                onChange={(e) => updateField("address", e.target.value)}
-                                                placeholder="Calle, número, apartamento"
+                                                value={customerProfile.email}
+                                                onChange={(e) => setCustomerProfile({ email: e.target.value })}
+                                                placeholder="tu@correo.com"
                                                 className={inputClass}
                                             />
                                         </div>
-                                        <div>
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Ciudad *
-                                            </label>
+
+                                        <div className="sm:col-span-2">
+                                            <label className="text-xs text-muted mb-1 block">Dirección de entrega *</label>
                                             <input
                                                 type="text"
                                                 required
-                                                value={form.city}
-                                                onChange={(e) => updateField("city", e.target.value)}
-                                                placeholder="Bogotá"
+                                                value={customerProfile.address}
+                                                onChange={(e) => setCustomerProfile({ address: e.target.value })}
+                                                placeholder="Calle 127 #15-32 Apto 402"
                                                 className={inputClass}
                                             />
                                         </div>
+
                                         <div>
-                                            <label className="text-sm text-muted mb-1.5 block">
-                                                Notas (opcional)
-                                            </label>
+                                            <label className="text-xs text-muted mb-1 block">Ciudad *</label>
                                             <input
                                                 type="text"
-                                                value={form.notes}
-                                                onChange={(e) => updateField("notes", e.target.value)}
-                                                placeholder="Instrucciones de entrega"
+                                                required
+                                                value={customerProfile.city}
+                                                onChange={(e) => setCustomerProfile({ city: e.target.value })}
+                                                placeholder="Bogotá, Medellín, Cali..."
+                                                className={inputClass}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs text-muted mb-1 block">Notas de entrega (opcional)</label>
+                                            <input
+                                                type="text"
+                                                value={customerProfile.notes || ""}
+                                                onChange={(e) => setCustomerProfile({ notes: e.target.value })}
+                                                placeholder="Portería, dejar con conserje..."
                                                 className={inputClass}
                                             />
                                         </div>
                                     </div>
                                 </div>
                             </FadeIn>
+
+                            {/* Payment Methods */}
+                            <FadeIn delay={0.2}>
+                                <div className="glass rounded-2xl p-6 sm:p-8">
+                                    <h2 className="font-heading text-lg font-bold text-white mb-4">
+                                        2. Método de Pago Seguro
+                                    </h2>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                        {/* Nequi */}
+                                        <label
+                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                                                paymentMethod === "nequi"
+                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
+                                                    : "border-white/10 bg-surface hover:border-white/20"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="radio"
+                                                    name="payment"
+                                                    checked={paymentMethod === "nequi"}
+                                                    onChange={() => setPaymentMethod("nequi")}
+                                                    className="accent-primary"
+                                                />
+                                                <div>
+                                                    <span className="font-bold text-sm text-white block">Nequi</span>
+                                                    <span className="text-[11px] text-muted">Pago inmediato con celular</span>
+                                                </div>
+                                            </div>
+                                            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">
+                                                Popular
+                                            </span>
+                                        </label>
+
+                                        {/* PSE */}
+                                        <label
+                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                                                paymentMethod === "pse"
+                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
+                                                    : "border-white/10 bg-surface hover:border-white/20"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="radio"
+                                                    name="payment"
+                                                    checked={paymentMethod === "pse"}
+                                                    onChange={() => setPaymentMethod("pse")}
+                                                    className="accent-primary"
+                                                />
+                                                <div>
+                                                    <span className="font-bold text-sm text-white block">PSE</span>
+                                                    <span className="text-[11px] text-muted">Todos los bancos de Colombia</span>
+                                                </div>
+                                            </div>
+                                            <Building2 className="w-5 h-5 text-muted" />
+                                        </label>
+
+                                        {/* Bancolombia */}
+                                        <label
+                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                                                paymentMethod === "bancolombia"
+                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
+                                                    : "border-white/10 bg-surface hover:border-white/20"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="radio"
+                                                    name="payment"
+                                                    checked={paymentMethod === "bancolombia"}
+                                                    onChange={() => setPaymentMethod("bancolombia")}
+                                                    className="accent-primary"
+                                                />
+                                                <div>
+                                                    <span className="font-bold text-sm text-white block">Bancolombia</span>
+                                                    <span className="text-[11px] text-muted">Transferencia directa</span>
+                                                </div>
+                                            </div>
+                                            <Smartphone className="w-5 h-5 text-muted" />
+                                        </label>
+
+                                        {/* Credit Card */}
+                                        <label
+                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                                                paymentMethod === "credit_card"
+                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
+                                                    : "border-white/10 bg-surface hover:border-white/20"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="radio"
+                                                    name="payment"
+                                                    checked={paymentMethod === "credit_card"}
+                                                    onChange={() => setPaymentMethod("credit_card")}
+                                                    className="accent-primary"
+                                                />
+                                                <div>
+                                                    <span className="font-bold text-sm text-white block">Tarjeta Débito/Crédito</span>
+                                                    <span className="text-[11px] text-muted">Visa, Mastercard, AMEX</span>
+                                                </div>
+                                            </div>
+                                            <CreditCard className="w-5 h-5 text-muted" />
+                                        </label>
+                                    </div>
+
+                                    <div className="p-3.5 rounded-xl bg-surface border border-white/5 flex items-center gap-3 text-xs text-muted">
+                                        <ShieldCheck className="w-5 h-5 text-secondary shrink-0" />
+                                        <span>
+                                            Procesamiento cifrado a través de pasarela nacional certificada. Los fondos quedan protegidos hasta la entrega del paquete.
+                                        </span>
+                                    </div>
+                                </div>
+                            </FadeIn>
                         </div>
 
-                        {/* Order Summary */}
-                        <FadeIn delay={0.2}>
-                            <div className="glass rounded-2xl p-6 sticky top-28 h-fit">
-                                <h2 className="font-heading text-xl font-bold text-white mb-6">
-                                    Tu Pedido
-                                </h2>
+                        {/* Right column: Summary, Loyalty Points, Coupons */}
+                        <div className="space-y-6">
+                            <FadeIn delay={0.2}>
+                                <div className="glass rounded-2xl p-6 sticky top-28">
+                                    <h2 className="font-heading text-lg font-bold text-white mb-4">
+                                        Resumen del Pedido
+                                    </h2>
 
-                                <div className="space-y-3 mb-6">
-                                    {items.map((item) => (
-                                        <div
-                                            key={item.product.id}
-                                            className="flex justify-between text-sm"
-                                        >
-                                            <span className="text-muted line-clamp-1 flex-1 mr-2">
-                                                {item.product.name} × {item.quantity}
-                                            </span>
-                                            <span className="text-white font-medium">
-                                                {formatCOP(item.product.price * item.quantity)}
+                                    {/* Items List */}
+                                    <div className="space-y-3 mb-5 max-h-52 overflow-y-auto pr-1">
+                                        {items.map((item) => (
+                                            <div key={item.product.id} className="flex justify-between text-xs">
+                                                <span className="text-muted line-clamp-1 flex-1 mr-2">
+                                                    {item.product.name} × {item.quantity}
+                                                </span>
+                                                <span className="text-white font-medium shrink-0">
+                                                    {formatCOP(item.product.price * item.quantity)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Loyalty Points Redemption Box */}
+                                    {account.points > 0 && (
+                                        <div className="p-4 rounded-xl bg-surface-card border border-primary/20 mb-5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                                                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                                                    Canjear LuzClub ({account.points} pts)
+                                                </span>
+                                                <span className="text-[11px] text-green-400 font-bold">
+                                                    {formatCOP(account.points * 10)}
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {[100, 200, 350].map((pts) => {
+                                                    if (pts > account.points) return null;
+                                                    const isSelected = pointsRedeemed === pts;
+                                                    return (
+                                                        <button
+                                                            key={pts}
+                                                            type="button"
+                                                            onClick={() => handlePointsToggle(pts)}
+                                                            className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition-all ${
+                                                                isSelected
+                                                                    ? "bg-primary text-white border-primary"
+                                                                    : "bg-surface text-muted border-white/10 hover:border-white/20"
+                                                            }`}
+                                                        >
+                                                            {pts} pts (-{formatCOP(pts * 10)})
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Coupon input */}
+                                    <div className="mb-5">
+                                        {couponCode ? (
+                                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-accent/10 border border-accent/30 text-xs">
+                                                <div className="flex items-center gap-2">
+                                                    <Tag className="w-3.5 h-3.5 text-accent" />
+                                                    <span className="font-mono font-bold text-accent">{couponCode}</span>
+                                                    <span className="text-white">(-{discountPercent}%)</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={removeCoupon}
+                                                    className="text-muted hover:text-white"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={couponInput}
+                                                    onChange={(e) => setCouponInput(e.target.value)}
+                                                    placeholder="Cupón (ej: MAGIA10)"
+                                                    className="flex-1 px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-white uppercase placeholder-muted focus:outline-none focus:border-primary"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleApplyCoupon}
+                                                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
+                                                >
+                                                    Aplicar
+                                                </button>
+                                            </div>
+                                        )}
+                                        {couponMessage && (
+                                            <p
+                                                className={`text-[11px] mt-1.5 ${
+                                                    couponMessage.error ? "text-red-400" : "text-green-400"
+                                                }`}
+                                            >
+                                                {couponMessage.text}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Financial Breakdown */}
+                                    <div className="space-y-2.5 border-t border-white/10 pt-4 mb-5 text-xs">
+                                        <div className="flex justify-between text-muted">
+                                            <span>Subtotal</span>
+                                            <span className="text-white">{formatCOP(subtotal)}</span>
+                                        </div>
+
+                                        {couponDiscount > 0 && (
+                                            <div className="flex justify-between text-green-400">
+                                                <span>Descuento cupón ({couponCode})</span>
+                                                <span>-{formatCOP(couponDiscount)}</span>
+                                            </div>
+                                        )}
+
+                                        {pointsDiscount > 0 && (
+                                            <div className="flex justify-between text-green-400">
+                                                <span>Canje LuzPoints ({pointsRedeemed} pts)</span>
+                                                <span>-{formatCOP(pointsDiscount)}</span>
+                                            </div>
+                                        )}
+
+                                        <div className="flex justify-between text-muted">
+                                            <span>Envío Nacional</span>
+                                            <span className={shipping === 0 ? "text-secondary font-semibold" : "text-white"}>
+                                                {shipping === 0 ? "¡Gratis!" : formatCOP(shipping)}
                                             </span>
                                         </div>
-                                    ))}
-                                </div>
 
-                                <div className="space-y-3 border-t border-primary/20 pt-4 mb-6">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted">Subtotal</span>
-                                        <span className="text-white">{formatCOP(total)}</span>
+                                        <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/10">
+                                            <span>Total a Pagar</span>
+                                            <span className="gradient-text">{formatCOP(total)}</span>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted">Envío</span>
-                                        <span
-                                            className={
-                                                shipping === 0 ? "text-secondary" : "text-white"
-                                            }
-                                        >
-                                            {shipping === 0 ? "Gratis" : formatCOP(shipping)}
+
+                                    {/* Points Earned Banner */}
+                                    <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs mb-6">
+                                        <span className="text-muted flex items-center gap-1.5">
+                                            <Sparkles className="w-3.5 h-3.5 text-primary" />
+                                            Acumulas con esta compra:
                                         </span>
+                                        <span className="font-bold text-primary">+{pointsToEarn} pts</span>
                                     </div>
-                                    <div className="border-t border-primary/20 pt-3 flex justify-between">
-                                        <span className="font-semibold text-white">Total</span>
-                                        <span className="text-2xl font-bold gradient-text">
-                                            {formatCOP(total + shipping)}
-                                        </span>
-                                    </div>
+
+                                    {/* Submit Button */}
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {isSubmitting ? (
+                                            <span className="animate-pulse">Generando orden segura...</span>
+                                        ) : (
+                                            <>
+                                                <Lock className="w-4 h-4" />
+                                                <span>Pagar {formatCOP(total)}</span>
+                                            </>
+                                        )}
+                                    </button>
+
+                                    <p className="text-[10px] text-center text-muted mt-3">
+                                        Al completar tu pedido recibirás tu número de guía y seguimiento en tiempo real.
+                                    </p>
                                 </div>
-
-                                <motion.button
-                                    type="submit"
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold flex items-center justify-center gap-2 glow-purple transition-all"
-                                >
-                                    <ShieldCheck className="w-5 h-5" />
-                                    Confirmar Pedido
-                                </motion.button>
-
-                                <p className="text-xs text-muted text-center mt-4">
-                                    🔒 Pago seguro garantizado
-                                </p>
-                            </div>
-                        </FadeIn>
+                            </FadeIn>
+                        </div>
                     </div>
                 </form>
             </div>

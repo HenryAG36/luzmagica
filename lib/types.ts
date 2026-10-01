@@ -10,9 +10,119 @@ export interface Product {
     description: string;
     stock: number;
     type: string;
+    supplierCostCOP?: number; // Dropshipping wholesale cost
 }
 
 export interface CartItem {
     product: Product;
     quantity: number;
+}
+
+export interface CustomerProfile {
+    name: string;
+    email: string;
+    phone: string;
+    address: string;
+    city: string;
+    department?: string;
+    cedula: string;
+    notes?: string;
+}
+
+export type LoyaltyTier = "bronce" | "plata" | "oro" | "galactico";
+
+export interface PointsTransaction {
+    id: string;
+    date: string;
+    points: number;
+    reason: string;
+    type: "earned" | "redeemed";
+}
+
+export interface LoyaltyAccount {
+    points: number;
+    lifetimePoints: number;
+    tier: LoyaltyTier;
+    referralCode: string;
+    history: PointsTransaction[];
+}
+
+export type OrderStatus =
+    | "payment_confirmed"
+    | "supplier_processing"
+    | "international_transit"
+    | "customs_cleared"
+    | "local_delivery"
+    | "delivered";
+
+export interface TrackingEvent {
+    status: OrderStatus;
+    label: string;
+    description: string;
+    timestamp: string;
+    location: string;
+    completed: boolean;
+}
+
+export interface Order {
+    id: string;
+    date: string;
+    customer: CustomerProfile;
+    items: CartItem[];
+    subtotal: number;
+    discountAmount: number;
+    shippingFee: number;
+    total: number;
+    supplierCostTotal: number;
+    paymentMethod: "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega";
+    status: OrderStatus;
+    trackingNumber: string;
+    carrier: "Coordinadora" | "Servientrega" | "Interrapidísimo" | "Envía" | "4-72";
+    trackingEvents: TrackingEvent[];
+    loyaltyPointsEarned: number;
+    loyaltyPointsUsed: number;
+    isReorder?: boolean;
+    recoveredFromCartId?: string;
+    review?: {
+        rating: number;
+        comment: string;
+        date: string;
+    };
+}
+
+export interface AbandonedCart {
+    id: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerEmail?: string;
+    items: CartItem[];
+    total: number;
+    createdAt: string;
+    recoveryCode: string;
+    discountPercent: number;
+    status: "pending" | "recovered" | "expired";
+    lastContactedAt?: string;
+}
+
+export interface Review {
+    id: string;
+    productId: string;
+    productName: string;
+    author: string;
+    city: string;
+    rating: number;
+    comment: string;
+    date: string;
+    verifiedBuyer: boolean;
+}
+
+export interface OperatorTask {
+    id: string;
+    type: "fulfill_order" | "whatsapp_recovery" | "low_stock" | "review_moderation";
+    title: string;
+    description: string;
+    priority: "high" | "medium" | "low";
+    actionLabel: string;
+    actionTarget: string;
+    completed: boolean;
 }

@@ -1,0 +1,21 @@
+import { Suspense } from "react";
+import OperatorClient from "./OperatorClient";
+
+export const metadata = {
+    title: "Command Center del Operador | LuzMágica",
+    description: "Panel de control diario, métricas de retención de audiencia, gestión de despachos dropshipping y recuperación de carritos.",
+};
+
+export default function OperatorPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
+                    <div className="animate-pulse text-muted">Cargando Command Center del Operador...</div>
+                </div>
+            }
+        >
+            <OperatorClient />
+        </Suspense>
+    );
+}
