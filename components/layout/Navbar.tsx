@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingCart, Menu, X, Sparkles, LayoutDashboard } from "lucide-react";
+import { ShoppingCart, Menu, X, Sparkles, LayoutDashboard, User, ShieldCheck, LogOut } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const emptySubscribe = () => () => {};
 
@@ -22,6 +23,7 @@ export default function Navbar() {
 
     const getTotalItems = useCartStore((s) => s.getTotalItems);
     const { account, openModal } = useLoyaltyStore();
+    const { currentUser, logout } = useAuthStore();
 
     useEffect(() => {
         const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -78,15 +80,38 @@ export default function Navbar() {
                         <span className="text-accent font-mono">{points} pts</span>
                     </button>
 
-                    {/* Operator Mode Portal */}
-                    <Link
-                        href="/operator"
-                        className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-semibold transition-colors"
-                        title="Command Center del Operador"
-                    >
-                        <LayoutDashboard className="w-3.5 h-3.5 text-secondary" />
-                        <span>Operador</span>
-                    </Link>
+                    {/* Authentication Status & Actions */}
+                    {mounted && currentUser ? (
+                        <div className="flex items-center gap-2">
+                            {currentUser.role === "admin" ? (
+                                <Link
+                                    href="/operator"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold transition-colors"
+                                    title="Command Center del Operador"
+                                >
+                                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                                    <span className="hidden sm:inline">Admin</span>
+                                </Link>
+                            ) : (
+                                <Link
+                                    href="/account"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-semibold transition-colors"
+                                    title="Mi Cuenta"
+                                >
+                                    <User className="w-3.5 h-3.5 text-primary" />
+                                    <span className="hidden sm:inline">{currentUser.name.split(" ")[0]}</span>
+                                </Link>
+                            )}
+                        </div>
+                    ) : (
+                        <Link
+                            href="/login"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-semibold transition-colors"
+                        >
+                            <User className="w-3.5 h-3.5 text-muted" />
+                            <span>Ingresar</span>
+                        </Link>
+                    )}
 
                     {/* Cart Icon */}
                     <Link
@@ -153,14 +178,49 @@ export default function Navbar() {
                                     <span className="font-mono font-bold">{points} pts</span>
                                 </button>
 
-                                <Link
-                                    href="/operator"
-                                    onClick={() => setIsMobileOpen(false)}
-                                    className="text-secondary py-1.5 flex items-center gap-2"
-                                >
-                                    <LayoutDashboard className="w-4 h-4" />
-                                    <span>Command Center del Operador</span>
-                                </Link>
+                                {currentUser ? (
+                                    <>
+                                        <Link
+                                            href="/account"
+                                            onClick={() => setIsMobileOpen(false)}
+                                            className="text-white py-1.5 flex items-center gap-2"
+                                        >
+                                            <User className="w-4 h-4 text-primary" />
+                                            <span>Mi Cuenta ({currentUser.name})</span>
+                                        </Link>
+
+                                        {currentUser.role === "admin" && (
+                                            <Link
+                                                href="/operator"
+                                                onClick={() => setIsMobileOpen(false)}
+                                                className="text-amber-300 py-1.5 flex items-center gap-2 font-semibold"
+                                            >
+                                                <LayoutDashboard className="w-4 h-4" />
+                                                <span>Command Center del Operador</span>
+                                            </Link>
+                                        )}
+
+                                        <button
+                                            onClick={() => {
+                                                logout();
+                                                setIsMobileOpen(false);
+                                            }}
+                                            className="text-red-400 py-1.5 flex items-center gap-2 text-left"
+                                        >
+                                            <LogOut className="w-4 h-4" />
+                                            <span>Cerrar Sesión</span>
+                                        </button>
+                                    </>
+                                ) : (
+                                    <Link
+                                        href="/login"
+                                        onClick={() => setIsMobileOpen(false)}
+                                        className="text-primary py-1.5 flex items-center gap-2"
+                                    >
+                                        <User className="w-4 h-4" />
+                                        <span>Iniciar Sesión / Registrarme</span>
+                                    </Link>
+                                )}
                             </div>
                         </div>
                     </motion.div>

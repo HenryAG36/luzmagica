@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
     TrendingUp,
@@ -15,15 +15,23 @@ import {
     ExternalLink,
     Store,
     Send,
+    Lock,
+    LogOut,
 } from "lucide-react";
 import { useOrderStore } from "@/store/useOrderStore";
 import { useOperatorStore } from "@/store/useOperatorStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 import { OrderStatus, Order } from "@/lib/types";
 
+const emptySubscribe = () => () => {};
+
 export default function OperatorClient() {
+    const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+    const { currentUser, logout, quickDemoLogin } = useAuthStore();
+
     const { orders, updateOrderStatus } = useOrderStore();
     const {
         abandonedCarts,
@@ -67,6 +75,64 @@ export default function OperatorClient() {
         setEditingOrderId(null);
     };
 
+    if (!mounted) {
+        return (
+            <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
+                <div className="animate-pulse text-muted">Cargando Command Center...</div>
+            </div>
+        );
+    }
+
+    if (!currentUser || currentUser.role !== "admin") {
+        return (
+            <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
+                <FadeIn>
+                    <div className="max-w-lg mx-auto p-8 rounded-3xl bg-surface border border-amber-500/30 shadow-2xl glow-purple text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center mx-auto mb-5 text-amber-400">
+                            <Lock className="w-8 h-8" />
+                        </div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+                            Área Protegida • Nivel Operador
+                        </span>
+                        <h1 className="font-heading text-2xl sm:text-3xl font-bold text-white mt-4 mb-2">
+                            Portal Exclusivo de Administrador
+                        </h1>
+                        <p className="text-xs sm:text-sm text-muted mb-6 leading-relaxed">
+                            {currentUser
+                                ? `Has iniciado sesión como ${currentUser.name} (Cliente). Este panel contiene costos de proveedor, órdenes de despacho y métricas comerciales restringidas a administradores.`
+                                : "Para gestionar pedidos de despacho dropshipping, carritos abandonados y márgenes comerciales brutos, debes iniciar sesión con una cuenta de operador."}
+                        </p>
+
+                        <div className="space-y-3">
+                            <button
+                                type="button"
+                                onClick={() => quickDemoLogin("admin")}
+                                className="w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                                <ShieldCheck className="w-4 h-4" />
+                                <span>⚡ Acceso Rápido como Henry Admin (Demo)</span>
+                            </button>
+
+                            <Link
+                                href="/login?redirect=/operator"
+                                className="block w-full py-3 px-6 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold border border-white/10 transition-colors"
+                            >
+                                Iniciar Sesión con Contraseña
+                            </Link>
+
+                            <Link
+                                href="/"
+                                className="block text-xs text-muted hover:text-white pt-2 transition-colors"
+                            >
+                                Volver a la Tienda Pública
+                            </Link>
+                        </div>
+                    </div>
+                </FadeIn>
+            </div>
+        );
+    }
+
     return (
         <div className="pt-28 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
             {/* Operator Executive Header */}
@@ -87,22 +153,29 @@ export default function OperatorClient() {
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <Link
-                            href="/"
-                            className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-2 border border-white/10 transition-colors"
-                        >
-                            <Store className="w-4 h-4 text-primary" />
-                            <span>Ver Tienda (Público)</span>
-                        </Link>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        {/* Admin Identity pill */}
+                        <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-amber-400" />
+                            <span>{currentUser.name}</span>
+                        </div>
 
                         <Link
-                            href="/tracking"
-                            className="px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold flex items-center gap-2 glow-purple transition-all"
+                            href="/"
+                            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-2 border border-white/10 transition-colors"
                         >
-                            <Truck className="w-4 h-4" />
-                            <span>Rastreador en Vivo</span>
+                            <Store className="w-4 h-4 text-primary" />
+                            <span>Ver Tienda</span>
                         </Link>
+
+                        <button
+                            onClick={logout}
+                            className="px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold flex items-center gap-1.5 border border-red-500/20 transition-colors"
+                            title="Cerrar sesión de administrador"
+                        >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Salir</span>
+                        </button>
                     </div>
                 </div>
             </FadeIn>

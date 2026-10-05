@@ -29,6 +29,22 @@ export interface CustomerProfile {
     notes?: string;
 }
 
+export type UserRole = "customer" | "admin";
+
+export interface UserAccount {
+    id: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    name: string;
+    phone: string;
+    cedula: string;
+    address: string;
+    city: string;
+    department?: string;
+    createdAt: string;
+}
+
 export type LoyaltyTier = "bronce" | "plata" | "oro" | "galactico";
 
 export interface PointsTransaction {

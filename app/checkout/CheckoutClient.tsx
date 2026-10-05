@@ -15,11 +15,14 @@ import {
     Tag,
     X,
     Lock,
+    User,
+    ArrowRight,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useOrderStore } from "@/store/useOrderStore";
 import { useOperatorStore } from "@/store/useOperatorStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 
@@ -52,6 +55,7 @@ export default function CheckoutClient() {
     const { account, awardPoints, redeemPoints } = useLoyaltyStore();
     const { createOrder } = useOrderStore();
     const { markCartRecovered } = useOperatorStore();
+    const { currentUser } = useAuthStore();
 
     const [couponInput, setCouponInput] = useState("");
     const [couponMessage, setCouponMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -234,6 +238,32 @@ export default function CheckoutClient() {
                                             Perfil Guardado
                                         </span>
                                     </div>
+
+                                    {/* Session status banner */}
+                                    {currentUser ? (
+                                        <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs mb-4">
+                                            <div className="flex items-center gap-2">
+                                                <User className="w-4 h-4 text-primary" />
+                                                <span className="text-white">
+                                                    Sesión activa como <strong>{currentUser.name}</strong>
+                                                </span>
+                                            </div>
+                                            <span className="text-[11px] text-accent font-semibold">
+                                                Datos vinculados
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs mb-4">
+                                            <span className="text-muted">¿Tienes cuenta LuzClub?</span>
+                                            <Link
+                                                href="/login?redirect=/checkout"
+                                                className="text-primary hover:underline font-semibold flex items-center gap-1"
+                                            >
+                                                <span>Iniciar Sesión</span>
+                                                <ArrowRight className="w-3 h-3" />
+                                            </Link>
+                                        </div>
+                                    )}
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="sm:col-span-2">
