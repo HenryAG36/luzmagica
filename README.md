@@ -30,7 +30,11 @@ Authentication, the shared catalog, and the admin "Tendencias" panel run on Supa
 Apply the versioned migrations in `supabase/migrations/` to your Supabase project,
 in order (`20261006023124_foundation` profiles/roles, `20261006023145_trends_and_catalog`
 provider connections/snapshots/leases/catalog, `20261006023202_seed_products`
-seed products). Filenames use Supabase timestamp versions and must not be
+seed products, `20261006172120_aliexpress_ds` DS provider/SKU columns,
+`20261006190950_ds_shipping` customer shipping fields on the public view,
+`20261006190956_discovery_providers` widens the provider check for
+`cjdropshipping`).
+Filenames use Supabase timestamp versions and must not be
 renumbered; remote projects that already applied them will skip replay. With the
 Supabase CLI:
 
@@ -77,6 +81,23 @@ administrator cannot be removed (enforced by a database trigger).
   provider lease. Product lookup is ID-only (`ship_to_country=CO`, USD, `es`),
   and variants are imported one SKU per draft — SKU data is stored in the
   private `supplier_variant` column, never in the public catalog view.
+  Freight is quoted per selected SKU via `aliexpress.ds.freight.query`
+  (quantity 1, Bogotá, USD) — an indicative per-unit estimate, not a bulk or
+  city-verified quote. The operator must enter a manual USD→COP rate and date
+  before costs and the suggested retail price are computed; suggestions are
+  provisional when taxes/payment fees are unknown and never guarantee profit.
+  Published DS products expose only `customer_shipping_cop`,
+  `shipping_estimate_city`, `shipping_checked_at`, and `shipping_quote_required`
+  in the public view; carts sum the per-unit estimate and checkout is blocked
+  while a DS item has no quote. Checkout remains a demo order flow with no
+  automated fulfillment. When connected, the DS app also feeds a "bestseller
+  feed" supplier signal (provider-reported order, sales period unverified) via
+  `aliexpress.ds.feed.itemids.get`.
+- **CJ Dropshipping**: configure `CJ_API_KEY` (server-only). The token obtained
+  from `authentication/getAccessToken` is stored encrypted under the provider
+  lease and the trending product list (`product/listV2`) is refreshed at most
+  once every 6 hours with a ≥1s gap between auth and list calls. `listedNum`
+  is shown as the provider's listing count — it is not sales data.
 
 Missing provider configuration disables only that source — the panel shows each
 source's status and the age of the last successful snapshot. Snapshots refresh
@@ -104,9 +125,12 @@ failure, lease serialization, idempotent import, optimistic publish conflicts,
 and input validation with an in-memory client. The three migrations have been
 applied to the configured Supabase project; live inspection confirms RLS,
 public/private catalog grants, lease RPC privileges, installed triggers, and
-eight published seed products. Authenticated browser flows, concurrent Postgres
+eight published seed products. The `20261006190950_ds_shipping` and
+`20261006190956_discovery_providers` migrations are also applied — public
+customer-shipping fields and supplier-private grants are verified remotely.
+Authenticated browser flows, concurrent Postgres
 behavior, OAuth, and live provider responses still require end-to-end validation.
-The pinned Supabase packages are installed; TypeScript, lint, 50 fixture tests,
+The pinned Supabase packages are installed; TypeScript, lint, 120 fixture tests,
 and the production build pass.
 
 ## Learn More

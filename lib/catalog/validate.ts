@@ -24,6 +24,9 @@ export interface CatalogRow {
     fx_rate_date: string | null;
     supplier_rights_confirmed: boolean;
     supplier_variant: Record<string, unknown> | null;
+    customer_shipping_cop: number | null;
+    shipping_estimate_city: string | null;
+    shipping_checked_at: string | null;
     status: string;
     reviewed_by: string | null;
     published_at: string | null;
@@ -43,6 +46,10 @@ export interface PublicProductRow {
     description: string;
     stock: number;
     type: string;
+    customer_shipping_cop: number | null;
+    shipping_estimate_city: string | null;
+    shipping_checked_at: string | null;
+    shipping_quote_required: boolean;
 }
 
 export function toPublicProduct(row: PublicProductRow): Product {
@@ -58,6 +65,10 @@ export function toPublicProduct(row: PublicProductRow): Product {
         description: row.description,
         stock: row.stock,
         type: row.type,
+        shippingEstimateCOP: row.customer_shipping_cop,
+        shippingEstimateCity: row.shipping_estimate_city,
+        shippingCheckedAt: row.shipping_checked_at,
+        shippingQuoteRequired: row.shipping_quote_required === true,
     };
 }
 
@@ -85,10 +96,10 @@ export function isValidProviderItemId(value: unknown): value is string {
     return typeof value === "string" && PROVIDER_ITEM_ID_PATTERN.test(value);
 }
 
-function boundedString(value: unknown, max: number): string | null {
+function boundedString(value: unknown, max: number, allowEmpty = false): string | null {
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
-    if (trimmed.length === 0 || trimmed.length > max) return null;
+    if ((trimmed.length === 0 && !allowEmpty) || trimmed.length > max) return null;
     return trimmed;
 }
 
@@ -128,6 +139,14 @@ export interface DraftInsert {
     description: string;
     type: string;
     supplier_variant: Record<string, unknown> | null;
+    supplier_cost_cop?: number | null;
+    supplier_shipping_cop?: number | null;
+    taxes_fees_cop?: number | null;
+    fx_rate?: number | null;
+    fx_rate_date?: string | null;
+    customer_shipping_cop?: number | null;
+    shipping_estimate_city?: string | null;
+    shipping_checked_at?: string | null;
     created_by: string;
 }
 
@@ -179,8 +198,8 @@ export function buildDraftInsert(input: {
 export const REVIEW_FIELD_VALIDATORS: Record<string, (v: unknown) => unknown | null> = {
     name: (v) => boundedString(v, MAX_NAME),
     category: (v) => boundedString(v, MAX_SLUG),
-    room: (v) => boundedString(v, MAX_SLUG),
-    type: (v) => boundedString(v, MAX_SLUG),
+    room: (v) => boundedString(v, MAX_SLUG, true),
+    type: (v) => boundedString(v, MAX_SLUG, true),
     description: (v) => boundedString(v, MAX_TEXT),
     badge: (v) => (v === "sale" || v === "new" || v === null ? v : null),
     images: (v) => sanitizeImageList(v),
@@ -194,7 +213,36 @@ export const REVIEW_FIELD_VALIDATORS: Record<string, (v: unknown) => unknown | n
     fx_rate_date: (v) => (v === null ? null : typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null),
     supplier_rights_confirmed: (v) => (v === true ? true : v === false ? false : null),
     supplier_variant: (v) => sanitizeSupplierVariant(v),
+    customer_shipping_cop: (v) => (v === null ? null : nonNegativeInt(v)),
+    shipping_estimate_city: (v) => (v === null ? null : boundedString(v, MAX_SLUG, true)),
+    shipping_checked_at: (v) =>
+        v === null
+            ? null
+            : typeof v === "string" && v.length <= 64 && !Number.isNaN(Date.parse(v))
+              ? new Date(v).toISOString()
+              : null,
 };
+
+export const IMPORT_FIELD_ALLOWLIST = new Set([
+    "price_cop",
+    "supplier_cost_cop",
+    "supplier_shipping_cop",
+    "fx_rate",
+    "fx_rate_date",
+    "customer_shipping_cop",
+    "shipping_estimate_city",
+    "shipping_checked_at",
+]);
+
+export function sanitizeImportFields(body: unknown): { fields: Record<string, unknown>; errors: string[] } {
+    const { fields, errors } = sanitizeReviewFields(body);
+    const allowed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(fields)) {
+        if (IMPORT_FIELD_ALLOWLIST.has(key)) allowed[key] = value;
+        else errors.push(`field not allowed on import: ${key}`);
+    }
+    return { fields: allowed, errors };
+}
 
 export function sanitizeReviewFields(body: unknown): { fields: Record<string, unknown>; errors: string[] } {
     const fields: Record<string, unknown> = {};

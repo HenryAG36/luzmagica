@@ -90,3 +90,44 @@ export async function lookupDsProduct(
         await releaseProviderLease(service, DS_PROVIDER, owner);
     }
 }
+
+export async function lookupDsFreight(
+    service: SupabaseClientLike,
+    productId: string,
+    skuId: string,
+    fetchImpl?: FetchLike
+): Promise<{ quote: ds.DsFreightQuote } | { error: string }> {
+    if (!ds.isValidDsProductId(productId)) return { error: "invalid product id" };
+    if (typeof skuId !== "string" || skuId.length === 0 || skuId.length > 64) {
+        return { error: "invalid sku id" };
+    }
+    if (!getAliExpressDsEnv() || !getEncryptionSecret()) return { error: "aliexpress ds not configured" };
+
+    const owner = randomUUID();
+    const acquired = await acquireProviderLease(service, DS_PROVIDER, owner);
+    if (!acquired) return { error: "another ds request is in progress" };
+
+    try {
+        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const tokenResult = await getDsAccessToken(service, fetchImpl, deadlineMs);
+        if ("error" in tokenResult) return { error: tokenResult.error };
+
+        const env = getAliExpressDsEnv();
+        if (!env) return { error: "aliexpress ds not configured" };
+        const result = await ds.fetchDsFreightQuote(
+            tokenResult.token,
+            productId,
+            skuId,
+            env,
+            fetchImpl,
+            deadlineMs
+        );
+        if (!result.ok || !result.data) {
+            await markConnectionError(service, DS_PROVIDER, result.error || "freight lookup failed");
+            return { error: result.error || "freight lookup failed" };
+        }
+        return { quote: result.data };
+    } finally {
+        await releaseProviderLease(service, DS_PROVIDER, owner);
+    }
+}

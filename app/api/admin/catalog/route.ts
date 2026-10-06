@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
 import { importDraft, listDrafts } from "@/lib/catalog/repository";
-import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeSupplierVariant } from "@/lib/catalog/validate";
+import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeImportFields, sanitizeSupplierVariant } from "@/lib/catalog/validate";
 
-const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress", "aliexpress_ds"]);
+const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"]);
 
 export async function GET() {
     const auth = await authorizeAdmin();
@@ -50,6 +50,14 @@ export async function POST(request: Request) {
     if (body.supplierVariant !== undefined && body.supplierVariant !== null && supplierVariant === null) {
         return NextResponse.json({ error: "invalid supplier variant" }, { status: 400 });
     }
+    let importFields: Record<string, unknown> | undefined;
+    if (body.fields !== undefined && body.fields !== null) {
+        const sanitized = sanitizeImportFields(body.fields);
+        if (sanitized.errors.length > 0) {
+            return NextResponse.json({ error: sanitized.errors[0] }, { status: 400 });
+        }
+        importFields = sanitized.fields;
+    }
 
     const result = await importDraft({
         source,
@@ -61,6 +69,7 @@ export async function POST(request: Request) {
         listingCurrency: typeof body.listingCurrency === "string" ? body.listingCurrency : null,
         category: typeof body.category === "string" ? body.category : null,
         supplierVariant,
+        fields: importFields,
         createdBy: auth.user.id,
     });
 

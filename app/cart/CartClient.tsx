@@ -17,8 +17,7 @@ export default function CartClient() {
         removeItem,
         updateQuantity,
         getSubtotal,
-        getShippingFee,
-        getTotalPrice,
+        getShippingBreakdown,
         getFreeShippingProgress,
     } = useCartStore();
 
@@ -56,10 +55,11 @@ export default function CartClient() {
     }
 
     const subtotal = getSubtotal();
-    const shipping = getShippingFee();
-    const total = getTotalPrice();
+    const breakdown = getShippingBreakdown();
+    const total = breakdown.total;
     const shippingProgress = getFreeShippingProgress();
-    const pointsToEarn = Math.floor(total / 1000);
+    const dsPresent = breakdown.dsItemCount > 0;
+    const pointsToEarn = Math.floor((total ?? 0) / 1000);
 
     return (
         <div className="pt-28 pb-16 px-4">
@@ -74,24 +74,27 @@ export default function CartClient() {
                         </span>
                     </div>
 
-                    {/* Free shipping bar */}
-                    <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
-                        <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="flex items-center gap-2 text-white font-medium">
-                                <Truck className="w-4 h-4 text-primary" />
-                                {shippingProgress.isFree
-                                    ? "¡Felicidades! Tienes Envío Gratis Nacional"
-                                    : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en Colombia`}
-                            </span>
-                            <span className="text-muted font-mono">{shippingProgress.percent}%</span>
+                    {/* Free shipping bar (legacy national items only) */}
+                    {(!dsPresent || breakdown.legacyItemCount > 0) && (
+                        <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
+                            <div className="flex items-center justify-between text-xs mb-2">
+                                <span className="flex items-center gap-2 text-white font-medium">
+                                    <Truck className="w-4 h-4 text-primary" />
+                                    {shippingProgress.isFree
+                                        ? "¡Felicidades! Tienes Envío Gratis Nacional"
+                                        : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en Colombia`}
+                                    {dsPresent && " (solo productos nacionales)"}
+                                </span>
+                                <span className="text-muted font-mono">{shippingProgress.percent}%</span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
+                                    style={{ width: `${shippingProgress.percent}%` }}
+                                />
+                            </div>
                         </div>
-                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                            <div
-                                className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
-                                style={{ width: `${shippingProgress.percent}%` }}
-                            />
-                        </div>
-                    </div>
+                    )}
                 </FadeIn>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -183,12 +186,30 @@ export default function CartClient() {
                                     <span>Subtotal</span>
                                     <span className="text-white font-medium">{formatCOP(subtotal)}</span>
                                 </div>
-                                <div className="flex justify-between text-muted">
-                                    <span>Envío Nacional</span>
-                                    <span className={shipping === 0 ? "text-secondary font-semibold" : "text-white"}>
-                                        {shipping === 0 ? "¡Gratis!" : formatCOP(shipping)}
-                                    </span>
-                                </div>
+                                {breakdown.discountCop > 0 && (
+                                    <div className="flex justify-between text-green-400">
+                                        <span>Descuentos (cupón / puntos)</span>
+                                        <span>-{formatCOP(breakdown.discountCop)}</span>
+                                    </div>
+                                )}
+                                {breakdown.legacyItemCount > 0 && (
+                                    <div className="flex justify-between text-muted">
+                                        <span>Envío Nacional (productos locales)</span>
+                                        <span className={breakdown.legacyShippingCop === 0 ? "text-secondary font-semibold" : "text-white"}>
+                                            {breakdown.legacyShippingCop === 0 ? "¡Gratis!" : formatCOP(breakdown.legacyShippingCop)}
+                                        </span>
+                                    </div>
+                                )}
+                                {dsPresent && (
+                                    <div className="flex justify-between text-muted">
+                                        <span>Envío internacional (estimado, por unidad, a Bogotá)</span>
+                                        {breakdown.dsShippingCop === null ? (
+                                            <span className="text-amber-300">Pendiente de cotización</span>
+                                        ) : (
+                                            <span className="text-white">{formatCOP(breakdown.dsShippingCop)}</span>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs">
                                     <span className="text-muted flex items-center gap-1.5">
@@ -200,9 +221,13 @@ export default function CartClient() {
 
                                 <div className="border-t border-white/10 pt-4 flex justify-between items-center">
                                     <span className="font-bold text-white text-base">Total Estimado</span>
-                                    <span className="text-2xl font-bold gradient-text">
-                                        {formatCOP(total)}
-                                    </span>
+                                    {total === null ? (
+                                        <span className="text-sm text-amber-300">Pendiente de cotización</span>
+                                    ) : (
+                                        <span className="text-2xl font-bold gradient-text">
+                                            {formatCOP(total)}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 

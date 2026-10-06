@@ -46,8 +46,7 @@ export default function CheckoutClient() {
         getSubtotal,
         getCouponDiscountCOP,
         getPointsDiscountCOP,
-        getShippingFee,
-        getTotalPrice,
+        getShippingBreakdown,
         getFreeShippingProgress,
         clearCart,
     } = useCartStore();
@@ -108,12 +107,16 @@ export default function CheckoutClient() {
     const subtotal = getSubtotal();
     const couponDiscount = getCouponDiscountCOP();
     const pointsDiscount = getPointsDiscountCOP();
-    const shipping = getShippingFee();
-    const total = getTotalPrice();
+    const breakdown = getShippingBreakdown();
+    const shipping = breakdown.shippingCop ?? 0;
+    const total = breakdown.total;
     const shippingProgress = getFreeShippingProgress();
+    const dsPending = breakdown.dsPending;
+    const dsPresent = breakdown.dsItemCount > 0;
+    const cityIsBogota = /^\s*bogot/i.test(customerProfile.city || "");
 
     // Potential points earned on this purchase
-    const pointsToEarn = Math.floor(total / 1000);
+    const pointsToEarn = Math.floor((total ?? 0) / 1000);
 
     const handleApplyCoupon = (e: React.FormEvent) => {
         e.preventDefault();
@@ -136,6 +139,7 @@ export default function CheckoutClient() {
 
     const handleSubmitOrder = (e: React.FormEvent) => {
         e.preventDefault();
+        if (dsPending || total === null) return;
         setIsSubmitting(true);
 
         try {
@@ -151,7 +155,7 @@ export default function CheckoutClient() {
                 subtotal,
                 discountAmount: couponDiscount + pointsDiscount,
                 shippingFee: shipping,
-                total,
+                total: total ?? 0,
                 paymentMethod,
                 loyaltyPointsEarned: pointsToEarn,
                 loyaltyPointsUsed: pointsRedeemed,
@@ -203,24 +207,37 @@ export default function CheckoutClient() {
                         </div>
                     </div>
 
-                    {/* Free shipping bar */}
-                    <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
-                        <div className="flex items-center justify-between text-xs mb-2">
-                            <span className="flex items-center gap-2 text-white font-medium">
-                                <Truck className="w-4 h-4 text-primary" />
-                                {shippingProgress.isFree
-                                    ? "¡Felicidades! Tienes Envío Gratis Nacional"
-                                    : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en toda Colombia`}
+                    {/* Free shipping bar (legacy national items only; DS products ship per quoted estimate) */}
+                    {(!dsPresent || breakdown.legacyItemCount > 0) && (
+                        <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
+                            <div className="flex items-center justify-between text-xs mb-2">
+                                <span className="flex items-center gap-2 text-white font-medium">
+                                    <Truck className="w-4 h-4 text-primary" />
+                                    {shippingProgress.isFree
+                                        ? "¡Felicidades! Tienes Envío Gratis Nacional"
+                                        : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en toda Colombia`}
+                                    {dsPresent && " (solo productos nacionales)"}
+                                </span>
+                                <span className="text-muted font-mono">{shippingProgress.percent}%</span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
+                                    style={{ width: `${shippingProgress.percent}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {dsPresent && (
+                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 mb-8 text-xs text-amber-200 flex items-start gap-2.5">
+                            <Truck className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                            <span>
+                                Este pedido incluye productos de proveedor internacional: el envío se cobra por unidad
+                                según la cotización estimada a Bogotá y no participa del envío gratis. Pedido estimado:
+                                no hay fulfillment automático ni verificación de destino{cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
                             </span>
-                            <span className="text-muted font-mono">{shippingProgress.percent}%</span>
                         </div>
-                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                            <div
-                                className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
-                                style={{ width: `${shippingProgress.percent}%` }}
-                            />
-                        </div>
-                    </div>
+                    )}
                 </FadeIn>
 
                 <form onSubmit={handleSubmitOrder}>
@@ -593,16 +610,33 @@ export default function CheckoutClient() {
                                             </div>
                                         )}
 
-                                        <div className="flex justify-between text-muted">
-                                            <span>Envío Nacional</span>
-                                            <span className={shipping === 0 ? "text-secondary font-semibold" : "text-white"}>
-                                                {shipping === 0 ? "¡Gratis!" : formatCOP(shipping)}
-                                            </span>
-                                        </div>
+                                        {breakdown.legacyItemCount > 0 && (
+                                            <div className="flex justify-between text-muted">
+                                                <span>Envío Nacional (productos locales)</span>
+                                                <span className={breakdown.legacyShippingCop === 0 ? "text-secondary font-semibold" : "text-white"}>
+                                                    {breakdown.legacyShippingCop === 0 ? "¡Gratis!" : formatCOP(breakdown.legacyShippingCop)}
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {dsPresent && (
+                                            <div className="flex justify-between text-muted">
+                                                <span>Envío internacional (estimado, por unidad, a Bogotá)</span>
+                                                {breakdown.dsShippingCop === null ? (
+                                                    <span className="text-amber-300">Pendiente de cotización</span>
+                                                ) : (
+                                                    <span className="text-white">{formatCOP(breakdown.dsShippingCop)}</span>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/10">
                                             <span>Total a Pagar</span>
-                                            <span className="gradient-text">{formatCOP(total)}</span>
+                                            {total === null ? (
+                                                <span className="text-amber-300 text-sm">Pendiente de cotización de envío</span>
+                                            ) : (
+                                                <span className="gradient-text">{formatCOP(total)}</span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -616,17 +650,27 @@ export default function CheckoutClient() {
                                     </div>
 
                                     {/* Submit Button */}
+                                    {dsPending && (
+                                        <p role="alert" className="text-[11px] text-amber-300 mb-3">
+                                            No se puede completar el pedido: falta la cotización de envío del proveedor internacional.
+                                        </p>
+                                    )}
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || dsPending}
                                         className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
                                     >
                                         {isSubmitting ? (
                                             <span className="animate-pulse">Generando orden segura...</span>
+                                        ) : dsPending ? (
+                                            <>
+                                                <Lock className="w-4 h-4" />
+                                                <span>Envío pendiente de cotización</span>
+                                            </>
                                         ) : (
                                             <>
                                                 <Lock className="w-4 h-4" />
-                                                <span>Pagar {formatCOP(total)}</span>
+                                                <span>Pagar {formatCOP(total ?? 0)}</span>
                                             </>
                                         )}
                                     </button>

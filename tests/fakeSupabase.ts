@@ -140,6 +140,9 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
             const values = op.values as FakeRow;
             let matched: FakeRow[];
             if (op.kind === "upsert") {
+                if (this.db.failUpserts.has(this.table)) {
+                    return Promise.resolve({ data: null, error: { message: "upsert failed" } });
+                }
                 const cols = (op.onConflict || "id").split(",");
                 const found = rows.find((r) => cols.every((c) => r[c] === values[c]));
                 if (found) Object.assign(found, values);
@@ -180,6 +183,7 @@ export class FakeDb {
     rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
     unique: Record<string, string[][]> = {};
     failUpdates: Set<string> = new Set();
+    failUpserts: Set<string> = new Set();
     leases: Map<string, { owner: string; expiresAt: number }> = new Map();
     nowMs: () => number = () => Date.now();
 

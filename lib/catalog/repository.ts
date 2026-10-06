@@ -78,6 +78,7 @@ export interface ImportDraftInput {
     listingCurrency?: string | null;
     category?: string | null;
     supplierVariant?: Record<string, unknown> | null;
+    fields?: Record<string, unknown>;
     createdBy: string;
 }
 
@@ -88,7 +89,8 @@ export async function importDraft(
     const service = await serviceClient(client);
     if (!service) return { error: "service unavailable" };
 
-    const draft = buildDraftInsert(input);
+    const fields = input.fields ?? {};
+    const draft = { ...buildDraftInsert(input), ...fields };
     const { error } = await service.from("catalog_products").insert(draft);
     if (error) {
         if (error.code === "23505" || /duplicate key|unique/i.test(error.message)) {

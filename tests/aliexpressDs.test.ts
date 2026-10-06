@@ -5,8 +5,11 @@ import {
     buildAuthorizationUrl,
     buildDsProviderItemId,
     buildSignedRequestUrl,
+    fetchDsFreightQuote,
     fetchDsProduct,
+    getDsFreightResponseError,
     isValidDsProductId,
+    normalizeDsFreightResponse,
     normalizeDsProduct,
     signApiRequest,
     stripHtmlToText,
@@ -330,6 +333,413 @@ test("token persistence failure fails closed instead of returning rotated token"
         const result = await getDsAccessToken(db.asClient(), fetchImpl);
         assert.deepEqual(result, { error: "credential persistence failed" });
         assert.equal(db.tables.provider_connections[0].status, "error");
+    } finally {
+        clearDsEnv();
+    }
+});
+
+function freightFixture(optionOverrides: Record<string, unknown>[] = []) {
+    const base = {
+        code: "AE_STANDARD",
+        company: "AliExpress Standard Shipping",
+        shipping_fee_currency: "USD",
+        shipping_fee_cent: "1.99",
+        shipping_fee_format: "US $1.99",
+        free_shipping: "false",
+        min_delivery_days: "20",
+        max_delivery_days: "40",
+        available_stock: "100",
+        ddpIncludeVATTax: "true",
+    };
+    return {
+        code: "0",
+        result: {
+            code: "200",
+            success: "true",
+            delivery_options: optionOverrides.length
+                ? optionOverrides.map((o) => ({ ...base, ...o }))
+                : [base],
+        },
+    };
+}
+
+test("normalizeDsFreightResponse maps documented fields and USD fee", () => {
+    const options = normalizeDsFreightResponse(freightFixture());
+    assert.ok(options);
+    assert.equal(options.length, 1);
+    const o = options[0];
+    assert.equal(o.company, "AliExpress Standard Shipping");
+    assert.equal(o.feeUsd, 1.99);
+    assert.equal(o.minDays, 20);
+    assert.equal(o.maxDays, 40);
+    assert.equal(o.availableStock, 100);
+    assert.equal(o.ddpIncludesVatTax, true);
+    assert.equal(o.freeShipping, false);
+});
+
+test("normalizeDsFreightResponse accepts the wrapped response envelope", () => {
+    const wrapped = { aliexpress_ds_freight_query_response: freightFixture() };
+    const options = normalizeDsFreightResponse(wrapped);
+    assert.ok(options && options.length === 1);
+});
+
+test("freight fee requires USD format agreement, otherwise unavailable", () => {
+    const mismatch = normalizeDsFreightResponse(
+        freightFixture([{ shipping_fee_format: "US $5.00" }])
+    );
+    assert.ok(mismatch);
+    assert.equal(mismatch[0].feeUsd, null);
+
+    const noFormat = normalizeDsFreightResponse(
+        freightFixture([{ shipping_fee_format: "" }])
+    );
+    assert.ok(noFormat);
+    assert.equal(noFormat[0].feeUsd, null);
+
+    const nonUsd = normalizeDsFreightResponse(
+        freightFixture([{ shipping_fee_currency: "EUR" }])
+    );
+    assert.ok(nonUsd);
+    assert.equal(nonUsd[0].feeUsd, null);
+});
+
+test("free_shipping permits absent fee but rejects inconsistent positive fee", () => {
+    const free = normalizeDsFreightResponse(
+        freightFixture([
+            { free_shipping: "true", shipping_fee_cent: "", shipping_fee_format: "", shipping_fee_currency: "" },
+        ])
+    );
+    assert.ok(free);
+    assert.equal(free[0].freeShipping, true);
+    assert.equal(free[0].feeUsd, 0);
+
+    const inconsistent = normalizeDsFreightResponse(
+        freightFixture([{ free_shipping: "true", shipping_fee_cent: "3.50", shipping_fee_format: "US $3.50" }])
+    );
+    assert.ok(inconsistent);
+    assert.equal(inconsistent.length, 0);
+});
+
+test("freight response errors are surfaced, not treated as empty quotes", () => {
+    assert.equal(normalizeDsFreightResponse(null), null);
+    assert.equal(normalizeDsFreightResponse({ code: "0" }), null);
+    assert.equal(
+        normalizeDsFreightResponse({ code: "0", result: { code: "500", success: "false" } }),
+        null
+    );
+    assert.match(getDsFreightResponseError({ error_response: { code: "Forbidden" } }) ?? "", /Forbidden/);
+    assert.match(
+        getDsFreightResponseError({ aliexpress_ds_freight_query_response: { code: "0", result: { code: "500", success: "false" } } }) ?? "",
+        /freight code 500/
+    );
+    assert.equal(
+        getDsFreightResponseError({ aliexpress_ds_freight_query_response: { code: "34" } }),
+        "provider error 34"
+    );
+});
+
+test("fetchDsFreightQuote sends queryDeliveryReq over /sync with session", async () => {
+    let captured = "";
+    const fetchImpl: FetchLike = async (url) => {
+        captured = url;
+        return new Response(JSON.stringify(freightFixture()), { status: 200 });
+    };
+    const res = await fetchDsFreightQuote("tok-9", "1005001234567890", "sku-77", CONFIG, fetchImpl);
+    assert.equal(res.ok, true);
+    assert.ok(res.data);
+    assert.equal(res.data.destination, "Bogota");
+    assert.equal(res.data.quantity, 1);
+    const parsed = new URL(captured);
+    assert.equal(parsed.pathname, "/sync");
+    assert.equal(parsed.searchParams.get("method"), "aliexpress.ds.freight.query");
+    assert.equal(parsed.searchParams.get("session"), "tok-9");
+    const req = JSON.parse(parsed.searchParams.get("queryDeliveryReq") ?? "{}");
+    assert.equal(req.quantity, "1");
+    assert.equal(req.shipToCountry, "CO");
+    assert.equal(req.productId, "1005001234567890");
+    assert.equal(req.selectedSkuId, "sku-77");
+    assert.equal(req.city, "Bogota");
+    assert.equal(req.currency, "USD");
+    assert.equal(req.language, "es");
+});
+
+test("fetchDsFreightQuote surfaces provider errors", async () => {
+    const fetchImpl: FetchLike = async () =>
+        new Response(
+            JSON.stringify({ aliexpress_ds_freight_query_response: { code: "0", result: { code: "500", success: "false" } } }),
+            { status: 200 }
+        );
+    const res = await fetchDsFreightQuote("tok", "1005001234567890", "s1", CONFIG, fetchImpl);
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /freight code 500/);
+});
+
+test("free_shipping with a nonzero formatted price is rejected too", () => {
+    const options = normalizeDsFreightResponse(
+        freightFixture([
+            { free_shipping: "true", shipping_fee_cent: "", shipping_fee_format: "US $2.50" },
+        ])
+    );
+    assert.ok(options);
+    assert.equal(options.length, 0);
+});
+
+function feedFixture(ids: unknown[] = ["1005001234567890", "1005002234567890"]) {
+    return {
+        aliexpress_ds_feed_itemids_get_response: {
+            code: "0",
+            ret: "true",
+            rsp_code: "200",
+            rsp_msg: "success",
+            result: { total: "42", products: ids, search_id: "s-1" },
+        },
+    };
+}
+
+test("feed item ids validated: envelope, canonical ids, max 10", async () => {
+    const { fetchDsFeedItemIds, normalizeDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
+    const page = normalizeDsFeedItemIds(feedFixture(["1", "abc", "x".repeat(21), "2", "1"]));
+    assert.ok(page);
+    assert.deepEqual(page.productIds, ["1", "2"]);
+    assert.equal(page.total, 42);
+    assert.equal(page.searchId, "s-1");
+    assert.equal(normalizeDsFeedItemIds(feedFixture(Array(15).fill(1).map((_, i) => String(i))))!.productIds.length, 10);
+    assert.equal(normalizeDsFeedItemIds({ code: "0" }), null);
+
+    let captured = "";
+    const fetchImpl: FetchLike = async (url) => {
+        captured = url;
+        return new Response(JSON.stringify(feedFixture()), { status: 200 });
+    };
+    const res = await fetchDsFeedItemIds("tok", CONFIG, fetchImpl);
+    assert.equal(res.ok, true);
+    const parsed = new URL(captured);
+    assert.equal(parsed.pathname, "/sync");
+    assert.equal(parsed.searchParams.get("method"), "aliexpress.ds.feed.itemids.get");
+    assert.equal(parsed.searchParams.get("page_size"), "10");
+    assert.equal(parsed.searchParams.get("feed_name"), "DS bestseller");
+    assert.equal(parsed.searchParams.get("session"), "tok");
+});
+
+test("feed item ids surface provider rejections without faking", async () => {
+    const { fetchDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
+    for (const [body, match] of [
+        [{ aliexpress_ds_feed_itemids_get_response: { code: "27" } }, /error 27/],
+        [{ aliexpress_ds_feed_itemids_get_response: { code: "0", ret: "false" } }, /ret false/],
+        [{ aliexpress_ds_feed_itemids_get_response: { code: "0", ret: "true", rsp_code: "500" } }, /rsp_code 500/],
+        [{ error_response: { code: "IllegalAccess" } }, /IllegalAccess/],
+    ] as const) {
+        const fetchImpl: FetchLike = async () => new Response(JSON.stringify(body), { status: 200 });
+        const res = await fetchDsFeedItemIds("tok", CONFIG, fetchImpl);
+        assert.equal(res.ok, false);
+        assert.match(res.error ?? "", match);
+    }
+});
+
+test("feed items preserve order, mark partial failures, fail closed when all fail", async () => {
+    const { fetchDsFeedItems } = await import("../lib/suppliers/aliexpressDs.ts");
+    const calls: string[] = [];
+    const okFetch: FetchLike = async (url) => {
+        const method = new URL(url).searchParams.get("method") ?? "";
+        if (method.includes("feed.itemids")) {
+            return new Response(JSON.stringify(feedFixture(["1005001234567890", "1005002234567890"])), { status: 200 });
+        }
+        calls.push(new URL(url).searchParams.get("product_id") ?? "");
+        return new Response(JSON.stringify(productFixture()), { status: 200 });
+    };
+    const res = await fetchDsFeedItems("tok", CONFIG, okFetch);
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.data?.items.map((i) => i.sourceId), ["1005001234567890", "1005002234567890"]);
+    assert.equal(res.data?.items[0].signalType, "supplier_feed");
+    assert.equal(res.data?.items[0].rank, null);
+    assert.equal(res.data?.items[0].salesVolume, null);
+    assert.equal(res.data?.items[0].price, null);
+    assert.equal(res.data?.items[0].url, "https://www.aliexpress.com/item/1005001234567890.html");
+
+    const partialFetch: FetchLike = async (url) => {
+        const parsed = new URL(url);
+        const method = parsed.searchParams.get("method") ?? "";
+        if (method.includes("feed.itemids")) {
+            return new Response(JSON.stringify(feedFixture(["1111111111", "2222222222"])), { status: 200 });
+        }
+        if (parsed.searchParams.get("product_id") === "1111111111") {
+            return new Response(JSON.stringify({ error_response: { code: "Boom" } }), { status: 200 });
+        }
+        return new Response(JSON.stringify(productFixture()), { status: 200 });
+    };
+    const partial = await fetchDsFeedItems("tok", CONFIG, partialFetch);
+    assert.equal(partial.ok, true);
+    assert.deepEqual(partial.data?.items.map((i) => i.sourceId), ["2222222222"]);
+    assert.match(partial.data?.partialError ?? "", /1 of 2/);
+
+    const allFail: FetchLike = async (url) => {
+        const method = new URL(url).searchParams.get("method") ?? "";
+        if (method.includes("feed.itemids")) {
+            return new Response(JSON.stringify(feedFixture(["1111111111"])), { status: 200 });
+        }
+        return new Response(JSON.stringify({ error_response: { code: "Boom" } }), { status: 200 });
+    };
+    const empty = await fetchDsFeedItems("tok", CONFIG, allFail);
+    assert.equal(empty.ok, false);
+    assert.match(empty.error ?? "", /all feed item details failed/);
+});
+
+test("ds feed refresh writes a snapshot via the shared provider lease", async () => {
+    dsEnv();
+    try {
+        const { refreshTrends } = await import("../lib/trends/service.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                refresh_token_encrypted: encryptSecret("rt-1", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        const fetchImpl: FetchLike = async (url) => {
+            const method = new URL(url).searchParams.get("method") ?? "";
+            if (method.includes("feed.itemids")) {
+                return new Response(JSON.stringify(feedFixture(["1005001234567890"])), { status: 200 });
+            }
+            return new Response(JSON.stringify(productFixture()), { status: 200 });
+        };
+        const result = await refreshTrends(db.asClient(), ["aliexpress_ds"], { fetchImpl });
+        assert.deepEqual(result.refreshed, ["aliexpress_ds"]);
+        const snapshot = db.tables.trend_snapshots.find(
+            (r) => r.source === "aliexpress_ds" && r.scope === "bestseller_feed"
+        );
+        assert.ok(snapshot);
+        const items = (snapshot!.payload as { items: { signalType: string; sourceId: string }[] }).items;
+        assert.equal(items.length, 1);
+        assert.equal(items[0].signalType, "supplier_feed");
+        assert.equal(items[0].sourceId, "1005001234567890");
+        assert.ok(
+            db.rpcCalls.some((c) => c.fn === "try_acquire_refresh_lease" && c.args.p_source === "aliexpress_ds")
+        );
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("explicit empty feed is a successful empty result, not an all-fail", async () => {
+    const { fetchDsFeedItems } = await import("../lib/suppliers/aliexpressDs.ts");
+    const fetchImpl: FetchLike = async (url) => {
+        const method = new URL(url).searchParams.get("method") ?? "";
+        if (method.includes("feed.itemids")) {
+            return new Response(JSON.stringify(feedFixture([])), { status: 200 });
+        }
+        throw new Error("no detail calls expected for an empty feed");
+    };
+    const res = await fetchDsFeedItems("tok", CONFIG, fetchImpl);
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.data?.items, []);
+});
+
+test("unattempted feed items count as failures when the deadline hits", async () => {
+    const { fetchDsFeedItems } = await import("../lib/suppliers/aliexpressDs.ts");
+    const origNow = Date.now;
+    let fakeNow = 1_000_000;
+    Date.now = () => fakeNow;
+    try {
+        const fetchImpl: FetchLike = async (url) => {
+            const method = new URL(url).searchParams.get("method") ?? "";
+            if (method.includes("feed.itemids")) {
+                return new Response(JSON.stringify(feedFixture(["1", "2", "3"])), { status: 200 });
+            }
+            const res = new Response(JSON.stringify(productFixture()), { status: 200 });
+            fakeNow += 20_000;
+            return res;
+        };
+        const res = await fetchDsFeedItems("tok", CONFIG, fetchImpl, fakeNow + 10_000);
+        assert.equal(res.ok, true);
+        assert.equal(res.data?.items.length, 1);
+        assert.match(res.data?.partialError ?? "", /2 of 3/);
+    } finally {
+        Date.now = origNow;
+    }
+});
+
+test("ds feed partial failure writes items plus an error on the snapshot", async () => {
+    dsEnv();
+    try {
+        const { refreshTrends } = await import("../lib/trends/service.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                refresh_token_encrypted: encryptSecret("rt-1", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        const fetchImpl: FetchLike = async (url) => {
+            const parsed = new URL(url);
+            const method = parsed.searchParams.get("method") ?? "";
+            if (method.includes("feed.itemids")) {
+                return new Response(JSON.stringify(feedFixture(["1111111111", "2222222222"])), { status: 200 });
+            }
+            if (parsed.searchParams.get("product_id") === "1111111111") {
+                return new Response(JSON.stringify({ error_response: { code: "Boom" } }), { status: 200 });
+            }
+            return new Response(JSON.stringify(productFixture()), { status: 200 });
+        };
+        const result = await refreshTrends(db.asClient(), ["aliexpress_ds"], { fetchImpl });
+        assert.match(result.errors.aliexpress_ds ?? "", /1 of 2/);
+        const snapshot = db.tables.trend_snapshots.find(
+            (r) => r.source === "aliexpress_ds" && r.scope === "bestseller_feed"
+        );
+        assert.ok(snapshot);
+        const items = (snapshot!.payload as { items: { sourceId: string }[] }).items;
+        assert.deepEqual(items.map((i) => i.sourceId), ["2222222222"]);
+        assert.match(String(snapshot!.error ?? ""), /1 of 2/);
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("exception inside ds refresh is caught, recorded, and the lease released", async () => {
+    dsEnv();
+    try {
+        const { refreshTrends } = await import("../lib/trends/service.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        const client = db.asClient();
+        const origFrom = client.from.bind(client);
+        let providerReads = 0;
+        client.from = ((table: string) => {
+            if (table === "provider_connections" && ++providerReads === 3) {
+                throw new Error("connection read blew up");
+            }
+            return origFrom(table);
+        }) as typeof client.from;
+        const result = await refreshTrends(client, ["aliexpress_ds"], {
+            fetchImpl: async () => {
+                throw new Error("no fetch expected");
+            },
+        });
+        assert.equal(result.errors.aliexpress_ds, "refresh failed");
+        const snapshot = db.tables.trend_snapshots.find(
+            (r) => r.source === "aliexpress_ds" && r.scope === "bestseller_feed"
+        );
+        assert.equal(snapshot?.error, "refresh failed");
+        assert.ok(
+            db.rpcCalls.some(
+                (c) => c.fn === "release_refresh_lease" && c.args.p_source === "aliexpress_ds"
+            )
+        );
     } finally {
         clearDsEnv();
     }

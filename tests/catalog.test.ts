@@ -5,6 +5,7 @@ import {
     buildDraftInsert,
     estimateMarginCOP,
     isValidProviderItemId,
+    sanitizeImportFields,
     sanitizeReviewFields,
     toPublicProduct,
     validatePublishable,
@@ -35,6 +36,29 @@ test("review fields reject malformed and dangerous input", () => {
         sanitizeReviewFields({ images: ["javascript:alert(1)"] }).errors.includes("invalid field: images")
     );
     assert.equal(sanitizeReviewFields({ name: "ok", stock: 3 }).errors.length, 0);
+});
+
+test("optional room/type accept empty and whitespace but reject nonstrings and overflow", () => {
+    const ok = sanitizeReviewFields({ room: "", type: "   " });
+    assert.equal(ok.errors.length, 0);
+    assert.equal(ok.fields.room, "");
+    assert.equal(ok.fields.type, "");
+    assert.ok(sanitizeReviewFields({ room: 5 }).errors.includes("invalid field: room"));
+    assert.ok(
+        sanitizeReviewFields({ type: "x".repeat(81) }).errors.includes("invalid field: type")
+    );
+    const publishable = {
+        name: "n",
+        category: "c",
+        description: "d",
+        images: ["https://x.test/a.jpg"],
+        price_cop: 1,
+        stock: 1,
+        supplier_rights_confirmed: true,
+    };
+    assert.equal(validatePublishable(publishable).valid, true);
+    assert.ok(validatePublishable({ ...publishable, description: "" }).missing.includes("description"));
+    assert.ok(validatePublishable({ ...publishable, category: "" }).missing.includes("category"));
 });
 
 test("imported drafts always start unpublished with stock zero", () => {
@@ -84,8 +108,14 @@ test("public product projection excludes supplier cost fields", () => {
         description: "d",
         stock: 3,
         type: "lampara",
+        customer_shipping_cop: 9000,
+        shipping_estimate_city: "Bogotá",
+        shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        shipping_quote_required: true,
     };
     const product = toPublicProduct(row) as unknown as Record<string, unknown>;
+    assert.equal(product.shippingEstimateCOP, 9000);
+    assert.equal(product.shippingQuoteRequired, true);
     assert.equal(product.price, 100);
     for (const key of Object.keys(product)) {
         assert.ok(!key.includes("supplier"), `leaked field ${key}`);
@@ -102,4 +132,28 @@ test("margin requires explicit cost components", () => {
         estimateMarginCOP({ priceCop: 100, supplierCostCop: null, shippingCop: 10, taxesFeesCop: 5 }),
         null
     );
+});
+
+test("import fields are allowlisted to pricing/shipping columns only", () => {
+    const ok = sanitizeImportFields({
+        price_cop: 24412,
+        supplier_cost_cop: 20000,
+        supplier_shipping_cop: 5000,
+        customer_shipping_cop: 5000,
+        fx_rate: 4200,
+        fx_rate_date: "2026-10-07",
+        shipping_estimate_city: "Bogotá",
+        shipping_checked_at: "2026-10-07T12:00:00.000Z",
+    });
+    assert.deepEqual(ok.errors, []);
+    assert.equal(ok.fields.price_cop, 24412);
+    assert.equal(ok.fields.shipping_checked_at, "2026-10-07T12:00:00.000Z");
+
+    const bad = sanitizeImportFields({ stock: 99, description: "x", supplier_rights_confirmed: true });
+    assert.deepEqual(bad.fields, {});
+    assert.equal(bad.errors.length, 3);
+
+    const invalid = sanitizeImportFields({ customer_shipping_cop: -1, fx_rate: 0 });
+    assert.equal(invalid.fields.customer_shipping_cop, undefined);
+    assert.equal(invalid.errors.length, 2);
 });

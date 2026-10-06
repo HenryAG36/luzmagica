@@ -73,6 +73,10 @@ export function getAliExpressDsEnv(): AliExpressDsEnv | null {
     return { appKey, appSecret, redirectUri };
 }
 
+export function getCjApiKey(): string | null {
+    return process.env.CJ_API_KEY || null;
+}
+
 export function getMeliCategoryIds(): string[] {
     const raw = process.env.MELI_CATEGORY_IDS || "";
     return raw

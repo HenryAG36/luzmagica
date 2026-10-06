@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { decryptSecret, encryptSecret } from "../crypto.ts";
-import { getAliExpressEnv, getEncryptionSecret, getMeliCategoryIds, getMeliEnv } from "../env.ts";
+import { getAliExpressDsEnv, getAliExpressEnv, getCjApiKey, getEncryptionSecret, getMeliCategoryIds, getMeliEnv } from "../env.ts";
 import {
     isFresh,
     LEASE_TTL_SECONDS,
@@ -22,10 +22,12 @@ import type {
     TrendSource,
 } from "./types.ts";
 
-const SOURCES: TrendSource[] = ["mercadolibre", "aliexpress"];
+const SOURCES: TrendSource[] = ["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"];
 const SCOPES: Record<TrendSource, string[]> = {
     mercadolibre: ["search_keywords", "best_sellers"],
     aliexpress: ["hot_products"],
+    aliexpress_ds: ["bestseller_feed"],
+    cjdropshipping: ["trending_products"],
 };
 const PROVIDER_SCOPE = "__provider__";
 
@@ -177,6 +179,12 @@ export function sourceConfigured(source: TrendSource, conn: ProviderConnectionRo
     if (source === "mercadolibre") {
         return !!getMeliEnv() && !!getEncryptionSecret() && !!conn?.access_token_encrypted;
     }
+    if (source === "aliexpress_ds") {
+        return !!getAliExpressDsEnv() && !!getEncryptionSecret() && !!conn?.access_token_encrypted;
+    }
+    if (source === "cjdropshipping") {
+        return !!getCjApiKey() && !!getEncryptionSecret();
+    }
     return !!getAliExpressEnv();
 }
 
@@ -284,16 +292,126 @@ async function refreshAliExpress(
     }
 }
 
+async function refreshAliExpressDs(
+    service: SupabaseClientLike,
+    owner: string,
+    fetchImpl?: FetchLike
+): Promise<string | null> {
+    const acquired = await acquireProviderLease(service, "aliexpress_ds", owner);
+    if (!acquired) return null;
+
+    try {
+        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const dsService = await import("../suppliers/dsService.ts");
+        const ds = await import("../suppliers/aliexpressDs.ts");
+
+        const tokenResult = await dsService.getDsAccessToken(service, fetchImpl, deadlineMs);
+        if ("error" in tokenResult) {
+            await markConnectionError(service, "aliexpress_ds", tokenResult.error);
+            await writeSnapshotError(service, "aliexpress_ds", "bestseller_feed", tokenResult.error);
+            return tokenResult.error;
+        }
+
+        const env = getAliExpressDsEnv();
+        if (!env) return "not configured";
+        const feed = await ds.fetchDsFeedItems(tokenResult.token, env, fetchImpl, deadlineMs);
+        if (!feed.ok || !feed.data) {
+            const message = feed.error || "feed fetch failed";
+            await writeSnapshotError(service, "aliexpress_ds", "bestseller_feed", message, feed.deferSeconds);
+            await markConnectionError(service, "aliexpress_ds", message);
+            return message;
+        }
+        await writeSnapshotSuccess(service, "aliexpress_ds", "bestseller_feed", {
+            items: feed.data.items,
+        });
+        const partial = feed.data.partialError ?? null;
+        if (partial) {
+            await writeSnapshotError(service, "aliexpress_ds", "bestseller_feed", partial);
+            await markConnectionError(service, "aliexpress_ds", partial);
+        }
+        return partial;
+    } catch {
+        const message = "refresh failed";
+        await writeSnapshotError(service, "aliexpress_ds", "bestseller_feed", message);
+        await markConnectionError(service, "aliexpress_ds", message);
+        return message;
+    } finally {
+        await releaseProviderLease(service, "aliexpress_ds", owner);
+    }
+}
+
+async function refreshCjDropshipping(
+    service: SupabaseClientLike,
+    owner: string,
+    fetchImpl?: FetchLike
+): Promise<string | null> {
+    const acquired = await acquireProviderLease(service, "cjdropshipping", owner);
+    if (!acquired) return null;
+
+    try {
+        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const cj = await import("../suppliers/cjdropshipping.ts");
+
+        const tokenResult = await cj.getCjAccessToken(service, fetchImpl, deadlineMs);
+        if ("error" in tokenResult) {
+            await writeSnapshotError(service, "cjdropshipping", "trending_products", tokenResult.error);
+            return tokenResult.error;
+        }
+
+        const remaining = deadlineMs - Date.now();
+        if (remaining <= 1050) {
+            const message = "refresh deadline exceeded";
+            await writeSnapshotError(service, "cjdropshipping", "trending_products", message);
+            await markConnectionError(service, "cjdropshipping", message);
+            return message;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const list = await cj.fetchCjTrendingProducts(tokenResult.token, fetchImpl, deadlineMs);
+        if (!list.ok || !list.data) {
+            const message = list.error || "product list fetch failed";
+            await writeSnapshotError(service, "cjdropshipping", "trending_products", message, list.deferSeconds);
+            await markConnectionError(service, "cjdropshipping", message);
+            return message;
+        }
+        await writeSnapshotSuccess(service, "cjdropshipping", "trending_products", {
+            items: list.data,
+        });
+        return null;
+    } catch {
+        const message = "refresh failed";
+        await writeSnapshotError(service, "cjdropshipping", "trending_products", message);
+        await markConnectionError(service, "cjdropshipping", message);
+        return message;
+    } finally {
+        await releaseProviderLease(service, "cjdropshipping", owner);
+    }
+}
+
 async function refreshSource(
     service: SupabaseClientLike,
     source: TrendSource,
     owner: string,
     fetchImpl?: FetchLike
 ): Promise<string | null> {
-    const conn = await getConnection(service, source);
-    if (!sourceConfigured(source, conn)) return "not configured";
-    if (source === "mercadolibre") return refreshMeli(service, owner, fetchImpl);
-    return refreshAliExpress(service, owner, fetchImpl);
+    try {
+        const conn = await getConnection(service, source);
+        if (!sourceConfigured(source, conn)) return "not configured";
+        if (source === "mercadolibre") return refreshMeli(service, owner, fetchImpl);
+        if (source === "aliexpress_ds") return refreshAliExpressDs(service, owner, fetchImpl);
+        if (source === "cjdropshipping") return refreshCjDropshipping(service, owner, fetchImpl);
+        return refreshAliExpress(service, owner, fetchImpl);
+    } catch {
+        const message = "refresh failed";
+        for (const scope of SCOPES[source]) {
+            try {
+                await writeSnapshotError(service, source, scope, message);
+            } catch {
+                // database unavailable; allSettled callers get the returned error
+            }
+        }
+        return message;
+    }
 }
 
 async function readSnapshots(service: SupabaseClientLike): Promise<SnapshotRow[]> {
@@ -372,7 +490,11 @@ export async function getTrends(
                 message:
                     source === "mercadolibre"
                         ? "Conecta la app de Mercado Libre desde el panel de fuentes."
-                        : "Configura ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET y ALIEXPRESS_TRACKING_ID.",
+                        : source === "aliexpress_ds"
+                          ? "Conecta la app AliExpress DS desde el panel de fuentes."
+                          : source === "cjdropshipping"
+                            ? "Configura CJ_API_KEY."
+                            : "Configura ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET y ALIEXPRESS_TRACKING_ID.",
             });
         } else if (hasError) {
             sources.push({

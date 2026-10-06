@@ -78,6 +78,13 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
                                 </span>
                             )}
                         </div>
+                        {product.shippingQuoteRequired && (
+                            <p className="text-[10px] text-muted mt-1">
+                                {product.shippingEstimateCOP != null
+                                    ? `Total est. ${formatCOP(product.price + product.shippingEstimateCOP)} con envío${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""} (por unidad)`
+                                    : "envío internacional pendiente de cotización"}
+                            </p>
+                        )}
                     </div>
                 </div>
             </Link>

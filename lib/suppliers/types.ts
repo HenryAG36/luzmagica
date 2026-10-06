@@ -19,3 +19,25 @@ export interface DsProduct {
     deliveryTimeDays: number | null;
     sourceUrl: string;
 }
+
+export interface DsFreightOption {
+    code: string | null;
+    company: string | null;
+    feeUsd: number | null;
+    feeCurrency: string | null;
+    feeLabel: string | null;
+    minDays: number | null;
+    maxDays: number | null;
+    availableStock: number | null;
+    freeShipping: boolean;
+    ddpIncludesVatTax: boolean;
+}
+
+export interface DsFreightQuote {
+    productId: string;
+    skuId: string;
+    options: DsFreightOption[];
+    destination: string;
+    quantity: number;
+    checkedAt: string;
+}

@@ -4,7 +4,7 @@ import { getServiceRoleClient } from "@/lib/supabase/server";
 import { refreshTrends, getTrends } from "@/lib/trends/service";
 import type { TrendSource } from "@/lib/trends/types";
 
-const VALID_SOURCES = new Set<TrendSource>(["mercadolibre", "aliexpress"]);
+const VALID_SOURCES = new Set<TrendSource>(["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"]);
 
 export async function POST(request: Request) {
     const auth = await authorizeAdmin();
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "service unavailable" }, { status: 503 });
     }
 
-    let requested: TrendSource[] = ["mercadolibre", "aliexpress"];
+    let requested: TrendSource[] = ["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"];
     try {
         const body = await request.json();
         if (Array.isArray(body?.sources)) {

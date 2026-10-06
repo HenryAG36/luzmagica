@@ -1,6 +1,6 @@
-export type TrendSource = "mercadolibre" | "aliexpress";
+export type TrendSource = "mercadolibre" | "aliexpress" | "aliexpress_ds" | "cjdropshipping";
 
-export type SignalType = "search_keyword" | "best_seller_rank" | "hot_product";
+export type SignalType = "search_keyword" | "best_seller_rank" | "hot_product" | "supplier_feed" | "supplier_trending";
 
 export interface TrendKeyword {
     keyword: string;
@@ -20,6 +20,7 @@ export interface TrendItem {
     currency: string | null;
     rank: number | null;
     salesVolume: number | null;
+    listingCount?: number | null;
     url: string | null;
     category: string | null;
 }

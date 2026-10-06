@@ -1,9 +1,10 @@
 import { createHmac, randomBytes } from "crypto";
 import { fetchJson } from "../trends/http.ts";
 import type { FetchLike } from "../trends/http.ts";
-import type { DsProduct, DsSku } from "./types.ts";
+import type { TrendItem } from "../trends/types.ts";
+import type { DsFreightOption, DsFreightQuote, DsProduct, DsSku } from "./types.ts";
 
-export type { DsProduct, DsSku } from "./types.ts";
+export type { DsFreightOption, DsFreightQuote, DsProduct, DsSku } from "./types.ts";
 
 const API_BASE = "https://api-sg.aliexpress.com";
 const REST_BASE = `${API_BASE}/rest`;
@@ -369,4 +370,313 @@ export async function fetchDsProduct(
 
 export function buildDsProviderItemId(productId: string, skuId: string): string {
     return `${productId}-${skuId}`;
+}
+
+const FREIGHT_QUERY_API = "aliexpress.ds.freight.query";
+const FREIGHT_CITY = "Bogota";
+
+function parseUsdFormat(format: unknown): number | null {
+    if (typeof format !== "string") return null;
+    const match = format.match(/^US\s*\$\s*([0-9]+(?:\.[0-9]{1,2})?)$/);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isFinite(value) ? value : null;
+}
+
+function parseIntField(value: unknown): number | null {
+    const n = parseNumber(value);
+    return n !== null && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+function isTruthy(value: unknown): boolean {
+    return value === true || String(value) === "true";
+}
+
+function normalizeFreightOption(raw: unknown): DsFreightOption | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const o = raw as Record<string, unknown>;
+
+    const freeShipping = isTruthy(o.free_shipping);
+    const currency =
+        typeof o.shipping_fee_currency === "string" ? o.shipping_fee_currency : null;
+    const cent = parseNumber(o.shipping_fee_cent);
+    const formatUsd = parseUsdFormat(o.shipping_fee_format);
+
+    if (cent !== null && cent < 0) return null;
+    let feeUsd: number | null = null;
+    if (freeShipping) {
+        if ((cent !== null && cent > 0) || (formatUsd !== null && formatUsd > 0)) return null;
+        feeUsd = 0;
+    } else if (currency === "USD" && cent !== null && cent >= 0) {
+        if (formatUsd === null || Math.abs(formatUsd - cent) > 0.005) {
+            feeUsd = null;
+        } else {
+            feeUsd = cent;
+        }
+    }
+
+    return {
+        code: typeof o.code === "string" && o.code ? o.code.slice(0, 64) : null,
+        company: typeof o.company === "string" && o.company ? o.company.slice(0, 120) : null,
+        feeUsd,
+        feeCurrency: feeUsd !== null ? "USD" : currency,
+        feeLabel:
+            typeof o.shipping_fee_format === "string" && o.shipping_fee_format
+                ? o.shipping_fee_format.slice(0, 32)
+                : null,
+        minDays: parseIntField(o.min_delivery_days),
+        maxDays: parseIntField(o.max_delivery_days),
+        availableStock: parseIntField(o.available_stock),
+        freeShipping,
+        ddpIncludesVatTax: isTruthy(o.ddpIncludeVATTax),
+    };
+}
+
+export function normalizeDsFreightResponse(raw: unknown): DsFreightOption[] | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    const root =
+        typeof body.aliexpress_ds_freight_query_response === "object" &&
+        body.aliexpress_ds_freight_query_response !== null
+            ? (body.aliexpress_ds_freight_query_response as Record<string, unknown>)
+            : body;
+    const result =
+        typeof root.result === "object" && root.result !== null
+            ? (root.result as Record<string, unknown>)
+            : null;
+    if (!result) return null;
+    if (String(result.code) !== "200" || String(result.success) !== "true") return null;
+
+    const rawOptions = Array.isArray(result.delivery_options) ? result.delivery_options : [];
+    const options: DsFreightOption[] = [];
+    for (const item of rawOptions) {
+        const option = normalizeFreightOption(item);
+        if (option) options.push(option);
+    }
+    return options;
+}
+
+export function getDsFreightResponseError(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return "malformed response";
+    const body = raw as Record<string, unknown>;
+    const err = body.error_response;
+    if (typeof err === "object" && err !== null) {
+        const code = (err as Record<string, unknown>).code;
+        return `provider error ${typeof code === "string" || typeof code === "number" ? code : "unknown"}`;
+    }
+    const root =
+        typeof body.aliexpress_ds_freight_query_response === "object" &&
+        body.aliexpress_ds_freight_query_response !== null
+            ? (body.aliexpress_ds_freight_query_response as Record<string, unknown>)
+            : body;
+    if (root.code !== undefined && String(root.code) !== "0") {
+        return `provider error ${String(root.code)}`;
+    }
+    const result =
+        typeof root.result === "object" && root.result !== null
+            ? (root.result as Record<string, unknown>)
+            : null;
+    if (!result) return "malformed response";
+    if (String(result.code) !== "200") {
+        return `provider freight code ${String(result.code)}`;
+    }
+    return null;
+}
+
+export async function fetchDsFreightQuote(
+    accessToken: string,
+    productId: string,
+    skuId: string,
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<DsFreightQuote>> {
+    const url = buildSignedRequestUrl(
+        FREIGHT_QUERY_API,
+        config,
+        {
+            queryDeliveryReq: JSON.stringify({
+                quantity: "1",
+                shipToCountry: "CO",
+                productId,
+                selectedSkuId: skuId,
+                city: FREIGHT_CITY,
+                language: "es",
+                currency: "USD",
+            }),
+        },
+        accessToken
+    );
+    const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getDsFreightResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const options = normalizeDsFreightResponse(res.data);
+    if (!options) return { ok: false, error: "freight response malformed" };
+    return {
+        ok: true,
+        data: {
+            productId,
+            skuId,
+            options,
+            destination: FREIGHT_CITY,
+            quantity: 1,
+            checkedAt: new Date().toISOString(),
+        },
+    };
+}
+
+const FEED_ITEMIDS_API = "aliexpress.ds.feed.itemids.get";
+const FEED_NAME = "DS bestseller";
+const FEED_MAX_ITEMS = 10;
+const FEED_ID_PATTERN = /^\d{1,20}$/;
+
+export interface DsFeedPage {
+    productIds: string[];
+    total: number | null;
+    searchId: string | null;
+}
+
+export function getDsFeedResponseError(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return "malformed response";
+    const body = raw as Record<string, unknown>;
+    const err = body.error_response;
+    if (typeof err === "object" && err !== null) {
+        const code = (err as Record<string, unknown>).code;
+        return `provider error ${typeof code === "string" || typeof code === "number" ? code : "unknown"}`;
+    }
+    const root =
+        typeof body.aliexpress_ds_feed_itemids_get_response === "object" &&
+        body.aliexpress_ds_feed_itemids_get_response !== null
+            ? (body.aliexpress_ds_feed_itemids_get_response as Record<string, unknown>)
+            : body;
+    if (root.code !== undefined && String(root.code) !== "0") {
+        return `provider error ${String(root.code)}`;
+    }
+    if (root.ret !== undefined && String(root.ret) !== "true") {
+        return `provider ret ${String(root.ret)}`;
+    }
+    if (root.rsp_code !== undefined && String(root.rsp_code) !== "200") {
+        return `provider rsp_code ${String(root.rsp_code)}`;
+    }
+    return null;
+}
+
+export function normalizeDsFeedItemIds(raw: unknown): DsFeedPage | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    const root =
+        typeof body.aliexpress_ds_feed_itemids_get_response === "object" &&
+        body.aliexpress_ds_feed_itemids_get_response !== null
+            ? (body.aliexpress_ds_feed_itemids_get_response as Record<string, unknown>)
+            : body;
+    const result =
+        typeof root.result === "object" && root.result !== null
+            ? (root.result as Record<string, unknown>)
+            : null;
+    if (!result) return null;
+    const products = Array.isArray(result.products) ? result.products : [];
+    const ids: string[] = [];
+    for (const entry of products) {
+        const id = String(entry ?? "");
+        if (!FEED_ID_PATTERN.test(id)) continue;
+        if (!ids.includes(id)) ids.push(id);
+        if (ids.length >= FEED_MAX_ITEMS) break;
+    }
+    return {
+        productIds: ids,
+        total: parseIntField(result.total),
+        searchId: typeof result.search_id === "string" ? result.search_id.slice(0, 64) : null,
+    };
+}
+
+export async function fetchDsFeedItemIds(
+    accessToken: string,
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<DsFeedPage>> {
+    const url = buildSignedRequestUrl(
+        FEED_ITEMIDS_API,
+        config,
+        { page_size: String(FEED_MAX_ITEMS), feed_name: FEED_NAME },
+        accessToken
+    );
+    const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getDsFeedResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const page = normalizeDsFeedItemIds(res.data);
+    if (!page) return { ok: false, error: "feed response malformed" };
+    return { ok: true, data: page };
+}
+
+function feedItemFromProduct(product: DsProduct, productId: string): TrendItem {
+    const singleSku = product.skus.length === 1 ? product.skus[0] : null;
+    const price = singleSku ? singleSku.offerSalePrice ?? singleSku.skuPrice : null;
+    const currency = singleSku
+        ? singleSku.currency ?? product.currency
+        : product.currency;
+    return {
+        id: `aliexpress_ds-${productId}`,
+        source: "aliexpress_ds",
+        sourceId: productId,
+        signalType: "supplier_feed",
+        title: product.title,
+        image: product.images[0] ?? null,
+        price,
+        currency: currency === "USD" ? currency : null,
+        rank: null,
+        salesVolume: null,
+        listingCount: null,
+        url: `https://www.aliexpress.com/item/${encodeURIComponent(productId)}.html`,
+        category: product.categoryId,
+    };
+}
+
+export async function fetchDsFeedItems(
+    accessToken: string,
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<{ items: TrendItem[]; partialError?: string }>> {
+    const feed = await fetchDsFeedItemIds(accessToken, config, fetchImpl, deadlineMs);
+    if (!feed.ok || !feed.data) {
+        return { ok: false, error: feed.error || "feed fetch failed", deferSeconds: feed.deferSeconds };
+    }
+    if (feed.data.productIds.length === 0) {
+        return { ok: true, data: { items: [] } };
+    }
+
+    const items: TrendItem[] = [];
+    let failed = 0;
+    const total = feed.data.productIds.length;
+    for (let i = 0; i < total; i += 1) {
+        if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+            failed += total - i;
+            break;
+        }
+        const detail = await fetchDsProduct(accessToken, feed.data.productIds[i], config, fetchImpl, deadlineMs);
+        if (detail.ok && detail.data) {
+            items.push(feedItemFromProduct(detail.data, feed.data.productIds[i]));
+        } else {
+            failed += 1;
+        }
+    }
+
+    if (items.length === 0) {
+        return { ok: false, error: "all feed item details failed" };
+    }
+    return {
+        ok: true,
+        data: {
+            items,
+            partialError:
+                failed > 0 ? `${failed} of ${total} item details failed` : undefined,
+        },
+    };
 }

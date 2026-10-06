@@ -162,6 +162,39 @@ export default function ProductDetailClient({
                                 )}
                             </div>
 
+                            {product.shippingQuoteRequired && (
+                                <div className="mb-6 p-3.5 rounded-2xl bg-surface-card border border-white/10 text-xs space-y-1.5">
+                                    <div className="flex justify-between text-muted">
+                                        <span>Producto</span>
+                                        <span className="text-white">{formatCOP(product.price)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-muted">
+                                        <span>
+                                            Envío estimado por unidad{product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""}
+                                        </span>
+                                        {product.shippingEstimateCOP == null ? (
+                                            <span className="text-amber-300">Pendiente de cotización</span>
+                                        ) : (
+                                            <span className="text-white">{formatCOP(product.shippingEstimateCOP)}</span>
+                                        )}
+                                    </div>
+                                    {product.shippingEstimateCOP != null && (
+                                        <div className="flex justify-between text-white font-semibold pt-1.5 border-t border-white/10">
+                                            <span>Total estimado</span>
+                                            <span>{formatCOP(product.price + product.shippingEstimateCOP)}</span>
+                                        </div>
+                                    )}
+                                    <p className="text-[10px] text-muted">
+                                        Proveedor internacional: la cotización de envío es indicativa por unidad
+                                        {product.shippingEstimateCity ? ` para ${product.shippingEstimateCity}` : ""}
+                                        {product.shippingCheckedAt
+                                            ? `, consultada el ${new Date(product.shippingCheckedAt).toLocaleDateString("es-CO")}`
+                                            : ""}
+                                        . No incluye promesas de cobertura nacional.
+                                    </p>
+                                </div>
+                            )}
+
                             <p className="text-muted leading-relaxed mb-8">
                                 {product.description}
                             </p>
@@ -235,7 +268,11 @@ export default function ProductDetailClient({
                             <div className="mt-8 grid grid-cols-2 gap-4">
                                 <div className="flex items-center gap-3 text-sm text-muted">
                                     <Truck className="w-4 h-4 text-secondary" />
-                                    <span>Envío en 2-5 días</span>
+                                    <span>
+                                        {product.shippingQuoteRequired
+                                            ? "Envío internacional (estimado por unidad)"
+                                            : "Envío en 2-5 días"}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-3 text-sm text-muted">
                                     <Shield className="w-4 h-4 text-primary" />

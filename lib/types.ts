@@ -11,6 +11,10 @@ export interface Product {
     stock: number;
     type: string;
     supplierCostCOP?: number; // Dropshipping wholesale cost
+    shippingEstimateCOP?: number | null;
+    shippingEstimateCity?: string | null;
+    shippingCheckedAt?: string | null;
+    shippingQuoteRequired?: boolean;
 }
 
 export interface CartItem {

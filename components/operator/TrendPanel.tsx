@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
     TrendingUp,
@@ -17,12 +17,16 @@ import Image from "next/image";
 import { formatCOP } from "@/lib/utils";
 import type { TrendItem, TrendsPayload } from "@/lib/trends/types";
 import type { CatalogRow } from "@/lib/catalog/validate";
-import type { DsProduct } from "@/lib/suppliers/types";
+import type { DsFreightQuote, DsProduct } from "@/lib/suppliers/types";
 import { isHttpUrl } from "@/lib/catalog/validate";
+import { describePublishError } from "@/lib/catalog/publishFeedback";
+import { computeActualContribution, computePriceSuggestion, resolveUsdAmount, usdToCop } from "@/lib/catalog/pricing";
 
 const SOURCE_LABELS: Record<string, string> = {
     mercadolibre: "Mercado Libre",
     aliexpress: "AliExpress",
+    aliexpress_ds: "AliExpress DS",
+    cjdropshipping: "CJ Dropshipping",
 };
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -79,10 +83,21 @@ export default function TrendPanel() {
     const [reviewingId, setReviewingId] = useState<string | null>(null);
     const [reviewForm, setReviewForm] = useState<ReviewForm | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [publishError, setPublishError] = useState("");
     const [dsProductId, setDsProductId] = useState("");
     const [dsProduct, setDsProduct] = useState<DsProduct | null>(null);
     const [dsSkuId, setDsSkuId] = useState("");
     const [dsBusy, setDsBusy] = useState(false);
+    const [dsFreight, setDsFreight] = useState<DsFreightQuote | null>(null);
+    const [dsFreightLoading, setDsFreightLoading] = useState(false);
+    const [dsFreightError, setDsFreightError] = useState("");
+    const [dsFreightIdx, setDsFreightIdx] = useState<number | null>(null);
+    const [dsFxRate, setDsFxRate] = useState("");
+    const [dsFxRateDate, setDsFxRateDate] = useState("");
+    const [dsMargin, setDsMargin] = useState(15);
+    const [dsPrice, setDsPrice] = useState("");
+    const [dsPriceDirty, setDsPriceDirty] = useState(false);
+    const dsFreightSeq = useRef(0);
     const searchParams = useSearchParams();
     const dsConnectResult = searchParams.get("ae_ds");
 
@@ -170,16 +185,28 @@ export default function TrendPanel() {
     };
 
     const handleDsLookup = async () => {
+        const id = dsProductId.trim();
+        if (!id) return;
+        await runDsLookup(id);
+    };
+
+    const runDsLookup = async (productId: string) => {
         setDsBusy(true);
         setError("");
         setNotice("");
         setDsProduct(null);
         setDsSkuId("");
+        dsFreightSeq.current += 1;
+        setDsFreight(null);
+        setDsFreightError("");
+        setDsFreightIdx(null);
+        setDsPrice("");
+        setDsPriceDirty(false);
         try {
             const res = await fetch("/api/admin/suppliers/aliexpress-ds/product", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ productId: dsProductId.trim() }),
+                body: JSON.stringify({ productId }),
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -193,6 +220,123 @@ export default function TrendPanel() {
         } finally {
             setDsBusy(false);
         }
+    };
+
+    const loadDsFreight = useCallback(async (productId: string, skuId: string) => {
+        const seq = ++dsFreightSeq.current;
+        setDsFreightLoading(true);
+        setDsFreightError("");
+        setDsFreight(null);
+        setDsFreightIdx(null);
+        try {
+            const res = await fetch("/api/admin/suppliers/aliexpress-ds/freight", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ productId, skuId }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (seq !== dsFreightSeq.current) return;
+            if (!res.ok) {
+                setDsFreightError(body.error || "No se pudo consultar el flete.");
+                return;
+            }
+            setDsFreight(body.quote ?? null);
+        } catch {
+            if (seq === dsFreightSeq.current) setDsFreightError("Error de red al consultar el flete.");
+        } finally {
+            if (seq === dsFreightSeq.current) setDsFreightLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (dsProduct && dsSkuId) {
+            void loadDsFreight(dsProduct.productId, dsSkuId);
+        } else {
+            dsFreightSeq.current += 1;
+            setDsFreight(null);
+            setDsFreightError("");
+            setDsFreightLoading(false);
+            setDsFreightIdx(null);
+        }
+        setDsPrice("");
+        setDsPriceDirty(false);
+    }, [dsProduct, dsSkuId, loadDsFreight]);
+
+    const dsSelectedSku = dsProduct
+        ? dsProduct.skus.find((s) => s.skuId === dsSkuId) ??
+          (dsProduct.skus.length === 1 ? dsProduct.skus[0] : null)
+        : null;
+    const dsCurrentQuote =
+        dsFreight !== null &&
+        dsProduct !== null &&
+        dsSelectedSku !== null &&
+        dsFreight.productId === dsProduct.productId &&
+        dsFreight.skuId === dsSelectedSku.skuId
+            ? dsFreight
+            : null;
+    const dsSelectedOption =
+        dsCurrentQuote && dsFreightIdx !== null
+            ? dsCurrentQuote.options[dsFreightIdx] ?? null
+            : null;
+    const dsFxRateNum = Number(dsFxRate);
+    const dsFxReady =
+        dsFxRate.trim() !== "" &&
+        Number.isFinite(dsFxRateNum) &&
+        dsFxRateNum > 0 &&
+        /^\d{4}-\d{2}-\d{2}$/.test(dsFxRateDate);
+    const dsSkuInStock =
+        dsSelectedSku !== null &&
+        (dsSelectedSku.availableStock === null || dsSelectedSku.availableStock > 0);
+    const dsSupplierUsd = dsSkuInStock
+        ? resolveUsdAmount(
+              dsSelectedSku
+                  ? dsSelectedSku.offerSalePrice ?? dsSelectedSku.skuPrice
+                  : null,
+              dsSelectedSku?.currency ?? null,
+              dsProduct?.currency ?? null
+          )
+        : null;
+    const dsCostCop =
+        dsFxReady && dsSupplierUsd !== null ? usdToCop(dsSupplierUsd, dsFxRateNum) : null;
+    const dsShipCop =
+        dsFxReady && dsSelectedOption?.feeUsd != null
+            ? usdToCop(dsSelectedOption.feeUsd, dsFxRateNum)
+            : null;
+    const dsSuggestion =
+        dsCostCop !== null && dsShipCop !== null
+            ? computePriceSuggestion({
+                  supplierCostCop: dsCostCop,
+                  shippingCop: dsShipCop,
+                  taxesFeesCop: null,
+                  paymentFeePercent: null,
+                  targetMarginPercent: dsMargin,
+              })
+            : null;
+    const dsPriceNum = Number(dsPrice);
+    const dsActualContribution =
+        dsPrice.trim() !== "" && Number.isFinite(dsPriceNum)
+            ? computeActualContribution(dsPriceNum, dsCostCop)
+            : null;
+
+    const dsSuggestedPrice = dsSuggestion?.customerProduct ?? null;
+    useEffect(() => {
+        if (!dsPriceDirty) {
+            setDsPrice(dsSuggestedPrice !== null ? String(dsSuggestedPrice) : "");
+        }
+    }, [dsSuggestedPrice, dsPriceDirty]);
+
+    const applyDsSuggestion = (marginPercent: number) => {
+        const suggestion =
+            dsCostCop !== null && dsShipCop !== null
+                ? computePriceSuggestion({
+                      supplierCostCop: dsCostCop,
+                      shippingCop: dsShipCop,
+                      taxesFeesCop: null,
+                      paymentFeePercent: null,
+                      targetMarginPercent: marginPercent,
+                  })
+                : null;
+        if (suggestion) setDsPrice(String(suggestion.customerProduct));
     };
 
     const handleDsImport = async () => {
@@ -209,6 +353,24 @@ export default function TrendPanel() {
         }
         setDsBusy(true);
         setError("");
+
+        const importFields: Record<string, unknown> = {};
+        if (dsFxReady) {
+            importFields.fx_rate = dsFxRateNum;
+            importFields.fx_rate_date = dsFxRateDate;
+        }
+        if (dsCostCop !== null) importFields.supplier_cost_cop = dsCostCop;
+        if (dsShipCop !== null) {
+            importFields.supplier_shipping_cop = dsShipCop;
+            importFields.customer_shipping_cop = dsShipCop;
+        }
+        if (dsCurrentQuote) {
+            importFields.shipping_estimate_city = dsCurrentQuote.destination;
+            importFields.shipping_checked_at = dsCurrentQuote.checkedAt;
+        }
+        const priceCop = Number.isSafeInteger(dsPriceNum) && dsPriceNum > 0 ? dsPriceNum : null;
+        if (priceCop !== null) importFields.price_cop = priceCop;
+
         try {
             const res = await fetch("/api/admin/catalog", {
                 method: "POST",
@@ -221,6 +383,7 @@ export default function TrendPanel() {
                     images: dsProduct.images,
                     listingPrice: chosen?.offerSalePrice ?? chosen?.skuPrice ?? null,
                     listingCurrency: chosen?.currency ?? dsProduct.currency,
+                    fields: Object.keys(importFields).length > 0 ? importFields : undefined,
                     supplierVariant: chosen
                         ? {
                               product_id: dsProduct.productId,
@@ -232,6 +395,27 @@ export default function TrendPanel() {
                               currency_code: chosen.currency,
                               delivery_time_days: dsProduct.deliveryTimeDays,
                               provider_reported_sales: dsProduct.providerReportedSales,
+                              freight:
+                                  dsCurrentQuote && dsSelectedOption
+                                      ? {
+                                            method: "aliexpress.ds.freight.query",
+                                            checked_at: dsCurrentQuote.checkedAt,
+                                            destination: dsCurrentQuote.destination,
+                                            quantity: dsCurrentQuote.quantity,
+                                            option_code: dsSelectedOption.code,
+                                            company: dsSelectedOption.company,
+                                            min_days: dsSelectedOption.minDays,
+                                            max_days: dsSelectedOption.maxDays,
+                                            fee_usd: dsSelectedOption.feeUsd,
+                                            fee_label: dsSelectedOption.feeLabel,
+                                            free_shipping: dsSelectedOption.freeShipping,
+                                            ddp_includes_vat_tax: dsSelectedOption.ddpIncludesVatTax,
+                                            fx_rate: dsFxReady ? dsFxRateNum : null,
+                                            fx_rate_date: dsFxReady ? dsFxRateDate : null,
+                                            target_margin_percent: dsMargin,
+                                            provisional: dsSuggestion?.provisional ?? null,
+                                        }
+                                      : null,
                           }
                         : null,
                 }),
@@ -275,7 +459,7 @@ export default function TrendPanel() {
     const handlePublish = async (draft: CatalogRow) => {
         if (!reviewForm) return;
         setSubmitting(true);
-        setError("");
+        setPublishError("");
         try {
             const res = await fetch(`/api/admin/catalog/${draft.id}`, {
                 method: "PATCH",
@@ -285,18 +469,15 @@ export default function TrendPanel() {
             const body = await res.json().catch(() => ({}));
             if (res.ok) {
                 setNotice(`"${draft.name}" publicado en el catálogo.`);
+                setPublishError("");
                 setReviewingId(null);
                 setReviewForm(null);
                 setDrafts(drafts.filter((d) => d.id !== draft.id));
             } else {
-                setError(
-                    body.missing
-                        ? `Faltan campos para publicar: ${(body.missing as string[]).join(", ")}`
-                        : body.error || "No se pudo publicar."
-                );
+                setPublishError(describePublishError(body));
             }
         } catch {
-            setError("Error de red al publicar.");
+            setPublishError("Error de red al publicar.");
         } finally {
             setSubmitting(false);
         }
@@ -320,6 +501,13 @@ export default function TrendPanel() {
 
     const meliItems = data?.items.filter((i) => i.source === "mercadolibre") ?? [];
     const aliItems = data?.items.filter((i) => i.source === "aliexpress") ?? [];
+    const dsFeedItems = data?.items.filter((i) => i.source === "aliexpress_ds") ?? [];
+    const cjItems = data?.items.filter((i) => i.source === "cjdropshipping") ?? [];
+
+    const handleDsFeedImport = (item: TrendItem) => {
+        setDsProductId(item.sourceId);
+        void runDsLookup(item.sourceId);
+    };
 
     const dsResultMessage = dsConnectResult
         ? ({
@@ -468,6 +656,46 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
+                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                            Feed de más vendidos · AliExpress DS (proveedor)
+                        </h4>
+                        <p className="text-[11px] text-muted mb-4">
+                            Orden y contenido reportados por el feed del proveedor; período de ventas no verificado. Consultar un item ejecuta la búsqueda DS para elegir variante, flete y precio.
+                        </p>
+                        {dsFeedItems.length === 0 ? (
+                            <p className="text-xs text-muted">
+                                Sin datos. Conecta AliExpress DS para activar esta fuente.
+                            </p>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {dsFeedItems.map((item) => (
+                                    <TrendCard key={item.id} item={item} onImport={handleDsFeedImport} importing={dsBusy} actionLabel="Consultar" />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="glass rounded-3xl p-6 md:p-8">
+                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                            Productos en tendencia · CJ Dropshipping (proveedor)
+                        </h4>
+                        <p className="text-[11px] text-muted mb-4">
+                            Señal de catálogo del proveedor: cantidad de publicaciones listadas. No representa ventas ni demanda verificada. Los precios de lista no son costo mayorista.
+                        </p>
+                        {cjItems.length === 0 ? (
+                            <p className="text-xs text-muted">
+                                Sin datos. Configura CJ_API_KEY para activar esta fuente.
+                            </p>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {cjItems.map((item) => (
+                                    <TrendCard key={item.id} item={item} onImport={handleImport} importing={importingId === item.id} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="glass rounded-3xl p-6 md:p-8">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
                             <h4 className="font-heading text-base font-bold text-white">
                                 Proveedor · AliExpress Dropshipping
@@ -533,17 +761,26 @@ export default function TrendPanel() {
                                 {dsProduct.skus.length > 1 ? (
                                     <select
                                         value={dsSkuId}
-                                        onChange={(e) => setDsSkuId(e.target.value)}
+                                        onChange={(e) => {
+                                            setDsSkuId(e.target.value);
+                                            setDsPrice("");
+                                            setDsPriceDirty(false);
+                                        }}
                                         className={inputClass}
                                     >
                                         <option value="">Selecciona variante (SKU)...</option>
                                         {dsProduct.skus.map((sku) => (
-                                            <option key={sku.skuId} value={sku.skuId}>
+                                            <option
+                                                key={sku.skuId}
+                                                value={sku.skuId}
+                                                disabled={sku.availableStock === 0}
+                                            >
                                                 {sku.skuAttr || sku.skuId}
                                                 {sku.offerSalePrice != null || sku.skuPrice != null
                                                     ? ` · ${sku.offerSalePrice ?? sku.skuPrice} ${sku.currency ?? ""}`
                                                     : ""}
                                                 {sku.availableStock != null ? ` · stock ${sku.availableStock}` : ""}
+                                                {sku.availableStock === 0 ? " · agotado" : ""}
                                             </option>
                                         ))}
                                     </select>
@@ -552,8 +789,173 @@ export default function TrendPanel() {
                                         Variante: {dsProduct.skus[0].skuAttr || dsProduct.skus[0].skuId}
                                         {dsProduct.skus[0].availableStock != null &&
                                             ` · stock ${dsProduct.skus[0].availableStock}`}
+                                        {dsProduct.skus[0].availableStock === 0 && " · agotado"}
                                     </p>
                                 ) : null}
+
+                                {dsSelectedSku && (
+                                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
+                                        <p className="text-[11px] font-semibold text-white">
+                                            Flete al cliente · cotización indicativa por unidad a {dsCurrentQuote?.destination ?? "Bogotá"}
+                                        </p>
+                                        {dsFreightLoading ? (
+                                            <p className="text-[11px] text-muted animate-pulse">Consultando opciones de envío...</p>
+                                        ) : dsFreightError ? (
+                                            <div className="flex items-center gap-2">
+                                                <p role="alert" className="text-[11px] text-red-300">{dsFreightError}</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void loadDsFreight(dsProduct.productId, dsSelectedSku.skuId)}
+                                                    className="text-[11px] text-primary hover:underline shrink-0"
+                                                >
+                                                    Reintentar
+                                                </button>
+                                            </div>
+                                        ) : dsCurrentQuote && dsCurrentQuote.options.length === 0 ? (
+                                            <p className="text-[11px] text-amber-300">
+                                                El proveedor no devolvió opciones de envío. El envío quedará pendiente en el borrador.
+                                            </p>
+                                        ) : dsCurrentQuote ? (
+                                            <div className="space-y-1.5">
+                                                {dsCurrentQuote.options.map((option, idx) => {
+                                                    const optionOutOfStock = option.availableStock === 0;
+                                                    return (
+                                                        <label
+                                                            key={`${option.code ?? idx}`}
+                                                            className={`flex items-start gap-2 p-2 rounded-lg border text-[11px] transition-colors ${
+                                                                dsFreightIdx === idx
+                                                                    ? "border-primary/50 bg-primary/10"
+                                                                    : "border-white/10 hover:border-white/20"
+                                                            } ${optionOutOfStock ? "opacity-50" : "cursor-pointer"}`}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="ds-freight"
+                                                                checked={dsFreightIdx === idx}
+                                                                disabled={optionOutOfStock}
+                                                                onChange={() => setDsFreightIdx(idx)}
+                                                                className="mt-0.5 accent-primary"
+                                                            />
+                                                            <span className="min-w-0">
+                                                                <span className="text-white font-medium block">
+                                                                    {option.company || option.code || "Opción de envío"}
+                                                                </span>
+                                                                <span className="text-muted">
+                                                                    {option.feeUsd !== null
+                                                                        ? option.feeUsd === 0
+                                                                            ? "Envío gratis del proveedor"
+                                                                            : `${option.feeLabel ?? `US $${option.feeUsd}`}`
+                                                                        : "Tarifa no disponible"}
+                                                                    {option.minDays != null && option.maxDays != null &&
+                                                                        ` · ${option.minDays}–${option.maxDays} días`}
+                                                                    {option.availableStock != null &&
+                                                                        ` · stock ${option.availableStock}`}
+                                                                    {optionOutOfStock && " · agotado"}
+                                                                    {option.ddpIncludesVatTax && " · impuestos incluidos según proveedor"}
+                                                                </span>
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                )}
+
+                                {dsSelectedSku && (
+                                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
+                                        <p className="text-[11px] font-semibold text-white">Costos y precio</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[10px] text-muted block mb-1">Tasa USD→COP *</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step="0.01"
+                                                    value={dsFxRate}
+                                                    onChange={(e) => setDsFxRate(e.target.value)}
+                                                    placeholder="Ej: 4200"
+                                                    className={inputClass}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-muted block mb-1">Fecha de la tasa *</label>
+                                                <input
+                                                    type="date"
+                                                    value={dsFxRateDate}
+                                                    onChange={(e) => setDsFxRateDate(e.target.value)}
+                                                    className={inputClass}
+                                                />
+                                            </div>
+                                        </div>
+                                        {!dsFxReady && (
+                                            <p className="text-[10px] text-amber-300">
+                                                Ingresa una tasa USD→COP manual y su fecha para calcular costos en pesos. No hay proveedor de tasa automático.
+                                            </p>
+                                        )}
+                                        {dsFxReady && (
+                                            <p className="text-[10px] text-muted">
+                                                {dsSupplierUsd !== null && dsCostCop !== null
+                                                    ? `Costo proveedor: ${dsSupplierUsd} USD → ${formatCOP(dsCostCop)}`
+                                                    : !dsSkuInStock
+                                                      ? "Variante agotada: sin sugerencia de costo."
+                                                      : "La variante no reporta precio en USD; no se convierte como dólar."}
+                                                {dsSelectedOption &&
+                                                    (dsSelectedOption.feeUsd !== null && dsShipCop !== null
+                                                        ? ` · Flete: ${dsSelectedOption.feeUsd} USD → ${formatCOP(dsShipCop)}`
+                                                        : " · Flete sin tarifa disponible")}
+                                            </p>
+                                        )}
+                                        <div>
+                                            <label className="text-[10px] text-muted block mb-1">
+                                                Margen de contribución objetivo: {dsMargin}%
+                                            </label>
+                                            <input
+                                                type="range"
+                                                min={15}
+                                                max={50}
+                                                step={1}
+                                                value={dsMargin}
+                                                onChange={(e) => {
+                                                    const v = Number(e.target.value);
+                                                    setDsMargin(v);
+                                                    setDsPriceDirty(false);
+                                                    applyDsSuggestion(v);
+                                                }}
+                                                className="w-full accent-primary"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-muted block mb-1">
+                                                Precio de venta del producto COP (envío se cobra aparte)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={dsPrice}
+                                                onChange={(e) => {
+                                                    setDsPrice(e.target.value);
+                                                    setDsPriceDirty(true);
+                                                }}
+                                                placeholder="Edita o mueve el slider para sugerir"
+                                                className={inputClass}
+                                            />
+                                        </div>
+                                        {dsSuggestion !== null && (
+                                            <p className="text-[10px] text-muted">
+                                                Sugerencia a {dsMargin}%: producto {formatCOP(dsSuggestion.customerProduct)} + envío {formatCOP(dsSuggestion.customerShipping)} = {formatCOP(dsSuggestion.total)} · contribución {formatCOP(dsSuggestion.contributionCop)}.
+                                                {dsSuggestion.provisional &&
+                                                    " Provisional: impuestos y comisión de pasarela desconocidos no incluidos."}
+                                            </p>
+                                        )}
+                                        {dsActualContribution !== null && (
+                                            <p className={`text-[10px] font-mono ${dsActualContribution >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                                Contribución estimada al precio ingresado: {formatCOP(dsActualContribution)} (producto − costo proveedor; envío se cobra aparte; sin impuestos ni comisiones; no garantiza utilidad).
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
                                 <button
                                     onClick={handleDsImport}
                                     disabled={dsBusy || (dsProduct.skus.length > 1 && !dsSkuId)}
@@ -561,6 +963,11 @@ export default function TrendPanel() {
                                 >
                                     {dsBusy ? "Importando..." : "Importar como borrador"}
                                 </button>
+                                {dsSelectedSku && dsShipCop === null && (
+                                    <p className="text-[10px] text-amber-300">
+                                        Sin tarifa de flete válida el producto se importará con envío pendiente, no gratis.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>
@@ -607,6 +1014,7 @@ export default function TrendPanel() {
                                                 <div className="flex gap-2 shrink-0">
                                                     <button
                                                         onClick={() => {
+                                                            setPublishError("");
                                                             setReviewingId(isReviewing ? null : draft.id);
                                                             setReviewForm(isReviewing ? null : emptyReview(draft));
                                                         }}
@@ -704,13 +1112,20 @@ export default function TrendPanel() {
                                                         />
                                                         <span>Confirmo que tengo derecho a usar las imágenes y datos del proveedor y que el stock fue verificado antes de publicar. *</span>
                                                     </label>
-                                                    <button
-                                                        onClick={() => handlePublish(draft)}
-                                                        disabled={submitting}
-                                                        className="px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors disabled:opacity-50"
-                                                    >
-                                                        {submitting ? "Publicando..." : "Publicar al catálogo"}
-                                                    </button>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <button
+                                                            onClick={() => handlePublish(draft)}
+                                                            disabled={submitting}
+                                                            className="px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                                                        >
+                                                            {submitting ? "Publicando..." : "Publicar al catálogo"}
+                                                        </button>
+                                                        {publishError && (
+                                                            <p role="alert" className="text-xs text-red-300">
+                                                                {publishError}
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -729,10 +1144,12 @@ function TrendCard({
     item,
     onImport,
     importing,
+    actionLabel = "Importar",
 }: {
     item: TrendItem;
     onImport: (item: TrendItem) => void;
     importing: boolean;
+    actionLabel?: string;
 }) {
     const [imageError, setImageError] = useState(false);
     const safeImage = item.image && isHttpUrl(item.image) ? item.image : null;
@@ -768,6 +1185,9 @@ function TrendCard({
                         {item.salesVolume !== null && (
                             <span>· Vol. {item.salesVolume}</span>
                         )}
+                        {item.listingCount != null && (
+                            <span>· {item.listingCount} listados</span>
+                        )}
                     </div>
                 </div>
             </div>
@@ -790,7 +1210,7 @@ function TrendCard({
                     className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                     <PackagePlus className="w-3.5 h-3.5" />
-                    {importing ? "Importando..." : "Importar"}
+                    {importing ? "Procesando..." : actionLabel}
                 </button>
             </div>
         </div>

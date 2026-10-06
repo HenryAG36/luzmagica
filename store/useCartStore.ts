@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Product, CartItem, CustomerProfile } from "@/lib/types";
+import { computeCartTotals, legacyFreeShippingProgress, CartTotals } from "@/lib/cart/totals";
 
 interface CartState {
     items: CartItem[];
@@ -30,6 +31,7 @@ interface CartState {
     getTotalDiscountCOP: () => number;
     getShippingFee: () => number;
     getTotalPrice: () => number;
+    getShippingBreakdown: () => CartTotals;
     getFreeShippingProgress: () => { current: number; threshold: number; remaining: number; percent: number; isFree: boolean };
 
     // Recovery export/import
@@ -37,8 +39,6 @@ interface CartState {
     restoreFromRecovery: (encoded: string) => boolean;
 }
 
-const FREE_SHIPPING_THRESHOLD = 150000;
-const SHIPPING_COST = 15000;
 const POINT_VALUE_COP = 10; // 1 point = $10 COP
 
 const DEFAULT_PROFILE: CustomerProfile = {
@@ -157,33 +157,24 @@ export const useCartStore = create<CartState>()(
                 return get().getCouponDiscountCOP() + get().getPointsDiscountCOP();
             },
 
-            getShippingFee: () => {
-                const subtotal = get().getSubtotal();
-                if (subtotal === 0) return 0;
-                if (get().couponCode === "ENVIOGRATIS") return 0;
-                return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_COST;
-            },
+            getShippingBreakdown: () =>
+                computeCartTotals(
+                    get().items,
+                    get().couponCode,
+                    get().discountPercent,
+                    get().getPointsDiscountCOP()
+                ),
 
-            getTotalPrice: () => {
-                const subtotal = get().getSubtotal();
-                if (subtotal === 0) return 0;
-                const discount = get().getTotalDiscountCOP();
-                const shipping = get().getShippingFee();
-                return Math.max(0, subtotal - discount + shipping);
-            },
+            getShippingFee: () => get().getShippingBreakdown().shippingCop ?? 0,
+
+            getTotalPrice: () => get().getShippingBreakdown().total ?? 0,
 
             getFreeShippingProgress: () => {
-                const current = get().getSubtotal();
-                const threshold = FREE_SHIPPING_THRESHOLD;
-                const remaining = Math.max(0, threshold - current);
-                const percent = Math.min(100, Math.round((current / threshold) * 100));
-                return {
-                    current,
-                    threshold,
-                    remaining,
-                    percent,
-                    isFree: current >= threshold || get().couponCode === "ENVIOGRATIS",
-                };
+                const progress = legacyFreeShippingProgress(
+                    get().getShippingBreakdown().legacySubtotal,
+                    get().couponCode
+                );
+                return { current: progress.threshold - progress.remaining, ...progress };
             },
 
             serializeForRecovery: () => {
