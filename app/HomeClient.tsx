@@ -5,7 +5,6 @@ import OrderAgainSection from "@/components/retention/OrderAgainSection";
 import RoomGrid from "@/components/home/RoomGrid";
 import FeaturedCarousel from "@/components/home/FeaturedCarousel";
 import Benefits from "@/components/home/Benefits";
-import Gallery from "@/components/home/Gallery";
 import { Product } from "@/lib/types";
 
 interface HomeClientProps {
@@ -20,7 +19,6 @@ export default function HomeClient({ products }: HomeClientProps) {
             <RoomGrid />
             <FeaturedCarousel products={products} />
             <Benefits />
-            <Gallery />
         </>
     );
 }

@@ -3,6 +3,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { LoyaltyAccount, LoyaltyTier, PointsTransaction } from "@/lib/types";
+import { TIER_THRESHOLDS, calculateTier } from "@/lib/loyalty";
+import { migrateLoyaltyPersisted } from "@/store/migrations";
 
 interface LoyaltyState {
     account: LoyaltyAccount;
@@ -23,46 +25,15 @@ interface LoyaltyState {
     };
 }
 
-const TIER_THRESHOLDS = {
-    bronce: 0,
-    plata: 500,
-    oro: 1500,
-    galactico: 3000,
-};
-
-function calculateTier(lifetimePoints: number): LoyaltyTier {
-    if (lifetimePoints >= TIER_THRESHOLDS.galactico) return "galactico";
-    if (lifetimePoints >= TIER_THRESHOLDS.oro) return "oro";
-    if (lifetimePoints >= TIER_THRESHOLDS.plata) return "plata";
-    return "bronce";
-}
-
-const INITIAL_HISTORY: PointsTransaction[] = [
-    {
-        id: "tx-1",
-        date: "2026-09-15",
-        points: 150,
-        reason: "Bono de bienvenida LuzClub VIP",
-        type: "earned",
-    },
-    {
-        id: "tx-2",
-        date: "2026-09-22",
-        points: 200,
-        reason: "Compra #LM-8921 (Proyector Nebulosa)",
-        type: "earned",
-    },
-];
-
 export const useLoyaltyStore = create<LoyaltyState>()(
     persist(
         (set, get) => ({
             account: {
-                points: 350,
-                lifetimePoints: 350,
+                points: 0,
+                lifetimePoints: 0,
                 tier: "bronce",
-                referralCode: "LUZ-CAROLINA",
-                history: INITIAL_HISTORY,
+                referralCode: "",
+                history: [],
             },
             isModalOpen: false,
 
@@ -205,6 +176,8 @@ export const useLoyaltyStore = create<LoyaltyState>()(
         }),
         {
             name: "luzmagica-loyalty-v1",
+            version: 1,
+            migrate: (persisted) => migrateLoyaltyPersisted(persisted) as LoyaltyState,
         }
     )
 );

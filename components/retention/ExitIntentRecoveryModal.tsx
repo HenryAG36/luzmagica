@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, X, Gift, ArrowRight, ShieldCheck, MessageCircle } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useOperatorStore } from "@/store/useOperatorStore";
+import { buildSupportWhatsAppUrl } from "@/lib/contact";
 import { formatCOP } from "@/lib/utils";
 
 export default function ExitIntentRecoveryModal() {
@@ -54,12 +55,15 @@ export default function ExitIntentRecoveryModal() {
         }
     };
 
+    const supportUrl = buildSupportWhatsAppUrl(
+        "Hola LuzMágica, estoy interesado en comprar mis luces LED pero tengo una pregunta antes de pagar.",
+    );
+
     const handleWhatsAppHelp = () => {
         setIsOpen(false);
-        const text = encodeURIComponent(
-            `Hola LuzMágica, estoy interesado en comprar mis luces LED pero tengo una pregunta antes de pagar.`
-        );
-        window.open(`https://wa.me/573104567890?text=${text}`, "_blank");
+        if (supportUrl) {
+            window.open(supportUrl, "_blank");
+        }
     };
 
     return (
@@ -99,8 +103,7 @@ export default function ExitIntentRecoveryModal() {
                     </div>
 
                     <p className="text-xs md:text-sm text-muted mb-5">
-                        Guarda tus productos con un <strong className="text-white font-semibold">10% de descuento adicional</strong> y
-                        despacho prioritario en toda Colombia.
+                        Guarda tus productos con un <strong className="text-white font-semibold">10% de descuento adicional</strong> con el cupón MAGIA10.
                     </p>
 
                     {/* Promo Box */}
@@ -127,18 +130,20 @@ export default function ExitIntentRecoveryModal() {
                             <ArrowRight className="w-4 h-4" />
                         </button>
 
-                        <button
-                            onClick={handleWhatsAppHelp}
-                            className="w-full py-3 px-6 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-medium flex items-center justify-center gap-2 border border-white/10 transition-colors text-xs"
-                        >
-                            <MessageCircle className="w-4 h-4 text-green-400" />
-                            <span>¿Tienes dudas? Consulta por WhatsApp</span>
-                        </button>
+                        {supportUrl ? (
+                            <button
+                                onClick={handleWhatsAppHelp}
+                                className="w-full py-3 px-6 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-medium flex items-center justify-center gap-2 border border-white/10 transition-colors text-xs"
+                            >
+                                <MessageCircle className="w-4 h-4 text-green-400" />
+                                <span>¿Tienes dudas? Consulta por WhatsApp</span>
+                            </button>
+                        ) : null}
                     </div>
 
                     <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-center gap-4 text-[11px] text-muted">
                         <span className="flex items-center gap-1">
-                            <ShieldCheck className="w-3.5 h-3.5 text-primary" /> Garantía 30 días
+                            <ShieldCheck className="w-3.5 h-3.5 text-primary" /> Condiciones confirmadas por producto
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1">

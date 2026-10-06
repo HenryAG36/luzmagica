@@ -6,26 +6,26 @@ import FadeIn from "@/components/common/FadeIn";
 const benefits = [
     {
         icon: Truck,
-        title: "Envío Rápido",
-        description: "Entrega en 2-5 días hábiles a toda Colombia. Gratis en pedidos +$150.000.",
+        title: "Envíos Cotizados",
+        description: "El costo y tiempo de entrega se confirman por producto antes de finalizar el pedido.",
         color: "text-secondary",
     },
     {
         icon: Shield,
-        title: "Garantía de Calidad",
-        description: "Todos nuestros productos tienen garantía de 6 meses contra defectos.",
+        title: "Productos Revisados",
+        description: "Cada producto del catálogo pasa por revisión interna antes de publicarse.",
         color: "text-primary",
     },
     {
         icon: RotateCcw,
-        title: "Devoluciones Fáciles",
-        description: "30 días para devolver tu producto si no estás 100% satisfecho.",
+        title: "Devoluciones por Producto",
+        description: "Las condiciones de cambio y devolución se definen según cada producto.",
         color: "text-accent",
     },
     {
         icon: Headphones,
-        title: "Soporte 24/7",
-        description: "Nuestro equipo está disponible por WhatsApp y chat en todo momento.",
+        title: "Atención por WhatsApp",
+        description: "Escríbenos para resolver dudas sobre productos o pedidos.",
         color: "text-secondary",
     },
 ];

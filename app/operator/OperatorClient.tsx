@@ -488,7 +488,8 @@ export default function OperatorClient() {
                                                     onClick={() => {
                                                         const cart = abandonedCarts[0];
                                                         if (cart) {
-                                                            window.open(generateWhatsAppRecoveryUrl(cart), "_blank");
+                                                            const url = generateWhatsAppRecoveryUrl(cart);
+                                                            if (url) window.open(url, "_blank");
                                                             markCartContacted(cart.id);
                                                             toggleTask(task.id);
                                                         }
@@ -504,7 +505,7 @@ export default function OperatorClient() {
                                                 <button
                                                     onClick={() => {
                                                         setActiveTab("orders");
-                                                        setEditingOrderId("LM-9811");
+                                                        setEditingOrderId(task.actionTarget || "");
                                                     }}
                                                     className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
                                                 >
@@ -755,7 +756,8 @@ export default function OperatorClient() {
                                     {cart.status !== "recovered" && (
                                         <button
                                             onClick={() => {
-                                                window.open(generateWhatsAppRecoveryUrl(cart), "_blank");
+                                                const url = generateWhatsAppRecoveryUrl(cart);
+                                                if (url) window.open(url, "_blank");
                                                 markCartContacted(cart.id);
                                             }}
                                             className="w-full py-2.5 px-4 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"

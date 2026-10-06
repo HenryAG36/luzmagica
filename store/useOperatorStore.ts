@@ -3,6 +3,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { AbandonedCart, OperatorTask, CartItem } from "@/lib/types";
+import { publicSiteOrigin } from "@/lib/contact";
+import { migrateOperatorPersisted } from "@/store/migrations";
 
 interface LaunchItem {
     id: string;
@@ -22,162 +24,49 @@ interface OperatorState {
     markCartContacted: (cartId: string) => void;
     toggleTask: (taskId: string) => void;
     toggleChecklistItem: (itemId: string) => void;
-    generateWhatsAppRecoveryUrl: (cart: AbandonedCart) => string;
+    generateWhatsAppRecoveryUrl: (cart: AbandonedCart) => string | null;
 }
 
-const SEEDED_ABANDONED_CARTS: AbandonedCart[] = [
-    {
-        id: "AB-3021",
-        customerName: "Andrés Restrepo",
-        customerPhone: "3154829102",
-        customerEmail: "andres.restrepo@outlook.com",
-        items: [
-            {
-                product: {
-                    id: "7",
-                    name: "Tira LED Neon Flex 3m",
-                    price: 95000,
-                    originalPrice: null,
-                    category: "tiras-led",
-                    room: "gaming",
-                    images: ["/images/products/neon-flex-1.jpg"],
-                    badge: "new",
-                    description: "Tira LED tipo neón flexible de 3 metros con 120+ modos.",
-                    stock: 20,
-                    type: "tira-led",
-                    supplierCostCOP: 42000,
-                },
-                quantity: 1,
-            },
-        ],
-        total: 95000,
-        createdAt: "Hoy hace 2 horas",
-        recoveryCode: "RETORNO10",
-        discountPercent: 10,
-        status: "pending",
-    },
-    {
-        id: "AB-2940",
-        customerName: "Sofía Castro",
-        customerPhone: "3127654321",
-        customerEmail: "sofi.castro@gmail.com",
-        items: [
-            {
-                product: {
-                    id: "6",
-                    name: "Lámpara de Atardecer 360°",
-                    price: 68000,
-                    originalPrice: 89000,
-                    category: "lamparas",
-                    room: "sala",
-                    images: ["/images/products/sunset-1.jpg"],
-                    badge: "sale",
-                    description: "Proyector de luz tipo atardecer rotación 360° golden hour.",
-                    stock: 31,
-                    type: "lampara",
-                    supplierCostCOP: 26000,
-                },
-                quantity: 1,
-            },
-            {
-                product: {
-                    id: "2",
-                    name: "Tira LED RGB 5m para TV",
-                    price: 45000,
-                    originalPrice: 65000,
-                    category: "tiras-led",
-                    room: "sala",
-                    images: ["/images/products/led-strip-1.jpg"],
-                    badge: "sale",
-                    description: "Tira LED RGB 5m sincronización musical.",
-                    stock: 56,
-                    type: "tira-led",
-                    supplierCostCOP: 19000,
-                },
-                quantity: 1,
-            },
-        ],
-        total: 113000,
-        createdAt: "Ayer a las 21:40",
-        recoveryCode: "RETORNO10",
-        discountPercent: 10,
-        status: "pending",
-    },
-];
-
-const SEEDED_TASKS: OperatorTask[] = [
-    {
-        id: "tsk-1",
-        type: "fulfill_order",
-        title: "Asignar guía de proveedor a Orden #LM-9811",
-        description: "Valentina Ríos pagó con Bancolombia ($87.000 COP). Falta vincular guía de transporte nacional.",
-        priority: "high",
-        actionLabel: "Gestionar Despacho",
-        actionTarget: "LM-9811",
-        completed: false,
-    },
-    {
-        id: "tsk-2",
-        type: "whatsapp_recovery",
-        title: "Recuperar Carrito Abandonado de Andrés Restrepo",
-        description: "Dejó Tira LED Neon Flex ($95.000 COP) hace 2h. Enviar WhatsApp con código RETORNO10.",
-        priority: "high",
-        actionLabel: "Enviar WhatsApp",
-        actionTarget: "AB-3021",
-        completed: false,
-    },
-    {
-        id: "tsk-3",
-        type: "low_stock",
-        title: "Alerta Inventario: Panel LED Hexagonal",
-        description: "Quedan solo 12 unidades en almacén del proveedor dropshipping. Alto volumen de ventas.",
-        priority: "medium",
-        actionLabel: "Contactar Proveedor",
-        actionTarget: "supplier",
-        completed: false,
-    },
-];
-
-const SEEDED_LAUNCH_ITEMS: LaunchItem[] = [
+const LAUNCH_CHECKLIST: LaunchItem[] = [
     {
         id: "chk-1",
-        title: "Pasarela de Pagos Nacional (Nequi, PSE, Tarjetas)",
-        description: "Configurar llaves de API para cobros inmediatos y transferencias seguras.",
-        completed: true,
+        title: "Configurar pasarela de pagos",
+        description: "Vincular las credenciales de Nequi, PSE y tarjetas antes de habilitar el checkout.",
+        completed: false,
         category: "payments",
     },
     {
         id: "chk-2",
-        title: "Reglas de Envío Gratis y Transportadoras Locales",
-        description: "Establecer umbral de envío gratis en $150.000 COP y tarifas de Servientrega/Coordinadora.",
-        completed: true,
+        title: "Definir reglas de envío",
+        description: "Establecer tarifas, zonas y transportadoras nacionales para el catálogo.",
+        completed: false,
         category: "logistics",
     },
     {
         id: "chk-3",
-        title: "LuzPoints Loyalty Engine Activado",
-        description: "Acumulación de 1 pt por cada $1.000 COP y canje directo en checkout habilitado.",
-        completed: true,
+        title: "Revisar programa LuzClub",
+        description: "Definir las reglas de acumulación y canje de puntos antes de activarlo.",
+        completed: false,
         category: "marketing",
     },
     {
         id: "chk-4",
-        title: "Recuperación de Carritos Exit-Intent por WhatsApp",
-        description: "Disparador de descuento automático del 10% cuando el cliente intenta abandonar.",
-        completed: true,
+        title: "Conectar recuperación por WhatsApp",
+        description: "Verificar el número de soporte y la plantilla de recuperación de carritos.",
+        completed: false,
         category: "marketing",
     },
     {
         id: "chk-5",
-        title: "Sincronización de Catálogo Dropshipping & Costos Unitarios",
-        description: "Costos de proveedor asignados para cálculo de margen bruto real por producto.",
-        completed: true,
+        title: "Sincronizar catálogo de proveedores",
+        description: "Importar y revisar productos y costos de los proveedores integrados.",
+        completed: false,
         category: "logistics",
     },
     {
         id: "chk-6",
-        title: "Pixel de Meta & TikTok Ads para Remarketing Retentivo",
-        description: "Eventos de PageView, AddToCart, InitiateCheckout y Purchase sincronizados.",
+        title: "Instalar píxel de anuncios",
+        description: "Configurar el seguimiento de conversiones de Meta Ads.",
         completed: false,
         category: "marketing",
     },
@@ -186,9 +75,9 @@ const SEEDED_LAUNCH_ITEMS: LaunchItem[] = [
 export const useOperatorStore = create<OperatorState>()(
     persist(
         (set, get) => ({
-            abandonedCarts: SEEDED_ABANDONED_CARTS,
-            tasks: SEEDED_TASKS,
-            launchChecklist: SEEDED_LAUNCH_ITEMS,
+            abandonedCarts: [],
+            tasks: [],
+            launchChecklist: LAUNCH_CHECKLIST.map((item) => ({ ...item })),
 
             captureAbandonedCart: (items, total, name, phone, email) => {
                 const id = `AB-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -243,18 +132,27 @@ export const useOperatorStore = create<OperatorState>()(
             },
 
             generateWhatsAppRecoveryUrl: (cart: AbandonedCart) => {
-                const phone = cart.customerPhone ? cart.customerPhone.replace(/\D/g, "") : "573100000000";
-                const cleanPhone = phone.startsWith("57") ? phone : `57${phone}`;
+                const rawPhone = cart.customerPhone ? cart.customerPhone.replace(/\D/g, "") : "";
+                if (!rawPhone) return null;
+                const cleanPhone = rawPhone.startsWith("57") ? rawPhone : `57${rawPhone}`;
                 const name = cart.customerName ? cart.customerName.split(" ")[0] : "Hola";
-                const itemsList = cart.items.map((i) => `• ${i.product.name} (x${i.quantity})`).join("%0A");
+                const itemsList = cart.items
+                    .map((i) => `• ${i.product.name} (x${i.quantity})`)
+                    .join("\n");
+                const checkoutUrl = `${publicSiteOrigin()}/checkout?recover=${encodeURIComponent(cart.id)}`;
 
-                const message = `¡Hola ${name}! 💡 Notamos que dejaste estos productos mágicos en tu carrito de LuzMágica:%0A%0A${itemsList}%0A%0AQueremos que estrenes iluminación única: usa el cupón exclusivo *${cart.recoveryCode}* para obtener un *10% de descuento inmediato* y envío prioritario.%0A%0A👉 Finaliza tu orden aquí: https://luzmagica.co/checkout?recover=${cart.id}`;
+                const message = `¡Hola ${name}! Notamos que dejaste productos en tu carrito de LuzMágica:\n\n${itemsList}\n\n👉 Puedes retomar tu orden aquí: ${checkoutUrl}`;
 
-                return `https://wa.me/${cleanPhone}?text=${message}`;
+                const url = new URL(`https://wa.me/${cleanPhone}`);
+                url.searchParams.set("text", message);
+                return url.toString();
             },
         }),
         {
             name: "luzmagica-operator-v1",
+            version: 1,
+            migrate: (persisted) =>
+                migrateOperatorPersisted(persisted, LAUNCH_CHECKLIST) as OperatorState,
         }
     )
 );

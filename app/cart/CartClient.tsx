@@ -245,11 +245,11 @@ export default function CartClient() {
                             <div className="mt-5 pt-4 border-t border-white/5 space-y-2 text-[11px] text-muted">
                                 <div className="flex items-center gap-2">
                                     <ShieldCheck className="w-3.5 h-3.5 text-secondary" />
-                                    <span>Garantía de reembolso de 30 días</span>
+                                    <span>Compras en configuración; pagos próximamente</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Truck className="w-3.5 h-3.5 text-primary" />
-                                    <span>Rastreo en vivo con guía oficial</span>
+                                    <span>El envío se confirma antes de completar el pedido</span>
                                 </div>
                             </div>
 

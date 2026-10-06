@@ -34,7 +34,9 @@ seed products, `20261006172120_aliexpress_ds` DS provider/SKU columns,
 `20261006190950_ds_shipping` customer shipping fields on the public view,
 `20261006190956_discovery_providers` widens the provider check for
 `cjdropshipping`, `20261006213419_published_products_shipping_guard` hides
-international products missing a confirmed customer shipping quote).
+international products missing a confirmed customer shipping quote,
+`20261006221448_archive_seed_products` archives the eight demo seed products
+— `source='seed'`, ids `1`–`8`, rows preserved, not deleted).
 Filenames use Supabase timestamp versions and must not be
 renumbered; remote projects that already applied them will skip replay. With the
 Supabase CLI:
@@ -137,15 +139,33 @@ failure, lease serialization, idempotent import, optimistic publish conflicts,
 and input validation with an in-memory client. The three migrations have been
 applied to the configured Supabase project; live inspection confirms RLS,
 public/private catalog grants, lease RPC privileges, installed triggers, and
-eight published seed products. The `20261006190950_ds_shipping` and
+the seeded catalog rows. The `20261006190950_ds_shipping` and
 `20261006190956_discovery_providers` migrations are also applied — public
 customer-shipping fields and supplier-private grants are verified remotely. The
 `20261006213419_published_products_shipping_guard` migration is also applied and
 verified remotely — zero incomplete international rows are publicly readable.
-Authenticated browser flows, concurrent Postgres
-behavior, OAuth, and live provider responses still require end-to-end validation.
-The pinned Supabase packages are installed; TypeScript, lint, 152 fixture tests,
-and the production build pass.
+The `20261006221448_archive_seed_products` migration is applied and verified
+remotely — the eight original seed products are archived (not deleted) and none
+remain published; imported CJ/AliExpress DS products, roles, provider
+connections, and snapshots are unaffected.
+
+### Local demo data cleanup and checkout status
+
+- Browser stores no longer ship demo orders, abandoned carts, operator tasks,
+  loyalty history, or the demo customer profile. Persisted `luzmagica-*` keys are
+  migrated in place (version 1): only exact seeded ids (`LM-8921`, `LM-9402`,
+  `LM-9811`, `AB-3021`, `AB-2940`, `tsk-1`–`tsk-3`, `tx-1`–`tx-2`), seed product
+  ids `1`–`8`, and the exact-match demo profile are removed; all other persisted
+  data is preserved.
+- **Checkout submission is disabled** until real payment/order infrastructure is
+  connected. The store no longer fabricates orders, payment confirmations,
+  tracking numbers, supplier costs, or tracking timelines — `updateOrderStatus`
+  only appends a real, timestamped event to an existing order.
+
+Authenticated browser flows, concurrent Postgres behavior, OAuth, and live
+provider responses still require end-to-end validation. The pinned Supabase
+packages are installed; TypeScript, lint, fixture tests, and the production
+build pass.
 
 ## Learn More
 

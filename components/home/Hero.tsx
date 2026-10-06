@@ -44,7 +44,7 @@ export default function Hero() {
                     transition={{ duration: 0.8, delay: 0.2 }}
                 >
                     <span className="inline-block px-4 py-1.5 rounded-full glass text-sm text-secondary mb-6">
-                        ✨ Envío gratis en pedidos +$150.000
+                        ✨ Iluminación LED decorativa
                     </span>
                 </motion.div>
 

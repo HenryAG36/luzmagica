@@ -27,7 +27,7 @@ export default function FeaturedCarousel({ products }: FeaturedCarouselProps) {
                     <div className="flex items-end justify-between mb-12">
                         <div>
                             <span className="text-secondary text-sm font-medium uppercase tracking-widest">
-                                Los más vendidos
+                                Catálogo
                             </span>
                             <h2 className="font-heading text-4xl sm:text-5xl font-bold mt-3">
                                 Productos <span className="gradient-text">Destacados</span>

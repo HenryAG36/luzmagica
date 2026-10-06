@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
     ShieldCheck,
     ArrowLeft,
@@ -20,8 +20,6 @@ import {
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
-import { useOrderStore } from "@/store/useOrderStore";
-import { useOperatorStore } from "@/store/useOperatorStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
@@ -29,7 +27,6 @@ import FadeIn from "@/components/common/FadeIn";
 const emptySubscribe = () => () => {};
 
 export default function CheckoutClient() {
-    const router = useRouter();
     const searchParams = useSearchParams();
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
@@ -48,12 +45,9 @@ export default function CheckoutClient() {
         getPointsDiscountCOP,
         getShippingBreakdown,
         getFreeShippingProgress,
-        clearCart,
     } = useCartStore();
 
-    const { account, awardPoints, redeemPoints } = useLoyaltyStore();
-    const { createOrder } = useOrderStore();
-    const { markCartRecovered } = useOperatorStore();
+    const { account } = useLoyaltyStore();
     const { currentUser } = useAuthStore();
 
     const [couponInput, setCouponInput] = useState("");
@@ -61,10 +55,8 @@ export default function CheckoutClient() {
     const [paymentMethod, setPaymentMethod] = useState<
         "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega"
     >("nequi");
-    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const recoverParam = searchParams.get("recover");
-    const [recoveryCartId] = useState<string | null>(() => recoverParam);
 
     useEffect(() => {
         if (recoverParam && !couponCode) {
@@ -108,15 +100,11 @@ export default function CheckoutClient() {
     const couponDiscount = getCouponDiscountCOP();
     const pointsDiscount = getPointsDiscountCOP();
     const breakdown = getShippingBreakdown();
-    const shipping = breakdown.shippingCop ?? 0;
     const total = breakdown.total;
     const shippingProgress = getFreeShippingProgress();
     const dsPending = breakdown.dsPending;
     const dsPresent = breakdown.dsItemCount > 0;
     const cityIsBogota = /^\s*bogot/i.test(customerProfile.city || "");
-
-    // Potential points earned on this purchase
-    const pointsToEarn = Math.floor((total ?? 0) / 1000);
 
     const handleApplyCoupon = (e: React.FormEvent) => {
         e.preventDefault();
@@ -137,48 +125,10 @@ export default function CheckoutClient() {
         }
     };
 
+    // Purchases are disabled until a real payment/order pipeline is connected.
+    // Submitting must not create orders, award points, or simulate fulfillment.
     const handleSubmitOrder = (e: React.FormEvent) => {
         e.preventDefault();
-        if (dsPending || total === null) return;
-        setIsSubmitting(true);
-
-        try {
-            // Redeem points if applied
-            if (pointsRedeemed > 0) {
-                redeemPoints(pointsRedeemed, "Descuento aplicado en Checkout");
-            }
-
-            // Create order in store
-            const newOrder = createOrder({
-                customer: customerProfile,
-                items,
-                subtotal,
-                discountAmount: couponDiscount + pointsDiscount,
-                shippingFee: shipping,
-                total: total ?? 0,
-                paymentMethod,
-                loyaltyPointsEarned: pointsToEarn,
-                loyaltyPointsUsed: pointsRedeemed,
-                recoveredFromCartId: recoveryCartId || undefined,
-            });
-
-            // Award points for the purchase
-            awardPoints(total, newOrder.id);
-
-            // If came from abandoned cart recovery, mark as recovered in operator dashboard
-            if (recoveryCartId) {
-                markCartRecovered(recoveryCartId);
-            }
-
-            // Clear current cart
-            clearCart();
-
-            // Redirect to live order tracking page
-            router.push(`/tracking?orderId=${newOrder.id}&new=1`);
-        } catch (err) {
-            console.error("Error creating order:", err);
-            setIsSubmitting(false);
-        }
     };
 
     const inputClass =
@@ -290,7 +240,7 @@ export default function CheckoutClient() {
                                                 required
                                                 value={customerProfile.name}
                                                 onChange={(e) => setCustomerProfile({ name: e.target.value })}
-                                                placeholder="Ej: Carolina Mejía"
+                                                placeholder="Ej: Nombre y apellido"
                                                 className={inputClass}
                                             />
                                         </div>
@@ -479,7 +429,7 @@ export default function CheckoutClient() {
                                     <div className="p-3.5 rounded-xl bg-surface border border-white/5 flex items-center gap-3 text-xs text-muted">
                                         <ShieldCheck className="w-5 h-5 text-secondary shrink-0" />
                                         <span>
-                                            Procesamiento cifrado a través de pasarela nacional certificada. Los fondos quedan protegidos hasta la entrega del paquete.
+                                            Los métodos de pago se habilitarán cuando la pasarela de pagos esté conectada.
                                         </span>
                                     </div>
                                 </div>
@@ -640,44 +590,23 @@ export default function CheckoutClient() {
                                         </div>
                                     </div>
 
-                                    {/* Points Earned Banner */}
-                                    <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs mb-6">
-                                        <span className="text-muted flex items-center gap-1.5">
-                                            <Sparkles className="w-3.5 h-3.5 text-primary" />
-                                            Acumulas con esta compra:
-                                        </span>
-                                        <span className="font-bold text-primary">+{pointsToEarn} pts</span>
-                                    </div>
-
                                     {/* Submit Button */}
                                     {dsPending && (
                                         <p role="alert" className="text-[11px] text-amber-300 mb-3">
                                             No se puede completar el pedido: falta la cotización de envío del proveedor internacional.
                                         </p>
                                     )}
+                                    <p role="alert" className="text-[11px] text-amber-300 mb-3">
+                                        Compras aún no disponibles; estamos configurando pagos y pedidos.
+                                    </p>
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting || dsPending}
-                                        className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                                        disabled
+                                        className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
                                     >
-                                        {isSubmitting ? (
-                                            <span className="animate-pulse">Generando orden segura...</span>
-                                        ) : dsPending ? (
-                                            <>
-                                                <Lock className="w-4 h-4" />
-                                                <span>Envío pendiente de cotización</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Lock className="w-4 h-4" />
-                                                <span>Pagar {formatCOP(total ?? 0)}</span>
-                                            </>
-                                        )}
+                                        <Lock className="w-4 h-4" />
+                                        <span>Pagos en configuración</span>
                                     </button>
-
-                                    <p className="text-[10px] text-center text-muted mt-3">
-                                        Al completar tu pedido recibirás tu número de guía y seguimiento en tiempo real.
-                                    </p>
                                 </div>
                             </FadeIn>
                         </div>

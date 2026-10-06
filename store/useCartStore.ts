@@ -4,6 +4,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Product, CartItem, CustomerProfile } from "@/lib/types";
 import { computeCartTotals, legacyFreeShippingProgress, CartTotals } from "@/lib/cart/totals";
+import {
+    BLANK_PROFILE,
+    SEEDED_PRODUCT_IDS,
+    isSeededProfile,
+    migrateCartPersisted,
+} from "@/store/migrations";
 
 interface CartState {
     items: CartItem[];
@@ -41,17 +47,6 @@ interface CartState {
 
 const POINT_VALUE_COP = 10; // 1 point = $10 COP
 
-const DEFAULT_PROFILE: CustomerProfile = {
-    name: "Carolina Mejia",
-    email: "carolina.mejia@gmail.com",
-    phone: "3104567890",
-    address: "Calle 127 #15-32 Apto 402",
-    city: "Bogotá",
-    department: "Cundinamarca",
-    cedula: "1018459203",
-    notes: "Dejar en portería con vigilancia",
-};
-
 export const useCartStore = create<CartState>()(
     persist(
         (set, get) => ({
@@ -59,7 +54,7 @@ export const useCartStore = create<CartState>()(
             couponCode: null,
             discountPercent: 0,
             pointsRedeemed: 0,
-            customerProfile: DEFAULT_PROFILE,
+            customerProfile: { ...BLANK_PROFILE },
             appliedRecoveryId: null,
 
             addItem: (product: Product, quantity = 1) => {
@@ -189,11 +184,21 @@ export const useCartStore = create<CartState>()(
             restoreFromRecovery: (encoded: string) => {
                 try {
                     const parsed = JSON.parse(atob(encoded));
+                    // Never resurrect removed seed catalog items from recovery payloads.
+                    if (Array.isArray(parsed.items)) {
+                        parsed.items = parsed.items.filter(
+                            (i: { id?: unknown }) => !SEEDED_PRODUCT_IDS.has(String(i?.id)),
+                        );
+                    }
                     if (parsed.coupon) {
                         get().applyCoupon(parsed.coupon);
                     }
                     if (parsed.profile) {
-                        get().setCustomerProfile(parsed.profile);
+                        get().setCustomerProfile(
+                            isSeededProfile(parsed.profile)
+                                ? { ...BLANK_PROFILE }
+                                : parsed.profile,
+                        );
                     }
                     return true;
                 } catch {
@@ -203,6 +208,8 @@ export const useCartStore = create<CartState>()(
         }),
         {
             name: "luzmagica-cart-v2",
+            version: 1,
+            migrate: (persisted) => migrateCartPersisted(persisted) as CartState,
         }
     )
 );

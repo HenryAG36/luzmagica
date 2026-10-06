@@ -271,12 +271,12 @@ export default function ProductDetailClient({
                                     <span>
                                         {product.shippingQuoteRequired
                                             ? "Envío internacional (estimado por unidad)"
-                                            : "Envío en 2-5 días"}
+                                            : "El costo de envío se confirma al pedido"}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-3 text-sm text-muted">
                                     <Shield className="w-4 h-4 text-primary" />
-                                    <span>Garantía 6 meses</span>
+                                    <span>Garantía según política del producto</span>
                                 </div>
                             </div>
                         </div>

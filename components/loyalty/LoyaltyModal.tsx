@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Award, Gift, Copy, Check, TrendingUp, ShieldCheck } from "lucide-react";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+import { publicSiteOrigin } from "@/lib/contact";
 import { formatCOP } from "@/lib/utils";
 
 export default function LoyaltyModal() {
@@ -18,7 +19,7 @@ export default function LoyaltyModal() {
 
     const handleCopy = () => {
         navigator.clipboard.writeText(
-            `¡Usa mi código ${account.referralCode} en LuzMágica y obtén $20.000 COP de descuento en tu primera compra de luces LED! https://luzmagica.co`
+            `¡Usa mi código ${account.referralCode} en LuzMágica! ${publicSiteOrigin()}`
         );
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
@@ -124,14 +125,15 @@ export default function LoyaltyModal() {
                         </div>
                     </div>
 
-                    {/* Referral Box */}
+                    {/* Referral Box (only when the account has a real referral code) */}
+                    {account.referralCode ? (
                     <div className="p-4 rounded-2xl bg-white/5 border border-white/10 mb-6">
                         <div className="flex items-center gap-2 mb-2">
                             <Award className="w-4 h-4 text-accent" />
-                            <h4 className="text-sm font-semibold text-white">Invita amigos y gana 500 puntos</h4>
+                            <h4 className="text-sm font-semibold text-white">Tu código de referido</h4>
                         </div>
                         <p className="text-xs text-muted mb-3">
-                            Tu amigo recibe $20.000 COP en su primera orden y tú ganas 500 pts ($5.000 COP) cuando se entregue.
+                            Comparte tu código con amigos para invitarlos a la tienda.
                         </p>
                         <div className="flex items-center gap-2">
                             <div className="flex-1 bg-surface px-3 py-2 rounded-xl border border-white/10 text-xs font-mono text-white truncate">
@@ -146,10 +148,14 @@ export default function LoyaltyModal() {
                             </button>
                         </div>
                     </div>
+                    ) : null}
 
                     {/* Points Activity History */}
                     <div>
                         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Historial de Puntos</h4>
+                        {account.history.length === 0 ? (
+                            <p className="text-xs text-muted">Aún no tienes movimientos de puntos.</p>
+                        ) : null}
                         <div className="space-y-2">
                             {account.history.slice(0, 4).map((tx) => (
                                 <div key={tx.id} className="flex items-center justify-between p-2.5 rounded-xl bg-surface-card/60 border border-white/5 text-xs">
@@ -169,7 +175,7 @@ export default function LoyaltyModal() {
                     <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-[11px] text-muted">
                             <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                            Garantía de beneficios de por vida
+                            Beneficios según el programa LuzClub vigente
                         </div>
                         <button
                             onClick={closeModal}

@@ -18,6 +18,7 @@ import {
 import { useOrderStore } from "@/store/useOrderStore";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
+import { buildSupportWhatsAppUrl } from "@/lib/contact";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 import { OrderStatus } from "@/lib/types";
@@ -51,7 +52,7 @@ export default function TrackingClient() {
         if (found) {
             setSelectedOrderId(found.id);
         } else {
-            alert(`No encontramos ninguna orden con la referencia "${searchInput}". Intenta con LM-8921 o LM-9402.`);
+            alert(`No encontramos ninguna orden con la referencia "${searchInput}". Verifica el número e inténtalo de nuevo.`);
         }
     };
 
@@ -99,10 +100,10 @@ export default function TrackingClient() {
                             Transparencia en Logística & Despacho
                         </span>
                         <h1 className="font-heading text-3xl sm:text-4xl font-bold text-white mb-3">
-                            Rastreo de Pedido en <span className="gradient-text">Tiempo Real</span>
+                            Rastreo de <span className="gradient-text">Pedido</span>
                         </h1>
                         <p className="text-xs sm:text-sm text-muted">
-                            Sigue cada fase del envío dropshipping verificado desde fábrica hasta tu puerta.
+                            Consulta el estado registrado de tu pedido.
                         </p>
                     </div>
 
@@ -113,7 +114,7 @@ export default function TrackingClient() {
                                 type="text"
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
-                                placeholder="Número de Orden (ej: LM-8921 o guía)"
+                                placeholder="Número de orden o guía"
                                 className="flex-1 px-4 py-2.5 bg-transparent text-sm text-white placeholder-muted focus:outline-none"
                             />
                             <button
@@ -177,17 +178,22 @@ export default function TrackingClient() {
                                             <span>{reordered ? "¡Agregado al Carrito!" : "Pedir de Nuevo"}</span>
                                         </button>
 
-                                        <a
-                                            href={`https://wa.me/573104567890?text=${encodeURIComponent(
-                                                `Hola LuzMágica, requiero información sobre el estado de mi orden #${currentOrder.id}`
-                                            )}`}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="px-4 py-2.5 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30 text-xs font-semibold flex items-center gap-2 transition-colors"
-                                        >
-                                            <MessageCircle className="w-3.5 h-3.5 text-green-400" />
-                                            <span>Soporte WhatsApp</span>
-                                        </a>
+                                        {(() => {
+                                            const supportUrl = buildSupportWhatsAppUrl(
+                                                `Hola LuzMágica, requiero información sobre el estado de mi orden #${currentOrder.id}`,
+                                            );
+                                            return supportUrl ? (
+                                                <a
+                                                    href={supportUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="px-4 py-2.5 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30 text-xs font-semibold flex items-center gap-2 transition-colors"
+                                                >
+                                                    <MessageCircle className="w-3.5 h-3.5 text-green-400" />
+                                                    <span>Soporte WhatsApp</span>
+                                                </a>
+                                            ) : null;
+                                        })()}
                                     </div>
                                 </div>
 

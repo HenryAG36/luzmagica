@@ -21,7 +21,7 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   title: "LuzMágica | Iluminación LED Decorativa con Garantía en Colombia",
   description:
-    "Descubre la colección más exclusiva de iluminación LED decorativa. Proyectores, tiras LED, lámparas 3D y paneles. Envíos asegurados y puntos LuzClub.",
+    "Descubre la colección más exclusiva de iluminación LED decorativa. Proyectores, tiras LED, lámparas 3D y paneles.",
   keywords: "LED, iluminación, decoración, hogar, Colombia, luces decorativas, LuzMágica, dropshipping de confianza",
 };
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Send, Instagram, Truck, ShieldCheck, Award } from "lucide-react";
+import { Sparkles, Send, Instagram, Award } from "lucide-react";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 
 const footerLinks = {
@@ -15,14 +15,11 @@ const footerLinks = {
         { label: "Cocina", href: "/products?room=cocina" },
     ],
     retencion: [
-        { label: "Rastrear mi Pedido en Vivo", href: "/tracking" },
-        { label: "Garantía de Entrega 30 Días", href: "/tracking" },
+        { label: "Rastrear mi Pedido", href: "/tracking" },
+        { label: "Seguimiento y Soporte", href: "/tracking" },
         { label: "Portal del Operador (Admin)", href: "/operator" },
     ],
 };
-
-const trustCarriers = ["Coordinadora", "Servientrega", "Interrapidísimo"];
-const paymentMethods = ["Nequi", "PSE", "Bancolombia", "Visa", "Mastercard"];
 
 export default function Footer() {
     const [email, setEmail] = useState("");
@@ -55,7 +52,7 @@ export default function Footer() {
                             </span>
                         </Link>
                         <p className="text-muted text-xs leading-relaxed mb-6">
-                            Líderes en ambientación e iluminación LED en Colombia. Envíos asegurados con transportadoras nacionales y programa de recompensas LuzClub VIP.
+                            Tienda de iluminación LED decorativa con catálogo de proveedores nacionales e internacionales.
                         </p>
                         <div className="flex gap-3">
                             <a
@@ -150,33 +147,6 @@ export default function Footer() {
                                 ¡Bienvenido al Club! Tu código de bienvenida es MAGIA10 ✨
                             </motion.p>
                         )}
-                    </div>
-                </div>
-
-                {/* Logistics & Trust Bar */}
-                <div className="mt-12 pt-6 border-t border-white/5 flex flex-wrap items-center justify-between gap-4 text-xs text-muted">
-                    <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-primary" />
-                        <span>Transporte Nacional:</span>
-                        <div className="flex gap-1.5">
-                            {trustCarriers.map((carrier) => (
-                                <span key={carrier} className="font-medium text-white/80">
-                                    {carrier} •
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-secondary" />
-                        <span>Pagos Protegidos:</span>
-                        <div className="flex gap-1.5">
-                            {paymentMethods.map((method) => (
-                                <span key={method} className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white">
-                                    {method}
-                                </span>
-                            ))}
-                        </div>
                     </div>
                 </div>
 
