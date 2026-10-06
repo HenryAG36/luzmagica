@@ -26,11 +26,36 @@ const ALLOWLISTED_KEYS = new Set([
     "feed_names",
     "feed_name",
     "feeds",
+    "resp_result",
+    "resp_code",
+    "resp_msg",
+    "number",
+    "string",
+    "product",
+    "item_ids",
+    "item_id",
+    "long",
+    "promos",
+    "promo",
+    "promo_name",
+    "current_record_count",
 ]);
+
+const STRUCTURE_MAX_DEPTH = 5;
+const STRUCTURE_MAX_NODES = 80;
+const STRUCTURE_MAX_ELEMENT_TYPES = 5;
 
 const CODE_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
 const FEED_NAME_MAX = 20;
 const FEED_NAME_LENGTH = 80;
+
+export interface DsStructureNode {
+    type: string;
+    fields?: Record<string, DsStructureNode>;
+    unknownKeyCount?: number;
+    length?: number;
+    elementTypes?: string[];
+}
 
 export interface DsDiagnosticShape {
     rootKeys: string[];
@@ -40,6 +65,7 @@ export interface DsDiagnosticShape {
     productsType: string;
     productCount: number | null;
     feedNames: string[];
+    structure: DsStructureNode;
 }
 
 export interface DsDiagnosticCodes {
@@ -108,20 +134,62 @@ function sanitizeFeedName(value: unknown, secrets: string[]): string | null {
 
 function extractFeedNames(result: Record<string, unknown>, secrets: string[]): string[] {
     const out: string[] = [];
-    const push = (value: unknown) => {
-        if (out.length >= FEED_NAME_MAX) return;
-        const name =
-            typeof value === "string"
-                ? value
-                : typeof value === "object" && value !== null
-                  ? (value as Record<string, unknown>).feed_name
-                  : null;
-        const safe = sanitizeFeedName(name, secrets);
-        if (safe !== null && !out.includes(safe)) out.push(safe);
+    const collect = (entries: unknown) => {
+        if (!Array.isArray(entries)) return;
+        for (const entry of entries) {
+            if (out.length >= FEED_NAME_MAX) break;
+            const name =
+                typeof entry === "object" && entry !== null
+                    ? (entry as Record<string, unknown>).promo_name
+                    : null;
+            const safe = sanitizeFeedName(name, secrets);
+            if (safe !== null && !out.includes(safe)) out.push(safe);
+        }
     };
-    if (Array.isArray(result.feed_names)) for (const v of result.feed_names) push(v);
-    if (Array.isArray(result.feeds)) for (const v of result.feeds) push(v);
+    const promos = result.promos;
+    if (Array.isArray(promos)) collect(promos);
+    else if (typeof promos === "object" && promos !== null) {
+        collect((promos as Record<string, unknown>).promo);
+    }
     return out;
+}
+
+function elementType(value: unknown): string {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+}
+
+function buildStructure(
+    value: unknown,
+    counter: { nodes: number },
+    depth: number
+): DsStructureNode {
+    counter.nodes += 1;
+    if (counter.nodes > STRUCTURE_MAX_NODES || depth > STRUCTURE_MAX_DEPTH) {
+        return { type: "truncated" };
+    }
+    if (value === null) return { type: "null" };
+    if (Array.isArray(value)) {
+        const elementTypes = [...new Set(value.map(elementType))].slice(
+            0,
+            STRUCTURE_MAX_ELEMENT_TYPES
+        );
+        return { type: "array", length: value.length, elementTypes };
+    }
+    if (typeof value === "object") {
+        const fields: Record<string, DsStructureNode> = {};
+        let unknownKeyCount = 0;
+        for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+            if (!ALLOWLISTED_KEYS.has(key)) {
+                unknownKeyCount += 1;
+                continue;
+            }
+            fields[key] = buildStructure(child, counter, depth + 1);
+        }
+        return { type: "object", fields, unknownKeyCount };
+    }
+    return { type: typeof value };
 }
 
 export function summarizeDiagnosticResponse(
@@ -138,10 +206,18 @@ export function summarizeDiagnosticResponse(
             ? (body[wrapperName] as Record<string, unknown>)
             : null;
     const inner = wrapped ?? body;
+    const respResult =
+        typeof inner.resp_result === "object" && inner.resp_result !== null
+            ? (inner.resp_result as Record<string, unknown>)
+            : null;
     const result =
         typeof inner.result === "object" && inner.result !== null
             ? (inner.result as Record<string, unknown>)
-            : {};
+            : respResult !== null &&
+                typeof respResult.result === "object" &&
+                respResult.result !== null
+              ? (respResult.result as Record<string, unknown>)
+              : {};
 
     const rootKeys = allowlistedKeys(body, counter);
     const wrapperKeys = wrapped ? allowlistedKeys(wrapped, counter) : [];
@@ -178,6 +254,7 @@ export function summarizeDiagnosticResponse(
             productsType: Array.isArray(products) ? "array" : typeof products,
             productCount: Array.isArray(products) ? products.length : null,
             feedNames: extractFeedNames(result, secrets),
+            structure: buildStructure(raw, { nodes: 0 }, 0),
         },
         codes: { code, rspCode, ret },
     };

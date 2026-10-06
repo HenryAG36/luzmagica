@@ -102,25 +102,47 @@ test("codes sanitized, error_response code surfaced, ret strict", () => {
     assert.equal(transportFail.httpStatus, 500);
 });
 
-test("feed names extracted only from documented fields, secrets redacted", () => {
+test("feed names extracted only from promos paths, secrets redacted", () => {
     const t = summarizeDiagnosticResponse(
         "aliexpress.ds.feedname.get",
         200,
         {
             code: "0",
             result: {
-                feed_names: ["DS bestseller", "app-secret-123-leak", 42],
-                feeds: [
-                    { feed_name: "DS new arrivals" },
-                    { feed_name: "DS bestseller" },
-                    { feed_name: `${"x".repeat(90)}app-secret-123` },
-                    {},
-                ],
+                promos: {
+                    promo: [
+                        { promo_name: "DS bestseller" },
+                        { promo_name: "app-secret-123-leak" },
+                        { promo_name: `${"x".repeat(90)}app-secret-123` },
+                        { name: "not-promo-name" },
+                        "bare string",
+                    ],
+                },
+                feed_names: ["ignored-not-a-promo"],
             },
         },
         ["app-secret-123"]
     );
-    assert.deepEqual(t.shape.feedNames, ["DS bestseller", "[redacted]", "DS new arrivals"]);
+    assert.deepEqual(t.shape.feedNames, ["DS bestseller", "[redacted]"]);
+
+    const flatPromos = summarizeDiagnosticResponse("m", 200, {
+        code: "0",
+        result: { promos: [{ promo_name: "DS hot" }, { promo_name: "DS hot" }] },
+    });
+    assert.deepEqual(flatPromos.shape.feedNames, ["DS hot"]);
+
+    const respResultPath = summarizeDiagnosticResponse(
+        "aliexpress.ds.feedname.get",
+        200,
+        {
+            aliexpress_ds_feedname_get_response: {
+                resp_result: {
+                    result: { promos: { promo: [{ promo_name: "DS bestseller" }] } },
+                },
+            },
+        }
+    );
+    assert.deepEqual(respResultPath.shape.feedNames, ["DS bestseller"]);
 
     const noFeeds = summarizeDiagnosticResponse("m", 200, { code: "0", result: { other: [] } });
     assert.deepEqual(noFeeds.shape.feedNames, []);
@@ -154,7 +176,10 @@ test("diagnostics runs exactly two sequential read-only calls under the lease", 
             methods.push(method);
             if (method === "aliexpress.ds.feedname.get") {
                 return new Response(
-                    JSON.stringify({ code: "0", result: { feed_names: ["DS bestseller"] } }),
+                    JSON.stringify({
+                        code: "0",
+                        result: { promos: { promo: [{ promo_name: "DS bestseller" }] } },
+                    }),
                     { status: 200 }
                 );
             }
@@ -207,4 +232,72 @@ test("token failure returns the generic credential message", async () => {
     } finally {
         clearDsEnv();
     }
+});
+
+test("structure tree: live-evidenced itemids envelope, no raw values", () => {
+    const raw = {
+        aliexpress_ds_feed_itemids_get_response: {
+            result: {
+                products: { number: ["1005001234567890", "1005002234567890"] },
+                search_id: "s-1",
+                total: 42,
+            },
+            ret: "true",
+            rsp_msg: "success",
+            resp_result: { resp_code: "200" },
+            mystery_field: "hidden",
+        },
+        request_id: "req-abc",
+    };
+    const t = summarizeDiagnosticResponse("aliexpress.ds.feed.itemids.get", 200, raw);
+    assert.equal(t.ok, true);
+    assert.equal(t.shape.productsType, "object");
+    assert.equal(t.shape.productCount, null);
+    assert.deepEqual(t.codes, { code: null, rspCode: null, ret: true });
+
+    const s = t.shape.structure;
+    assert.equal(s.type, "object");
+    const wrapper = s.fields?.aliexpress_ds_feed_itemids_get_response;
+    assert.equal(wrapper?.type, "object");
+    assert.equal(wrapper?.fields?.result?.type, "object");
+    const resultNode = wrapper?.fields?.result;
+    assert.equal(resultNode?.fields?.products?.type, "object");
+    assert.deepEqual(resultNode?.fields?.products?.fields?.number, {
+        type: "array",
+        length: 2,
+        elementTypes: ["string"],
+    });
+    assert.equal(resultNode?.fields?.total?.type, "number");
+    assert.equal(wrapper?.unknownKeyCount, 1);
+    assert.equal(s.unknownKeyCount, 1);
+    const serialized = JSON.stringify(t);
+    assert.ok(!serialized.includes("1005001234567890"));
+    assert.ok(!serialized.includes("mystery_field"));
+    assert.ok(!serialized.includes("request_id"));
+});
+
+test("structure tree bounded by depth and node cap", () => {
+    const deep = { result: { promos: { promo: { promo: { promo: { promo: { promo: "leaf" } } } } } } };
+    const t = summarizeDiagnosticResponse("m", 200, deep);
+    const serialized = JSON.stringify(t.shape.structure);
+    assert.ok(serialized.includes("truncated"));
+
+    const node = (depth: number): Record<string, unknown> =>
+        depth === 0
+            ? { total: 1 }
+            : { result: node(depth - 1), promos: node(depth - 1), products: node(depth - 1) };
+    const t2 = summarizeDiagnosticResponse("m", 200, { result: node(4) });
+    assert.ok(JSON.stringify(t2.shape.structure).includes("truncated"));
+});
+
+test("scalar codes remain sanitized while structure shows types only", () => {
+    const t = summarizeDiagnosticResponse("m", 200, {
+        code: "0",
+        rsp_code: "200",
+        ret: true,
+        result: { total: "not-a-number", search_id: "secret-id-value" },
+    });
+    assert.equal(t.shape.structure.fields?.result?.fields?.search_id?.type, "string");
+    assert.equal(t.shape.structure.fields?.result?.fields?.total?.type, "string");
+    assert.ok(!JSON.stringify(t.shape.structure).includes("secret-id-value"));
 });
