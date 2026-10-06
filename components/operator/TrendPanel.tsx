@@ -98,6 +98,9 @@ export default function TrendPanel() {
     const [dsMargin, setDsMargin] = useState(15);
     const [dsPrice, setDsPrice] = useState("");
     const [dsPriceDirty, setDsPriceDirty] = useState(false);
+    const [dsDiag, setDsDiag] = useState<string | null>(null);
+    const [dsDiagBusy, setDsDiagBusy] = useState(false);
+    const [dsDiagCopied, setDsDiagCopied] = useState(false);
     const dsFreightSeq = useRef(0);
     const searchParams = useSearchParams();
     const dsConnectResult = searchParams.get("ae_ds");
@@ -512,6 +515,28 @@ export default function TrendPanel() {
         void runDsLookup(item.sourceId);
     };
 
+    const runDsDiagnostics = async () => {
+        setDsDiagBusy(true);
+        setDsDiag(null);
+        setDsDiagCopied(false);
+        setError("");
+        try {
+            const res = await fetch("/api/admin/suppliers/aliexpress-ds/diagnostics", {
+                method: "POST",
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setError(body.error || "No se pudo ejecutar el diagnóstico.");
+                return;
+            }
+            setDsDiag(JSON.stringify(body.diagnostics, null, 2));
+        } catch {
+            setError("Error de red al ejecutar el diagnóstico.");
+        } finally {
+            setDsDiagBusy(false);
+        }
+    };
+
     const dsResultMessage = dsConnectResult
         ? ({
               connected: ["AliExpress DS conectado correctamente.", true],
@@ -703,13 +728,23 @@ export default function TrendPanel() {
                             <h4 className="font-heading text-base font-bold text-white">
                                 Proveedor · AliExpress Dropshipping
                             </h4>
-                            <a
-                                href="/api/admin/providers/aliexpress-ds/authorize"
-                                className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors self-start"
-                            >
-                                <PlugZap className="w-3.5 h-3.5" />
-                                Conectar AliExpress DS
-                            </a>
+                            <div className="flex flex-col sm:flex-row gap-2 self-start">
+                                <a
+                                    href="/api/admin/providers/aliexpress-ds/authorize"
+                                    className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors"
+                                >
+                                    <PlugZap className="w-3.5 h-3.5" />
+                                    Conectar AliExpress DS
+                                </a>
+                                <button
+                                    type="button"
+                                    onClick={() => void runDsDiagnostics()}
+                                    disabled={dsDiagBusy}
+                                    className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs flex items-center gap-2 hover:bg-white/10 transition-colors disabled:opacity-50"
+                                >
+                                    {dsDiagBusy ? "Diagnosticando (2 llamadas en vivo)..." : "Diagnosticar AliExpress DS"}
+                                </button>
+                            </div>
                         </div>
                         <p className="text-[11px] text-muted mb-4">
                             Busca un producto por su ID de AliExpress. Las ventas mostradas son reportadas por el proveedor, no una tendencia. Requiere la app DS conectada por OAuth.
@@ -718,6 +753,30 @@ export default function TrendPanel() {
                             <p className={`text-xs mb-3 ${dsResultMessage[1] ? "text-green-300" : "text-red-300"}`}>
                                 {dsResultMessage[0]}
                             </p>
+                        )}
+                        {dsDiag && (
+                            <div className="mb-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[10px] text-muted">
+                                        Diagnóstico sanitizado (2 llamadas de solo lectura; sin pedidos). Comparte este JSON si necesitas ayuda.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void navigator.clipboard
+                                                .writeText(dsDiag)
+                                                .then(() => setDsDiagCopied(true))
+                                                .catch(() => setDsDiagCopied(false));
+                                        }}
+                                        className="text-[10px] text-primary hover:underline shrink-0"
+                                    >
+                                        {dsDiagCopied ? "Copiado" : "Copiar resultado"}
+                                    </button>
+                                </div>
+                                <pre className="text-[10px] text-white/80 overflow-x-auto whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+                                    {dsDiag}
+                                </pre>
+                            </div>
                         )}
                         <div className="flex flex-col sm:flex-row gap-2">
                             <input
