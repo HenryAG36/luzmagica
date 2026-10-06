@@ -20,6 +20,7 @@ import type { CatalogRow } from "@/lib/catalog/validate";
 import type { DsFreightQuote, DsProduct } from "@/lib/suppliers/types";
 import { isHttpUrl } from "@/lib/catalog/validate";
 import { describePublishError } from "@/lib/catalog/publishFeedback";
+import { describeEmptyFeed } from "@/lib/trends/emptyFeed";
 import { computeActualContribution, computePriceSuggestion, resolveUsdAmount, usdToCop } from "@/lib/catalog/pricing";
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -503,6 +504,8 @@ export default function TrendPanel() {
     const aliItems = data?.items.filter((i) => i.source === "aliexpress") ?? [];
     const dsFeedItems = data?.items.filter((i) => i.source === "aliexpress_ds") ?? [];
     const cjItems = data?.items.filter((i) => i.source === "cjdropshipping") ?? [];
+    const dsStatus = data?.sources.find((s) => s.source === "aliexpress_ds");
+    const cjStatus = data?.sources.find((s) => s.source === "cjdropshipping");
 
     const handleDsFeedImport = (item: TrendItem) => {
         setDsProductId(item.sourceId);
@@ -664,7 +667,7 @@ export default function TrendPanel() {
                         </p>
                         {dsFeedItems.length === 0 ? (
                             <p className="text-xs text-muted">
-                                Sin datos. Conecta AliExpress DS para activar esta fuente.
+                                {describeEmptyFeed("aliexpress_ds", dsStatus)}
                             </p>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -684,7 +687,7 @@ export default function TrendPanel() {
                         </p>
                         {cjItems.length === 0 ? (
                             <p className="text-xs text-muted">
-                                Sin datos. Configura CJ_API_KEY para activar esta fuente.
+                                {describeEmptyFeed("cjdropshipping", cjStatus)}
                             </p>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

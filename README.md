@@ -130,7 +130,7 @@ eight published seed products. The `20261006190950_ds_shipping` and
 customer-shipping fields and supplier-private grants are verified remotely.
 Authenticated browser flows, concurrent Postgres
 behavior, OAuth, and live provider responses still require end-to-end validation.
-The pinned Supabase packages are installed; TypeScript, lint, 120 fixture tests,
+The pinned Supabase packages are installed; TypeScript, lint, 122 fixture tests,
 and the production build pass.
 
 ## Learn More

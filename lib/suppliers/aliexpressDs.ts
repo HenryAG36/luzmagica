@@ -539,6 +539,16 @@ export interface DsFeedPage {
     searchId: string | null;
 }
 
+function dsFeedRoot(raw: unknown): Record<string, unknown> | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    const wrapped = body.aliexpress_ds_feed_itemids_get_response;
+    if (typeof wrapped === "object" && wrapped !== null) {
+        return wrapped as Record<string, unknown>;
+    }
+    return body;
+}
+
 export function getDsFeedResponseError(raw: unknown): string | null {
     if (typeof raw !== "object" || raw === null) return "malformed response";
     const body = raw as Record<string, unknown>;
@@ -547,44 +557,64 @@ export function getDsFeedResponseError(raw: unknown): string | null {
         const code = (err as Record<string, unknown>).code;
         return `provider error ${typeof code === "string" || typeof code === "number" ? code : "unknown"}`;
     }
-    const root =
-        typeof body.aliexpress_ds_feed_itemids_get_response === "object" &&
-        body.aliexpress_ds_feed_itemids_get_response !== null
-            ? (body.aliexpress_ds_feed_itemids_get_response as Record<string, unknown>)
-            : body;
-    if (root.code !== undefined && String(root.code) !== "0") {
-        return `provider error ${String(root.code)}`;
+    const root = dsFeedRoot(raw);
+    if (!root) return "malformed response";
+    if (String(root.code) !== "0") {
+        return `provider error ${root.code === undefined ? "missing" : String(root.code)}`;
     }
-    if (root.ret !== undefined && String(root.ret) !== "true") {
-        return `provider ret ${String(root.ret)}`;
+    if (String(root.ret) !== "true") {
+        return `provider ret ${root.ret === undefined ? "missing" : String(root.ret)}`;
     }
-    if (root.rsp_code !== undefined && String(root.rsp_code) !== "200") {
-        return `provider rsp_code ${String(root.rsp_code)}`;
+    if (String(root.rsp_code) !== "200") {
+        return `provider rsp_code ${root.rsp_code === undefined ? "missing" : String(root.rsp_code)}`;
+    }
+    return null;
+}
+
+export function describeDsFeedShape(raw: unknown): string {
+    const root = dsFeedRoot(raw);
+    if (!root) return "feed response malformed: missing envelope";
+    const result = root.result;
+    if (typeof result !== "object" || result === null) {
+        return "feed response malformed: missing result";
+    }
+    const products = (result as Record<string, unknown>).products;
+    if (!Array.isArray(products)) {
+        return "feed response malformed: missing result.products";
+    }
+    return "feed response malformed: no valid product ids";
+}
+
+function feedIdFromEntry(entry: unknown): string | null {
+    if (typeof entry === "string") {
+        return FEED_ID_PATTERN.test(entry) ? entry : null;
+    }
+    if (typeof entry === "number" && Number.isSafeInteger(entry) && entry > 0) {
+        const id = String(entry);
+        return FEED_ID_PATTERN.test(id) ? id : null;
     }
     return null;
 }
 
 export function normalizeDsFeedItemIds(raw: unknown): DsFeedPage | null {
-    if (typeof raw !== "object" || raw === null) return null;
-    const body = raw as Record<string, unknown>;
-    const root =
-        typeof body.aliexpress_ds_feed_itemids_get_response === "object" &&
-        body.aliexpress_ds_feed_itemids_get_response !== null
-            ? (body.aliexpress_ds_feed_itemids_get_response as Record<string, unknown>)
-            : body;
+    if (getDsFeedResponseError(raw) !== null) return null;
+    const root = dsFeedRoot(raw);
+    if (!root) return null;
     const result =
         typeof root.result === "object" && root.result !== null
             ? (root.result as Record<string, unknown>)
             : null;
     if (!result) return null;
-    const products = Array.isArray(result.products) ? result.products : [];
+    const products = result.products;
+    if (!Array.isArray(products)) return null;
     const ids: string[] = [];
     for (const entry of products) {
-        const id = String(entry ?? "");
-        if (!FEED_ID_PATTERN.test(id)) continue;
+        const id = feedIdFromEntry(entry);
+        if (id === null) continue;
         if (!ids.includes(id)) ids.push(id);
         if (ids.length >= FEED_MAX_ITEMS) break;
     }
+    if (ids.length === 0 && products.length > 0) return null;
     return {
         productIds: ids,
         total: parseIntField(result.total),
@@ -611,7 +641,7 @@ export async function fetchDsFeedItemIds(
     const responseError = getDsFeedResponseError(res.data);
     if (responseError) return { ok: false, error: responseError };
     const page = normalizeDsFeedItemIds(res.data);
-    if (!page) return { ok: false, error: "feed response malformed" };
+    if (!page) return { ok: false, error: describeDsFeedShape(res.data) };
     return { ok: true, data: page };
 }
 

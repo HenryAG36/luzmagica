@@ -744,3 +744,67 @@ test("exception inside ds refresh is caught, recorded, and the lease released", 
         clearDsEnv();
     }
 });
+
+test("feed envelope requires documented success flags and explicit products array", async () => {
+    const { normalizeDsFeedItemIds, fetchDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
+    const inner = feedFixture().aliexpress_ds_feed_itemids_get_response;
+
+    assert.equal(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: { ...inner, ret: undefined },
+        }),
+        null
+    );
+    assert.equal(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: { ...inner, result: { total: "1" } },
+        }),
+        null
+    );
+    assert.equal(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: { ...inner, result: "oops" },
+        }),
+        null
+    );
+    assert.equal(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: { ...inner, result: { products: ["abc", null, -1] } },
+        }),
+        null
+    );
+    assert.deepEqual(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: {
+                ...inner,
+                result: { products: ["1", Number.MAX_SAFE_INTEGER * 2, 1.5] },
+            },
+        })?.productIds,
+        ["1"]
+    );
+
+    const missingFlags: FetchLike = async () =>
+        new Response(
+            JSON.stringify({ aliexpress_ds_feed_itemids_get_response: { result: { products: [] } } }),
+            { status: 200 }
+        );
+    const res = await fetchDsFeedItemIds("tok", CONFIG, missingFlags);
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /provider error missing|ret missing|rsp_code missing/);
+
+    const noProducts: FetchLike = async () =>
+        new Response(
+            JSON.stringify({
+                aliexpress_ds_feed_itemids_get_response: {
+                    code: "0",
+                    ret: "true",
+                    rsp_code: "200",
+                    result: { total: "7" },
+                },
+            }),
+            { status: 200 }
+        );
+    const res2 = await fetchDsFeedItemIds("tok", CONFIG, noProducts);
+    assert.equal(res2.ok, false);
+    assert.match(res2.error ?? "", /feed response malformed: missing result\.products/);
+});
