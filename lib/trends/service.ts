@@ -292,11 +292,20 @@ async function refreshAliExpress(
     }
 }
 
+export function dsFeedName(conn: ProviderConnectionRow | null): string | null {
+    const value = conn?.meta?.ds_feed_name;
+    return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
 async function refreshAliExpressDs(
     service: SupabaseClientLike,
     owner: string,
-    fetchImpl?: FetchLike
+    fetchImpl?: FetchLike,
+    conn: ProviderConnectionRow | null = null
 ): Promise<string | null> {
+    const feedName = dsFeedName(conn);
+    if (!feedName) return "Selecciona un feed de AliExpress DS.";
+
     const acquired = await acquireProviderLease(service, "aliexpress_ds", owner);
     if (!acquired) return null;
 
@@ -304,6 +313,10 @@ async function refreshAliExpressDs(
         const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
         const dsService = await import("../suppliers/dsService.ts");
         const ds = await import("../suppliers/aliexpressDs.ts");
+
+        // re-read inside the lease: the selection may have changed since the precheck
+        const selectedFeed = dsFeedName(await getConnection(service, "aliexpress_ds"));
+        if (!selectedFeed) return "Selecciona un feed de AliExpress DS.";
 
         const tokenResult = await dsService.getDsAccessToken(service, fetchImpl, deadlineMs);
         if ("error" in tokenResult) {
@@ -314,7 +327,7 @@ async function refreshAliExpressDs(
 
         const env = getAliExpressDsEnv();
         if (!env) return "not configured";
-        const feed = await ds.fetchDsFeedItems(tokenResult.token, env, fetchImpl, deadlineMs);
+        const feed = await ds.fetchDsFeedItems(tokenResult.token, env, selectedFeed, fetchImpl, deadlineMs);
         if (!feed.ok || !feed.data) {
             const message = feed.error || "feed fetch failed";
             await writeSnapshotError(service, "aliexpress_ds", "bestseller_feed", message, feed.deferSeconds);
@@ -398,7 +411,7 @@ async function refreshSource(
         const conn = await getConnection(service, source);
         if (!sourceConfigured(source, conn)) return "not configured";
         if (source === "mercadolibre") return refreshMeli(service, owner, fetchImpl);
-        if (source === "aliexpress_ds") return refreshAliExpressDs(service, owner, fetchImpl);
+        if (source === "aliexpress_ds") return refreshAliExpressDs(service, owner, fetchImpl, conn);
         if (source === "cjdropshipping") return refreshCjDropshipping(service, owner, fetchImpl);
         return refreshAliExpress(service, owner, fetchImpl);
     } catch {
@@ -496,19 +509,42 @@ export async function getTrends(
                             ? "Configura CJ_API_KEY."
                             : "Configura ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET y ALIEXPRESS_TRACKING_ID.",
             });
+        } else if (source === "aliexpress_ds" && !dsFeedName(conn)) {
+            sources.push({
+                source,
+                status: "stale",
+                message: "Selecciona un feed de AliExpress DS.",
+                feedName: null,
+            });
         } else if (hasError) {
             sources.push({
                 source,
                 status: sourceSnapshots.some((s) => !s.error) ? "stale" : "error",
                 message: sourceSnapshots.find((s) => s.error)?.error || undefined,
                 fetchedAt: freshest,
+                feedName: source === "aliexpress_ds" ? dsFeedName(conn) : undefined,
             });
         } else if (sourceSnapshots.length === 0) {
-            sources.push({ source, status: "stale", message: "Sin datos todavía." });
+            sources.push({
+                source,
+                status: "stale",
+                message: "Sin datos todavía.",
+                feedName: source === "aliexpress_ds" ? dsFeedName(conn) : undefined,
+            });
         } else if (!isFresh(freshest, nowMs)) {
-            sources.push({ source, status: "stale", fetchedAt: freshest });
+            sources.push({
+                source,
+                status: "stale",
+                fetchedAt: freshest,
+                feedName: source === "aliexpress_ds" ? dsFeedName(conn) : undefined,
+            });
         } else {
-            sources.push({ source, status: "ok", fetchedAt: freshest });
+            sources.push({
+                source,
+                status: "ok",
+                fetchedAt: freshest,
+                feedName: source === "aliexpress_ds" ? dsFeedName(conn) : undefined,
+            });
         }
     }
 

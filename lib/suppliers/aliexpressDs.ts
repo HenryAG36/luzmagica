@@ -529,9 +529,13 @@ export async function fetchDsFreightQuote(
 }
 
 const FEED_ITEMIDS_API = "aliexpress.ds.feed.itemids.get";
-const FEED_NAME = "DS bestseller";
+const FEED_NAMES_API = "aliexpress.ds.feedname.get";
 const FEED_MAX_ITEMS = 10;
 const FEED_ID_PATTERN = /^\d{1,20}$/;
+const FEED_NAMES_MAX = 200;
+const FEED_NAME_MAX_LEN = 200;
+const FEED_DESC_MAX_LEN = 500;
+const FEED_CONTAINER_ID_KEYS = new Set(["number", "long", "string"]);
 
 export interface DsFeedPage {
     productIds: string[];
@@ -549,6 +553,13 @@ function dsFeedRoot(raw: unknown): Record<string, unknown> | null {
     return body;
 }
 
+function dsRespResult(root: Record<string, unknown>): Record<string, unknown> | null {
+    const resp = root.resp_result;
+    return typeof resp === "object" && resp !== null
+        ? (resp as Record<string, unknown>)
+        : null;
+}
+
 export function getDsFeedResponseError(raw: unknown): string | null {
     if (typeof raw !== "object" || raw === null) return "malformed response";
     const body = raw as Record<string, unknown>;
@@ -559,15 +570,25 @@ export function getDsFeedResponseError(raw: unknown): string | null {
     }
     const root = dsFeedRoot(raw);
     if (!root) return "malformed response";
-    if (String(root.code) !== "0") {
-        return `provider error ${root.code === undefined ? "missing" : String(root.code)}`;
+    const resp = dsRespResult(root);
+    if (root.code !== undefined && String(root.code) !== "0") {
+        return `provider error ${typeof root.code === "string" || typeof root.code === "number" ? root.code : "unknown"}`;
     }
-    if (String(root.ret) !== "true") {
-        return `provider ret ${root.ret === undefined ? "missing" : String(root.ret)}`;
+    if (root.ret !== undefined && String(root.ret) !== "true") {
+        return `provider ret ${String(root.ret)}`;
     }
-    if (String(root.rsp_code) !== "200") {
-        return `provider rsp_code ${root.rsp_code === undefined ? "missing" : String(root.rsp_code)}`;
+    if (root.rsp_code !== undefined && String(root.rsp_code) !== "200") {
+        return `provider rsp_code ${String(root.rsp_code)}`;
     }
+    if (resp && resp.resp_code !== undefined && String(resp.resp_code) !== "200") {
+        return `provider resp_code ${String(resp.resp_code)}`;
+    }
+    const success =
+        String(root.code) === "0" ||
+        String(root.ret) === "true" ||
+        String(root.rsp_code) === "200" ||
+        String(resp?.resp_code) === "200";
+    if (!success) return "missing success flag";
     return null;
 }
 
@@ -579,8 +600,21 @@ export function describeDsFeedShape(raw: unknown): string {
         return "feed response malformed: missing result";
     }
     const products = (result as Record<string, unknown>).products;
-    if (!Array.isArray(products)) {
+    if (typeof products !== "object" || products === null) {
         return "feed response malformed: missing result.products";
+    }
+    if (!Array.isArray(products)) {
+        const keys = Object.keys(products);
+        if (keys.length === 0) {
+            const total = parseIntField((result as Record<string, unknown>).total);
+            return total === 0
+                ? "feed response malformed: no valid product ids"
+                : "feed response malformed: empty product container with positive total";
+        }
+        const inner = (products as Record<string, unknown>)[keys[0]];
+        if (!FEED_CONTAINER_ID_KEYS.has(keys[0]) || !Array.isArray(inner)) {
+            return "feed response malformed: products object without known id array";
+        }
     }
     return "feed response malformed: no valid product ids";
 }
@@ -606,15 +640,33 @@ export function normalizeDsFeedItemIds(raw: unknown): DsFeedPage | null {
             : null;
     if (!result) return null;
     const products = result.products;
-    if (!Array.isArray(products)) return null;
+    if (typeof products !== "object" || products === null) return null;
+    let rawIds: unknown[] | null = null;
+    if (Array.isArray(products)) {
+        rawIds = products;
+    } else {
+        const keys = Object.keys(products);
+        if (keys.length === 0) {
+            const total = parseIntField(result.total);
+            if (total !== 0) return null;
+            rawIds = [];
+        } else if (keys.length === 1 && FEED_CONTAINER_ID_KEYS.has(keys[0])) {
+            const inner = (products as Record<string, unknown>)[keys[0]];
+            if (!Array.isArray(inner)) return null;
+            rawIds = inner;
+        } else {
+            return null;
+        }
+    }
+    if (rawIds === null) return null;
     const ids: string[] = [];
-    for (const entry of products) {
+    for (const entry of rawIds) {
         const id = feedIdFromEntry(entry);
         if (id === null) continue;
         if (!ids.includes(id)) ids.push(id);
         if (ids.length >= FEED_MAX_ITEMS) break;
     }
-    if (ids.length === 0 && products.length > 0) return null;
+    if (ids.length === 0 && rawIds.length > 0) return null;
     return {
         productIds: ids,
         total: parseIntField(result.total),
@@ -625,13 +677,14 @@ export function normalizeDsFeedItemIds(raw: unknown): DsFeedPage | null {
 export async function fetchDsFeedItemIds(
     accessToken: string,
     config: AliExpressDsConfig,
+    feedName: string,
     fetchImpl?: FetchLike,
     deadlineMs?: number
 ): Promise<ProviderResult<DsFeedPage>> {
     const url = buildSignedRequestUrl(
         FEED_ITEMIDS_API,
         config,
-        { page_size: String(FEED_MAX_ITEMS), feed_name: FEED_NAME },
+        { page_size: String(FEED_MAX_ITEMS), feed_name: feedName },
         accessToken
     );
     const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
@@ -671,10 +724,11 @@ function feedItemFromProduct(product: DsProduct, productId: string): TrendItem {
 export async function fetchDsFeedItems(
     accessToken: string,
     config: AliExpressDsConfig,
+    feedName: string,
     fetchImpl?: FetchLike,
     deadlineMs?: number
 ): Promise<ProviderResult<{ items: TrendItem[]; partialError?: string }>> {
-    const feed = await fetchDsFeedItemIds(accessToken, config, fetchImpl, deadlineMs);
+    const feed = await fetchDsFeedItemIds(accessToken, config, feedName, fetchImpl, deadlineMs);
     if (!feed.ok || !feed.data) {
         return { ok: false, error: feed.error || "feed fetch failed", deferSeconds: feed.deferSeconds };
     }
@@ -709,4 +763,107 @@ export async function fetchDsFeedItems(
                 failed > 0 ? `${failed} of ${total} item details failed` : undefined,
         },
     };
+}
+
+export interface DsFeedInfo {
+    name: string;
+    description: string | null;
+    productCount: number | null;
+}
+
+export function getDsFeedNamesError(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return "malformed response";
+    const body = raw as Record<string, unknown>;
+    const err = body.error_response;
+    if (typeof err === "object" && err !== null) {
+        const code = (err as Record<string, unknown>).code;
+        return `provider error ${typeof code === "string" || typeof code === "number" ? code : "unknown"}`;
+    }
+    const wrapped = body.aliexpress_ds_feedname_get_response;
+    const root =
+        typeof wrapped === "object" && wrapped !== null
+            ? (wrapped as Record<string, unknown>)
+            : body;
+    const resp = dsRespResult(root);
+    if (root.code !== undefined && String(root.code) !== "0") {
+        return `provider error ${typeof root.code === "string" || typeof root.code === "number" ? root.code : "unknown"}`;
+    }
+    if (root.ret !== undefined && String(root.ret) !== "true") {
+        return `provider ret ${String(root.ret)}`;
+    }
+    if (root.rsp_code !== undefined && String(root.rsp_code) !== "200") {
+        return `provider rsp_code ${String(root.rsp_code)}`;
+    }
+    if (resp && resp.resp_code !== undefined && String(resp.resp_code) !== "200") {
+        return `provider resp_code ${String(resp.resp_code)}`;
+    }
+    const success =
+        String(root.code) === "0" ||
+        String(root.ret) === "true" ||
+        String(root.rsp_code) === "200" ||
+        String(resp?.resp_code) === "200";
+    if (!success) return "missing success flag";
+    return null;
+}
+
+export function normalizeDsFeedNames(raw: unknown): DsFeedInfo[] | null {
+    if (getDsFeedNamesError(raw) !== null) return null;
+    const body = raw as Record<string, unknown>;
+    const wrapped = body.aliexpress_ds_feedname_get_response;
+    const root =
+        typeof wrapped === "object" && wrapped !== null
+            ? (wrapped as Record<string, unknown>)
+            : body;
+    const resp = dsRespResult(root);
+    const result =
+        resp !== null && typeof resp.result === "object" && resp.result !== null
+            ? (resp.result as Record<string, unknown>)
+            : typeof root.result === "object" && root.result !== null
+              ? (root.result as Record<string, unknown>)
+              : null;
+    if (!result) return null;
+    const promos = result.promos;
+    const entries = Array.isArray(promos)
+        ? promos
+        : typeof promos === "object" && promos !== null && Array.isArray((promos as Record<string, unknown>).promo)
+          ? ((promos as Record<string, unknown>).promo as unknown[])
+          : null;
+    if (!entries) return null;
+    const feeds: DsFeedInfo[] = [];
+    for (const entry of entries) {
+        if (feeds.length >= FEED_NAMES_MAX) break;
+        if (typeof entry !== "object" || entry === null) continue;
+        const p = entry as Record<string, unknown>;
+        if (typeof p.promo_name !== "string" || p.promo_name.trim() === "") continue;
+        const name = p.promo_name.trim();
+        if (name.length > FEED_NAME_MAX_LEN) continue;
+        if (feeds.some((f) => f.name === name)) continue;
+        feeds.push({
+            name,
+            description:
+                typeof p.promo_desc === "string" && p.promo_desc.trim() !== ""
+                    ? p.promo_desc.trim().slice(0, FEED_DESC_MAX_LEN)
+                    : null,
+            productCount: parseIntField(p.product_num),
+        });
+    }
+    return feeds;
+}
+
+export async function fetchDsFeedNames(
+    accessToken: string,
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<DsFeedInfo[]>> {
+    const url = buildSignedRequestUrl(FEED_NAMES_API, config, {}, accessToken);
+    const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const envelopeError = getDsFeedNamesError(res.data);
+    if (envelopeError) return { ok: false, error: envelopeError };
+    const feeds = normalizeDsFeedNames(res.data);
+    if (!feeds) return { ok: false, error: "feed names response malformed" };
+    return { ok: true, data: feeds };
 }

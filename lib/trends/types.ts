@@ -31,6 +31,7 @@ export interface SourceStatus {
     message?: string;
     fetchedAt?: string;
     expiresAt?: string;
+    feedName?: string | null;
 }
 
 export interface TrendsPayload {

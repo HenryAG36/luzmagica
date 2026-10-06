@@ -90,9 +90,11 @@ administrator cannot be removed (enforced by a database trigger).
   `shipping_estimate_city`, `shipping_checked_at`, and `shipping_quote_required`
   in the public view; carts sum the per-unit estimate and checkout is blocked
   while a DS item has no quote. Checkout remains a demo order flow with no
-  automated fulfillment. When connected, the DS app also feeds a "bestseller
-  feed" supplier signal (provider-reported order, sales period unverified) via
-  `aliexpress.ds.feed.itemids.get`.
+  automated fulfillment. When connected, the DS app also feeds a product-feed
+  supplier signal via `aliexpress.ds.feed.itemids.get`. The operator must pick
+  a feed explicitly (`aliexpress.ds.feedname.get` lists provider feeds; the
+  choice is stored in `provider_connections.meta.ds_feed_name`) — no feed is
+  assumed, and provider feed names are not verified market truth.
 - **CJ Dropshipping**: configure `CJ_API_KEY` (server-only). The token obtained
   from `authentication/getAccessToken` is stored encrypted under the provider
   lease and the trending product list (`product/listV2`) is refreshed at most
@@ -130,7 +132,7 @@ eight published seed products. The `20261006190950_ds_shipping` and
 customer-shipping fields and supplier-private grants are verified remotely.
 Authenticated browser flows, concurrent Postgres
 behavior, OAuth, and live provider responses still require end-to-end validation.
-The pinned Supabase packages are installed; TypeScript, lint, 122 fixture tests,
+The pinned Supabase packages are installed; TypeScript, lint, 140 fixture tests,
 and the production build pass.
 
 ## Learn More

@@ -91,6 +91,106 @@ export async function lookupDsProduct(
     }
 }
 
+function selectedDsFeed(conn: { meta: Record<string, unknown> } | null): string | null {
+    const value = conn?.meta?.ds_feed_name;
+    return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+export async function listDsFeeds(
+    service: SupabaseClientLike,
+    fetchImpl?: FetchLike
+): Promise<{ feeds: ds.DsFeedInfo[]; selectedFeed: string | null } | { error: string }> {
+    const env = getAliExpressDsEnv();
+    if (!env || !getEncryptionSecret()) return { error: "aliexpress ds not configured" };
+
+    const owner = randomUUID();
+    const acquired = await acquireProviderLease(service, DS_PROVIDER, owner);
+    if (!acquired) return { error: "another ds request is in progress" };
+
+    try {
+        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const tokenResult = await getDsAccessToken(service, fetchImpl, deadlineMs);
+        if ("error" in tokenResult) return { error: tokenResult.error };
+
+        const result = await ds.fetchDsFeedNames(tokenResult.token, env, fetchImpl, deadlineMs);
+        if (!result.ok || !result.data) {
+            return { error: result.error || "feed names fetch failed" };
+        }
+        const conn = await getConnection(service, DS_PROVIDER);
+        return { feeds: result.data, selectedFeed: selectedDsFeed(conn) };
+    } finally {
+        await releaseProviderLease(service, DS_PROVIDER, owner);
+    }
+}
+
+const SNAPSHOT_EPOCH = "1970-01-01T00:00:00.000Z";
+
+export async function selectDsFeed(
+    service: SupabaseClientLike,
+    feedName: string,
+    fetchImpl?: FetchLike
+): Promise<{ selectedFeed: string } | { error: string }> {
+    if (typeof feedName !== "string" || feedName.trim() === "" || feedName.length > 200) {
+        return { error: "invalid feed name" };
+    }
+    const env = getAliExpressDsEnv();
+    if (!env || !getEncryptionSecret()) return { error: "aliexpress ds not configured" };
+
+    const owner = randomUUID();
+    const acquired = await acquireProviderLease(service, DS_PROVIDER, owner);
+    if (!acquired) return { error: "another ds request is in progress" };
+
+    try {
+        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const tokenResult = await getDsAccessToken(service, fetchImpl, deadlineMs);
+        if ("error" in tokenResult) return { error: tokenResult.error };
+
+        const result = await ds.fetchDsFeedNames(tokenResult.token, env, fetchImpl, deadlineMs);
+        if (!result.ok || !result.data) {
+            return { error: result.error || "feed names fetch failed" };
+        }
+        const trimmed = feedName.trim();
+        if (!result.data.some((f) => f.name === trimmed)) {
+            return { error: "unknown feed" };
+        }
+
+        const conn = await getConnection(service, DS_PROVIDER);
+        const meta = {
+            ...(conn?.meta && typeof conn.meta === "object" ? conn.meta : {}),
+            ds_feed_name: trimmed,
+        };
+        const { error: persistError } = await service
+            .from("provider_connections")
+            .update({ meta, updated_at: new Date().toISOString() })
+            .eq("provider", DS_PROVIDER);
+        if (persistError) {
+            await markConnectionError(service, DS_PROVIDER, "feed selection persistence failed");
+            return { error: "feed selection persistence failed" };
+        }
+
+        const { error: invalidateError } = await service.from("trend_snapshots").upsert(
+            {
+                source: DS_PROVIDER,
+                scope: "bestseller_feed",
+                payload: { items: [] },
+                fetched_at: SNAPSHOT_EPOCH,
+                expires_at: SNAPSHOT_EPOCH,
+                last_attempt_at: null,
+                next_refresh_at: null,
+                error: null,
+            },
+            { onConflict: "source,scope" }
+        );
+        if (invalidateError) {
+            return { error: "feed selected but snapshot reset failed; retry selection" };
+        }
+
+        return { selectedFeed: trimmed };
+    } finally {
+        await releaseProviderLease(service, DS_PROVIDER, owner);
+    }
+}
+
 export async function lookupDsFreight(
     service: SupabaseClientLike,
     productId: string,

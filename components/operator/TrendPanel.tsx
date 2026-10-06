@@ -101,6 +101,9 @@ export default function TrendPanel() {
     const [dsDiag, setDsDiag] = useState<string | null>(null);
     const [dsDiagBusy, setDsDiagBusy] = useState(false);
     const [dsDiagCopied, setDsDiagCopied] = useState(false);
+    const [dsFeeds, setDsFeeds] = useState<{ name: string; description: string | null; productCount: number | null }[] | null>(null);
+    const [dsFeedChoice, setDsFeedChoice] = useState("");
+    const [dsFeedsBusy, setDsFeedsBusy] = useState(false);
     const dsFreightSeq = useRef(0);
     const searchParams = useSearchParams();
     const dsConnectResult = searchParams.get("ae_ds");
@@ -515,6 +518,54 @@ export default function TrendPanel() {
         void runDsLookup(item.sourceId);
     };
 
+    const loadDsFeeds = async () => {
+        setDsFeedsBusy(true);
+        setError("");
+        try {
+            const res = await fetch("/api/admin/suppliers/aliexpress-ds/feeds");
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setError(body.error || "No se pudieron cargar los feeds.");
+                return;
+            }
+            setDsFeeds(Array.isArray(body.feeds) ? body.feeds : []);
+            setDsFeedChoice(typeof body.selectedFeed === "string" ? body.selectedFeed : "");
+        } catch {
+            setError("Error de red al cargar los feeds.");
+        } finally {
+            setDsFeedsBusy(false);
+        }
+    };
+
+    const saveDsFeed = async () => {
+        if (!dsFeedChoice) return;
+        setDsFeedsBusy(true);
+        setError("");
+        try {
+            const res = await fetch("/api/admin/suppliers/aliexpress-ds/feeds", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ feedName: dsFeedChoice }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setError(body.error || "No se pudo guardar el feed.");
+                return;
+            }
+            setNotice(`Feed DS seleccionado: ${body.selectedFeed}.`);
+            const refreshRes = await fetch("/api/admin/trends/refresh", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ sources: ["aliexpress_ds"] }),
+            });
+            if (refreshRes.ok) setData(await refreshRes.json());
+        } catch {
+            setError("Error de red al guardar el feed.");
+        } finally {
+            setDsFeedsBusy(false);
+        }
+    };
+
     const runDsDiagnostics = async () => {
         setDsDiagBusy(true);
         setDsDiag(null);
@@ -685,7 +736,7 @@ export default function TrendPanel() {
 
                     <div className="glass rounded-3xl p-6 md:p-8">
                         <h4 className="font-heading text-base font-bold text-white mb-1">
-                            Feed de más vendidos · AliExpress DS (proveedor)
+                            Feed de productos · AliExpress DS (proveedor)
                         </h4>
                         <p className="text-[11px] text-muted mb-4">
                             Orden y contenido reportados por el feed del proveedor; período de ventas no verificado. Consultar un item ejecuta la búsqueda DS para elegir variante, flete y precio.
@@ -778,6 +829,52 @@ export default function TrendPanel() {
                                 </pre>
                             </div>
                         )}
+                        <div className="mb-4 rounded-xl border border-white/10 p-3 space-y-2">
+                            <p className="text-[11px] font-semibold text-white">
+                                Feed de descubrimiento{dsStatus?.feedName ? `: ${dsStatus.feedName}` : ""}
+                            </p>
+                            {!dsStatus?.feedName && (
+                                <p className="text-[10px] text-amber-300">
+                                    Ningún feed seleccionado. Carga la lista del proveedor y elige uno para activar esta fuente.
+                                </p>
+                            )}
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void loadDsFeeds()}
+                                    disabled={dsFeedsBusy}
+                                    className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs hover:bg-white/10 transition-colors disabled:opacity-50 shrink-0"
+                                >
+                                    {dsFeedsBusy ? "Cargando..." : "Cargar feeds"}
+                                </button>
+                                {dsFeeds !== null && (
+                                    <>
+                                        <select
+                                            value={dsFeedChoice}
+                                            onChange={(e) => setDsFeedChoice(e.target.value)}
+                                            className={inputClass}
+                                        >
+                                            <option value="">Selecciona feed...</option>
+                                            {dsFeeds.map((f) => (
+                                                <option key={f.name} value={f.name}>
+                                                    {f.name}
+                                                    {f.productCount !== null ? ` · ${f.productCount} productos` : ""}
+                                                    {f.description ? ` · ${f.description}` : ""}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => void saveDsFeed()}
+                                            disabled={dsFeedsBusy || !dsFeedChoice}
+                                            className="px-3 py-2 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold transition-all disabled:opacity-50 shrink-0"
+                                        >
+                                            Guardar feed
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                         <div className="flex flex-col sm:flex-row gap-2">
                             <input
                                 type="text"

@@ -253,7 +253,7 @@ test("structure tree: live-evidenced itemids envelope, no raw values", () => {
     assert.equal(t.ok, true);
     assert.equal(t.shape.productsType, "object");
     assert.equal(t.shape.productCount, null);
-    assert.deepEqual(t.codes, { code: null, rspCode: null, ret: true });
+    assert.deepEqual(t.codes, { code: null, rspCode: "200", ret: true });
 
     const s = t.shape.structure;
     assert.equal(s.type, "object");

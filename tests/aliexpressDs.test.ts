@@ -511,7 +511,7 @@ test("feed item ids validated: envelope, canonical ids, max 10", async () => {
         captured = url;
         return new Response(JSON.stringify(feedFixture()), { status: 200 });
     };
-    const res = await fetchDsFeedItemIds("tok", CONFIG, fetchImpl);
+    const res = await fetchDsFeedItemIds("tok", CONFIG, "DS bestseller", fetchImpl);
     assert.equal(res.ok, true);
     const parsed = new URL(captured);
     assert.equal(parsed.pathname, "/sync");
@@ -530,7 +530,7 @@ test("feed item ids surface provider rejections without faking", async () => {
         [{ error_response: { code: "IllegalAccess" } }, /IllegalAccess/],
     ] as const) {
         const fetchImpl: FetchLike = async () => new Response(JSON.stringify(body), { status: 200 });
-        const res = await fetchDsFeedItemIds("tok", CONFIG, fetchImpl);
+        const res = await fetchDsFeedItemIds("tok", CONFIG, "DS bestseller", fetchImpl);
         assert.equal(res.ok, false);
         assert.match(res.error ?? "", match);
     }
@@ -547,7 +547,7 @@ test("feed items preserve order, mark partial failures, fail closed when all fai
         calls.push(new URL(url).searchParams.get("product_id") ?? "");
         return new Response(JSON.stringify(productFixture()), { status: 200 });
     };
-    const res = await fetchDsFeedItems("tok", CONFIG, okFetch);
+    const res = await fetchDsFeedItems("tok", CONFIG, "DS bestseller", okFetch);
     assert.equal(res.ok, true);
     assert.deepEqual(res.data?.items.map((i) => i.sourceId), ["1005001234567890", "1005002234567890"]);
     assert.equal(res.data?.items[0].signalType, "supplier_feed");
@@ -567,7 +567,7 @@ test("feed items preserve order, mark partial failures, fail closed when all fai
         }
         return new Response(JSON.stringify(productFixture()), { status: 200 });
     };
-    const partial = await fetchDsFeedItems("tok", CONFIG, partialFetch);
+    const partial = await fetchDsFeedItems("tok", CONFIG, "DS bestseller", partialFetch);
     assert.equal(partial.ok, true);
     assert.deepEqual(partial.data?.items.map((i) => i.sourceId), ["2222222222"]);
     assert.match(partial.data?.partialError ?? "", /1 of 2/);
@@ -579,7 +579,7 @@ test("feed items preserve order, mark partial failures, fail closed when all fai
         }
         return new Response(JSON.stringify({ error_response: { code: "Boom" } }), { status: 200 });
     };
-    const empty = await fetchDsFeedItems("tok", CONFIG, allFail);
+    const empty = await fetchDsFeedItems("tok", CONFIG, "DS bestseller", allFail);
     assert.equal(empty.ok, false);
     assert.match(empty.error ?? "", /all feed item details failed/);
 });
@@ -597,6 +597,7 @@ test("ds feed refresh writes a snapshot via the shared provider lease", async ()
                 access_token_encrypted: encryptSecret("cached-ds-token", secret),
                 refresh_token_encrypted: encryptSecret("rt-1", secret),
                 token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "DS bestseller" },
             },
         ];
         const fetchImpl: FetchLike = async (url) => {
@@ -633,7 +634,7 @@ test("explicit empty feed is a successful empty result, not an all-fail", async 
         }
         throw new Error("no detail calls expected for an empty feed");
     };
-    const res = await fetchDsFeedItems("tok", CONFIG, fetchImpl);
+    const res = await fetchDsFeedItems("tok", CONFIG, "DS bestseller", fetchImpl);
     assert.equal(res.ok, true);
     assert.deepEqual(res.data?.items, []);
 });
@@ -653,7 +654,7 @@ test("unattempted feed items count as failures when the deadline hits", async ()
             fakeNow += 20_000;
             return res;
         };
-        const res = await fetchDsFeedItems("tok", CONFIG, fetchImpl, fakeNow + 10_000);
+        const res = await fetchDsFeedItems("tok", CONFIG, "DS bestseller", fetchImpl, fakeNow + 10_000);
         assert.equal(res.ok, true);
         assert.equal(res.data?.items.length, 1);
         assert.match(res.data?.partialError ?? "", /2 of 3/);
@@ -675,6 +676,7 @@ test("ds feed partial failure writes items plus an error on the snapshot", async
                 access_token_encrypted: encryptSecret("cached-ds-token", secret),
                 refresh_token_encrypted: encryptSecret("rt-1", secret),
                 token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "DS bestseller" },
             },
         ];
         const fetchImpl: FetchLike = async (url) => {
@@ -714,6 +716,7 @@ test("exception inside ds refresh is caught, recorded, and the lease released", 
                 status: "connected",
                 access_token_encrypted: encryptSecret("cached-ds-token", secret),
                 token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "DS bestseller" },
             },
         ];
         const client = db.asClient();
@@ -749,9 +752,15 @@ test("feed envelope requires documented success flags and explicit products arra
     const { normalizeDsFeedItemIds, fetchDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
     const inner = feedFixture().aliexpress_ds_feed_itemids_get_response;
 
+    // absent code/ret/rsp_code is accepted only when another documented success flag is present
+    assert.ok(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: { ...inner, ret: undefined, rsp_code: undefined },
+        })
+    );
     assert.equal(
         normalizeDsFeedItemIds({
-            aliexpress_ds_feed_itemids_get_response: { ...inner, ret: undefined },
+            aliexpress_ds_feed_itemids_get_response: { ...inner, code: undefined, ret: undefined, rsp_code: undefined },
         }),
         null
     );
@@ -788,9 +797,9 @@ test("feed envelope requires documented success flags and explicit products arra
             JSON.stringify({ aliexpress_ds_feed_itemids_get_response: { result: { products: [] } } }),
             { status: 200 }
         );
-    const res = await fetchDsFeedItemIds("tok", CONFIG, missingFlags);
+    const res = await fetchDsFeedItemIds("tok", CONFIG, "DS bestseller", missingFlags);
     assert.equal(res.ok, false);
-    assert.match(res.error ?? "", /provider error missing|ret missing|rsp_code missing/);
+    assert.match(res.error ?? "", /missing success flag/);
 
     const noProducts: FetchLike = async () =>
         new Response(
@@ -804,7 +813,428 @@ test("feed envelope requires documented success flags and explicit products arra
             }),
             { status: 200 }
         );
-    const res2 = await fetchDsFeedItemIds("tok", CONFIG, noProducts);
+    const res2 = await fetchDsFeedItemIds("tok", CONFIG, "DS bestseller", noProducts);
     assert.equal(res2.ok, false);
     assert.match(res2.error ?? "", /feed response malformed: missing result\.products/);
+});
+
+function feedNamesFixture(promos: Record<string, unknown>[], nested = true) {
+    const promoList = { promo: promos };
+    if (nested) {
+        return {
+            aliexpress_ds_feedname_get_response: {
+                resp_result: { resp_code: 200, result: { promos: promoList } },
+                rsp_msg: "success",
+            },
+        };
+    }
+    return { code: "0", result: { promos: promoList } };
+}
+
+test("feed names normalize the verified nested resp_result.promos.promo shape", async () => {
+    const { normalizeDsFeedNames, fetchDsFeedNames } = await import("../lib/suppliers/aliexpressDs.ts");
+    const promos = Array.from({ length: 125 }, (_, i) => ({
+        promo_name: `Feed ${i}`,
+        promo_desc: `desc ${i}`,
+        product_num: `${i * 7}`,
+    }));
+    const feeds = normalizeDsFeedNames(feedNamesFixture(promos));
+    assert.ok(feeds);
+    assert.equal(feeds.length, 125);
+    assert.equal(feeds[0].name, "Feed 0");
+    assert.equal(feeds[0].description, "desc 0");
+    assert.equal(feeds[0].productCount, 0);
+    assert.equal(feeds[10].productCount, 70);
+
+    const flat = normalizeDsFeedNames(feedNamesFixture(
+        [{ promo_name: "Flat Feed", promo_desc: "", product_num: "abc" }],
+        false
+    ));
+    assert.ok(flat);
+    assert.deepEqual(flat, [{ name: "Flat Feed", description: null, productCount: null }]);
+
+    const tooMany = normalizeDsFeedNames(
+        feedNamesFixture(Array.from({ length: 250 }, (_, i) => ({ promo_name: `F${i}` })))
+    );
+    assert.equal(tooMany?.length, 200);
+
+    assert.equal(normalizeDsFeedNames(feedNamesFixture(promos.map((p) => ({ ...p, promo_name: "Same" }))))?.length, 1);
+
+    // oversized names are dropped, never truncated into a different identifier
+    const oversized = normalizeDsFeedNames(
+        feedNamesFixture([{ promo_name: "X".repeat(250) }, { promo_name: "ok" }])
+    );
+    assert.deepEqual(oversized?.map((f) => f.name), ["ok"]);
+
+    let called = "";
+    const fetchImpl: FetchLike = async (url) => {
+        called = url;
+        return new Response(JSON.stringify(feedNamesFixture([{ promo_name: "DS bestseller" }])), { status: 200 });
+    };
+    const res = await fetchDsFeedNames("tok", CONFIG, fetchImpl);
+    assert.equal(res.ok, true);
+    assert.equal(new URL(called).searchParams.get("method"), "aliexpress.ds.feedname.get");
+});
+
+test("feed names reject missing success flag and provider failures", async () => {
+    const { normalizeDsFeedNames } = await import("../lib/suppliers/aliexpressDs.ts");
+    assert.equal(normalizeDsFeedNames({ result: { promos: { promo: [] } } }), null);
+    assert.equal(
+        normalizeDsFeedNames({
+            aliexpress_ds_feedname_get_response: {
+                resp_result: { resp_code: 500, result: { promos: { promo: [] } } },
+            },
+        }),
+        null
+    );
+    assert.equal(normalizeDsFeedNames({ error_response: { code: "IllegalAccess" } }), null);
+    assert.equal(normalizeDsFeedNames({ code: "0", result: { promos: "nope" } }), null);
+});
+
+test("feed itemids accepts ret-only live envelope and TOP number container", async () => {
+    const { normalizeDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
+    const liveLike = {
+        aliexpress_ds_feed_itemids_get_response: {
+            result: {
+                total: 2,
+                products: { number: ["1005001234567890", 9876543210, -5, "bad"] },
+                search_id: "s-1",
+            },
+            ret: "true",
+            rsp_msg: "success",
+        },
+    };
+    const page = normalizeDsFeedItemIds(liveLike);
+    assert.ok(page);
+    assert.deepEqual(page.productIds, ["1005001234567890", "9876543210"]);
+    assert.equal(page.total, 2);
+
+    assert.ok(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: {
+                result: { total: 0, products: {} },
+                ret: "true",
+            },
+        })
+    );
+    const positive = normalizeDsFeedItemIds({
+        aliexpress_ds_feed_itemids_get_response: {
+            result: { total: 5, products: {} },
+            ret: "true",
+        },
+    });
+    assert.equal(positive, null);
+    assert.equal(
+        normalizeDsFeedItemIds({
+            aliexpress_ds_feed_itemids_get_response: {
+                result: { products: { weird_key: ["1"] } },
+                ret: "true",
+            },
+        }),
+        null
+    );
+});
+
+test("empty product container with positive total produces a safe error", async () => {
+    const { fetchDsFeedItemIds } = await import("../lib/suppliers/aliexpressDs.ts");
+    const fetchImpl: FetchLike = async () =>
+        new Response(
+            JSON.stringify({
+                aliexpress_ds_feed_itemids_get_response: {
+                    result: { total: 5, products: {} },
+                    ret: "true",
+                },
+            }),
+            { status: 200 }
+        );
+    const res = await fetchDsFeedItemIds("tok", CONFIG, "DS bestseller", fetchImpl);
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /empty product container with positive total/);
+});
+
+test("ds feed refresh uses the selected feed and refuses without one", async () => {
+    dsEnv();
+    try {
+        const { refreshTrends } = await import("../lib/trends/service.ts");
+        const secret = "a".repeat(64);
+
+        const noFeed = new FakeDb();
+        noFeed.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        const denied = await refreshTrends(noFeed.asClient(), ["aliexpress_ds"], {
+            fetchImpl: async () => {
+                throw new Error("no fetch expected without a selected feed");
+            },
+        });
+        assert.match(denied.errors.aliexpress_ds ?? "", /Selecciona un feed/);
+        assert.equal(
+            noFeed.rpcCalls.filter((c) => c.fn === "try_acquire_refresh_lease").length,
+            0
+        );
+
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "Custom Picks" },
+            },
+        ];
+        let sentFeed = "";
+        const fetchImpl: FetchLike = async (url) => {
+            const params = new URL(url).searchParams;
+            if (params.get("method")?.includes("feed.itemids")) {
+                sentFeed = params.get("feed_name") ?? "";
+                return new Response(
+                    JSON.stringify({
+                        aliexpress_ds_feed_itemids_get_response: {
+                            result: { total: 0, products: {} },
+                            ret: "true",
+                        },
+                    }),
+                    { status: 200 }
+                );
+            }
+            return new Response(JSON.stringify(productFixture()), { status: 200 });
+        };
+        const result = await refreshTrends(db.asClient(), ["aliexpress_ds"], { fetchImpl });
+        assert.equal(sentFeed, "Custom Picks");
+        assert.deepEqual(result.refreshed, ["aliexpress_ds"]);
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("listDsFeeds returns provider feeds plus the stored selection", async () => {
+    dsEnv();
+    try {
+        const { listDsFeeds } = await import("../lib/suppliers/dsService.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "Feed B", keep: "me" },
+            },
+        ];
+        const fetchImpl: FetchLike = async () =>
+            new Response(
+                JSON.stringify(feedNamesFixture([
+                    { promo_name: "Feed A" },
+                    { promo_name: "Feed B" },
+                ])),
+                { status: 200 }
+            );
+        const res = await listDsFeeds(db.asClient(), fetchImpl);
+        assert.ok("feeds" in res);
+        if (!("feeds" in res)) return;
+        assert.equal(res.feeds.length, 2);
+        assert.equal(res.selectedFeed, "Feed B");
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("selectDsFeed verifies membership, merges meta, and clears the snapshot", async () => {
+    dsEnv();
+    try {
+        const { selectDsFeed } = await import("../lib/suppliers/dsService.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { keep: "me" },
+            },
+        ];
+        db.tables.trend_snapshots = [
+            {
+                source: "aliexpress_ds",
+                scope: "bestseller_feed",
+                payload: { items: [{ id: "stale" }] },
+                fetched_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 9999).toISOString(),
+                last_attempt_at: new Date().toISOString(),
+                next_refresh_at: new Date(Date.now() + 9999).toISOString(),
+                error: "old error",
+            },
+        ];
+        const fetchImpl: FetchLike = async () =>
+            new Response(
+                JSON.stringify(feedNamesFixture([{ promo_name: "Feed A" }, { promo_name: "Feed B" }])),
+                { status: 200 }
+            );
+
+        const bad = await selectDsFeed(db.asClient(), "Not A Real Feed", fetchImpl);
+        assert.deepEqual(bad, { error: "unknown feed" });
+        assert.equal(
+            (db.tables.provider_connections[0].meta as Record<string, unknown>).ds_feed_name,
+            undefined
+        );
+        assert.equal(db.tables.trend_snapshots.length, 1);
+
+        const ok = await selectDsFeed(db.asClient(), "Feed B", fetchImpl);
+        assert.deepEqual(ok, { selectedFeed: "Feed B" });
+        assert.deepEqual(db.tables.provider_connections[0].meta, {
+            keep: "me",
+            ds_feed_name: "Feed B",
+        });
+        const snap = db.tables.trend_snapshots.find(
+            (r) => r.source === "aliexpress_ds" && r.scope === "bestseller_feed"
+        );
+        assert.equal((snap!.payload as { items: unknown[] }).items.length, 0);
+        assert.equal(snap!.fetched_at, "1970-01-01T00:00:00.000Z");
+        assert.equal(snap!.error, null);
+        assert.equal(snap!.next_refresh_at, null);
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("selectDsFeed fails closed when meta persistence fails", async () => {
+    dsEnv();
+    try {
+        const { selectDsFeed } = await import("../lib/suppliers/dsService.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        db.failUpdates.add("provider_connections");
+        const fetchImpl: FetchLike = async () =>
+            new Response(JSON.stringify(feedNamesFixture([{ promo_name: "Feed A" }])), { status: 200 });
+        const res = await selectDsFeed(db.asClient(), "Feed A", fetchImpl);
+        assert.deepEqual(res, { error: "feed selection persistence failed" });
+        assert.equal(db.tables.provider_connections[0].meta, undefined);
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("selectDsFeed reports snapshot reset failure and same-feed retry resets again", async () => {
+    dsEnv();
+    try {
+        const { selectDsFeed } = await import("../lib/suppliers/dsService.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            },
+        ];
+        db.tables.trend_snapshots = [
+            {
+                source: "aliexpress_ds",
+                scope: "bestseller_feed",
+                payload: { items: [{ id: "stale" }] },
+                fetched_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 9999).toISOString(),
+                error: null,
+            },
+        ];
+        const fetchImpl: FetchLike = async () =>
+            new Response(JSON.stringify(feedNamesFixture([{ promo_name: "Feed B" }])), { status: 200 });
+
+        // invalidation failure: meta persisted but caller gets an error, not silent success
+        db.failUpserts.add("trend_snapshots");
+        const failed = await selectDsFeed(db.asClient(), "Feed B", fetchImpl);
+        assert.match((failed as { error?: string }).error ?? "", /snapshot reset failed; retry selection/);
+        assert.equal(
+            (db.tables.provider_connections[0].meta as Record<string, unknown>).ds_feed_name,
+            "Feed B"
+        );
+        assert.equal(
+            (db.tables.trend_snapshots[0].payload as { items: unknown[] }).items.length,
+            1
+        );
+
+        // retrying the same selection succeeds and still resets the snapshot
+        db.failUpserts.delete("trend_snapshots");
+        const retry = await selectDsFeed(db.asClient(), "Feed B", fetchImpl);
+        assert.deepEqual(retry, { selectedFeed: "Feed B" });
+        assert.equal(
+            (db.tables.trend_snapshots[0].payload as { items: unknown[] }).items.length,
+            0
+        );
+        assert.equal(db.tables.trend_snapshots[0].fetched_at, "1970-01-01T00:00:00.000Z");
+    } finally {
+        clearDsEnv();
+    }
+});
+
+test("ds feed refresh re-reads the selected feed inside the lease", async () => {
+    dsEnv();
+    try {
+        const { refreshTrends } = await import("../lib/trends/service.ts");
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("cached-ds-token", secret),
+                token_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+                meta: { ds_feed_name: "Initial Feed" },
+            },
+        ];
+        // selection changes between the pre-lease read and the in-lease read
+        const inner = db.asClient();
+        const client = {
+            from: (t: string) => inner.from(t),
+            rpc: (fn: string, args?: Record<string, unknown>) => {
+                if (fn === "try_acquire_refresh_lease") {
+                    db.tables.provider_connections[0].meta = { ds_feed_name: "Swapped Feed" };
+                }
+                return inner.rpc(fn, args);
+            },
+        };
+        let sentFeed = "";
+        const fetchImpl: FetchLike = async (url) => {
+            const params = new URL(url).searchParams;
+            if (params.get("method")?.includes("feed.itemids")) {
+                sentFeed = params.get("feed_name") ?? "";
+                return new Response(
+                    JSON.stringify({
+                        aliexpress_ds_feed_itemids_get_response: {
+                            result: { total: 0, products: {} },
+                            ret: "true",
+                        },
+                    }),
+                    { status: 200 }
+                );
+            }
+            return new Response(JSON.stringify(productFixture()), { status: 200 });
+        };
+        const result = await refreshTrends(
+            client as unknown as Parameters<typeof refreshTrends>[0],
+            ["aliexpress_ds"],
+            { fetchImpl }
+        );
+        assert.equal(sentFeed, "Swapped Feed");
+        assert.deepEqual(result.refreshed, ["aliexpress_ds"]);
+    } finally {
+        clearDsEnv();
+    }
 });

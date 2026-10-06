@@ -4,6 +4,8 @@ import type { FetchLike } from "../trends/http.ts";
 import { LEASE_TTL_SECONDS, REFRESH_DEADLINE_MS } from "../trends/freshness.ts";
 import {
     acquireProviderLease,
+    dsFeedName,
+    getConnection,
     markConnectionError,
     releaseProviderLease,
 } from "../trends/service.ts";
@@ -46,7 +48,7 @@ const STRUCTURE_MAX_NODES = 80;
 const STRUCTURE_MAX_ELEMENT_TYPES = 5;
 
 const CODE_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
-const FEED_NAME_MAX = 20;
+const FEED_NAME_MAX = 200;
 const FEED_NAME_LENGTH = 80;
 
 export interface DsStructureNode {
@@ -80,6 +82,7 @@ export interface DsDiagnosticTest {
     ok: boolean;
     shape: DsDiagnosticShape;
     codes: DsDiagnosticCodes;
+    testedFeedName?: string;
 }
 
 export interface DsDiagnosticsReport {
@@ -230,7 +233,8 @@ export function summarizeDiagnosticResponse(
 
     const products = result.products;
     const code = sanitizeCode(inner.code, secrets) ?? sanitizeCode(errorResponse?.code, secrets);
-    const rspCode = sanitizeCode(inner.rsp_code, secrets);
+    const rspCode =
+        sanitizeCode(inner.rsp_code, secrets) ?? sanitizeCode(respResult?.resp_code, secrets);
     const ret = sanitizeRet(inner.ret);
     const httpOk = httpStatus !== null && httpStatus >= 200 && httpStatus < 300;
 
@@ -280,19 +284,32 @@ export async function runDsDiagnostics(
             return { error: "No se pudieron obtener credenciales para la prueba" };
         }
 
+        const conn = await getConnection(service, "aliexpress_ds");
+        const selectedFeed = dsFeedName(conn);
+        const testedFeed = selectedFeed ?? "DS bestseller";
+
         const { fetchJson } = await import("../trends/http.ts");
         const secrets = [env.appSecret, env.appKey, tokenResult.token];
         const tests: DsDiagnosticTest[] = [];
         for (const call of DS_DIAGNOSTIC_CALLS) {
+            const isItemIds = call.name === "aliexpress.ds.feed.itemids.get";
+            const params = isItemIds ? { ...call.params, feed_name: testedFeed } : call.params;
             if (Date.now() >= deadlineMs) {
                 tests.push(summarizeDiagnosticResponse(call.name, null, null, secrets));
                 continue;
             }
-            const url = buildSignedRequestUrl(call.name, env, call.params, tokenResult.token);
+            const url = buildSignedRequestUrl(call.name, env, params, tokenResult.token);
             const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
-            tests.push(
-                summarizeDiagnosticResponse(call.name, res.status || null, res.ok ? res.data : null, secrets)
+            const test = summarizeDiagnosticResponse(
+                call.name,
+                res.status || null,
+                res.ok ? res.data : null,
+                secrets
             );
+            if (isItemIds) {
+                test.testedFeedName = sanitizeFeedName(testedFeed, secrets) ?? testedFeed;
+            }
+            tests.push(test);
         }
         return { report: { checkedAt: new Date().toISOString(), tests } };
     } finally {
