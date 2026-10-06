@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
     Sparkles,
-    ShieldCheck,
-    User,
     Lock,
     Mail,
     ArrowRight,
@@ -17,6 +15,8 @@ import {
     Phone,
     MapPin,
     FileText,
+    User,
+    Gift,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import FadeIn from "@/components/common/FadeIn";
@@ -26,106 +26,97 @@ export default function LoginClient() {
     const searchParams = useSearchParams();
     const redirectUrl = searchParams.get("redirect") || "/";
 
-    const { login, register, quickDemoLogin } = useAuthStore();
+    const { login, registerCustomer } = useAuthStore();
 
-    // Portal mode: customer or admin
-    const [portalType, setPortalType] = useState<"customer" | "admin">(
-        redirectUrl.includes("operator") ? "admin" : "customer"
-    );
+    // Toggle between login and registration
+    const [mode, setMode] = useState<"login" | "register">("login");
 
-    // Customer mode: login or register
-    const [isRegistering, setIsRegistering] = useState(false);
-
-    // Form states
+    // Common fields
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
 
-    // Registration extra fields
+    // Registration fields (Customers only)
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     const [cedula, setCedula] = useState("");
     const [address, setAddress] = useState("");
     const [city, setCity] = useState("Bogotá");
+    const [referralCode, setReferralCode] = useState("");
 
     // Feedback
     const [statusMessage, setStatusMessage] = useState<{ text: string; error?: boolean } | null>(null);
     const [loading, setLoading] = useState(false);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleLoginSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         setStatusMessage(null);
         setLoading(true);
 
         setTimeout(() => {
-            if (portalType === "customer" && isRegistering) {
-                const result = register({
-                    name,
-                    email,
-                    password,
-                    role: "customer",
-                    phone,
-                    cedula,
-                    address,
-                    city,
+            const result = login(email, password);
+            setLoading(false);
+
+            if (result.success && result.user) {
+                const isAdmin = result.user.role === "admin";
+                setStatusMessage({
+                    text: `¡Bienvenido, ${result.user.name}! Detectado como ${isAdmin ? "Administrador 🛡️" : "Cliente 👤"}. Redirigiendo...`,
                 });
 
-                setLoading(false);
-                if (result.success) {
-                    setStatusMessage({ text: result.message });
-                    setTimeout(() => {
+                setTimeout(() => {
+                    if (isAdmin) {
+                        // Admins are routed to Operator Command Center by default
+                        router.push(redirectUrl === "/" ? "/operator" : redirectUrl);
+                    } else {
+                        // Customers are routed to their Account page or previous page
                         router.push(redirectUrl === "/" ? "/account" : redirectUrl);
-                    }, 800);
-                } else {
-                    setStatusMessage({ text: result.message, error: true });
-                }
-            } else {
-                const result = login(email, password);
-                setLoading(false);
-
-                if (result.success) {
-                    setStatusMessage({ text: result.message });
-
-                    // Check if admin is logging in from admin tab or customer tab
-                    if (portalType === "admin" && result.user?.role !== "admin") {
-                        setStatusMessage({
-                            text: "Esta cuenta no tiene permisos de administrador.",
-                            error: true,
-                        });
-                        return;
                     }
+                }, 700);
+            } else {
+                setStatusMessage({ text: result.message, error: true });
+            }
+        }, 350);
+    };
 
-                    setTimeout(() => {
-                        if (result.user?.role === "admin") {
-                            router.push(redirectUrl === "/" ? "/operator" : redirectUrl);
-                        } else {
-                            router.push(redirectUrl === "/" ? "/account" : redirectUrl);
-                        }
-                    }, 800);
-                } else {
-                    setStatusMessage({ text: result.message, error: true });
-                }
+    const handleRegisterSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setStatusMessage(null);
+        setLoading(true);
+
+        setTimeout(() => {
+            // Public registration creates strictly customer accounts
+            const result = registerCustomer({
+                name,
+                email,
+                password,
+                phone,
+                cedula,
+                address,
+                city,
+                referralCode: referralCode || undefined,
+            });
+
+            setLoading(false);
+            if (result.success) {
+                setStatusMessage({
+                    text: "¡Cuenta de cliente creada exitosamente! Redirigiendo a tu perfil...",
+                });
+                setTimeout(() => {
+                    router.push(redirectUrl === "/" ? "/account" : redirectUrl);
+                }, 700);
+            } else {
+                setStatusMessage({ text: result.message, error: true });
             }
         }, 400);
     };
 
-    const handleQuickLogin = (role: "customer" | "admin") => {
-        setLoading(true);
-        setStatusMessage(null);
-
-        setTimeout(() => {
-            const user = quickDemoLogin(role);
-            setLoading(false);
-            setStatusMessage({ text: `Accediendo como ${user.name}...` });
-
-            setTimeout(() => {
-                if (role === "admin") {
-                    router.push("/operator");
-                } else {
-                    router.push(redirectUrl === "/" ? "/account" : redirectUrl);
-                }
-            }, 600);
-        }, 300);
+    const handleQuickFill = (emailValue: string, passwordValue: string) => {
+        setEmail(emailValue);
+        setPassword(passwordValue);
+        setMode("login");
+        setStatusMessage({
+            text: `Credenciales cargadas para ${emailValue}. Haz clic en Iniciar Sesión para verificar la detección automática de rol.`,
+        });
     };
 
     const inputClass =
@@ -133,7 +124,7 @@ export default function LoginClient() {
 
     return (
         <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
-            <div className="w-full max-w-xl">
+            <div className="w-full max-w-lg">
                 <FadeIn>
                     {/* Header */}
                     <div className="text-center mb-8">
@@ -145,307 +136,326 @@ export default function LoginClient() {
                             </span>
                         </Link>
                         <h1 className="font-heading text-3xl font-bold text-white mb-2">
-                            {portalType === "admin"
-                                ? "Portal del Administrador"
-                                : isRegistering
-                                ? "Crea tu Cuenta LuzClub"
-                                : "Bienvenido de Nuevo"}
+                            {mode === "login" ? "Iniciar Sesión" : "Crear Cuenta de Cliente"}
                         </h1>
                         <p className="text-xs sm:text-sm text-muted">
-                            {portalType === "admin"
-                                ? "Acceso seguro al Command Center y gestión operativa de la tienda"
-                                : isRegistering
-                                ? "Regístrate para acumular puntos, rastrear envíos y obtener beneficios VIP"
-                                : "Inicia sesión para gestionar tus pedidos y canjear tus puntos LuzClub"}
+                            {mode === "login"
+                                ? "Ingresa con tu correo y contraseña. El sistema detectará automáticamente si eres Cliente o Administrador."
+                                : "Regístrate en LuzClub VIP para acumular puntos, recibir descuentos y generar enlaces de referidos."}
                         </p>
                     </div>
 
-                    {/* Portal Selector Tabs */}
+                    {/* Mode Toggle (Iniciar Sesión vs Crear Cuenta) */}
                     <div className="flex rounded-2xl bg-surface-card p-1.5 border border-white/10 mb-6">
                         <button
                             type="button"
                             onClick={() => {
-                                setPortalType("customer");
+                                setMode("login");
                                 setStatusMessage(null);
                             }}
-                            className={`flex-1 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                                portalType === "customer"
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                                mode === "login"
                                     ? "bg-primary text-white shadow-lg glow-purple"
                                     : "text-muted hover:text-white"
                             }`}
                         >
-                            <User className="w-4 h-4" />
-                            <span>Portal Cliente VIP</span>
+                            Iniciar Sesión
                         </button>
                         <button
                             type="button"
                             onClick={() => {
-                                setPortalType("admin");
-                                setIsRegistering(false);
+                                setMode("register");
                                 setStatusMessage(null);
                             }}
-                            className={`flex-1 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                                portalType === "admin"
-                                    ? "bg-amber-500 text-black font-bold shadow-lg"
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                                mode === "register"
+                                    ? "bg-primary text-white shadow-lg glow-purple"
                                     : "text-muted hover:text-white"
                             }`}
                         >
-                            <ShieldCheck className="w-4 h-4" />
-                            <span>Portal Administrador</span>
+                            Crear Cuenta (Cliente VIP)
                         </button>
                     </div>
 
-                    {/* Quick Demo Access Bar */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-r from-surface-card via-surface to-primary/10 border border-primary/20 mb-6">
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1">
-                                <Sparkles className="w-3.5 h-3.5" /> Acceso Rápido de Prueba (Demo)
-                            </span>
-                            <span className="text-[10px] text-muted font-mono">1 Clic</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={() => handleQuickLogin("customer")}
-                                disabled={loading}
-                                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium border border-white/10 flex items-center justify-between transition-colors disabled:opacity-50"
-                            >
-                                <span className="flex items-center gap-1.5">
-                                    <span>👤</span>
-                                    <span>Carolina (Cliente)</span>
+                    {/* Quick Demo Helper Box */}
+                    {mode === "login" && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-surface-card via-surface to-primary/10 border border-primary/20 mb-6">
+                            <div className="flex items-center justify-between gap-3 mb-2.5">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1">
+                                    <Sparkles className="w-3.5 h-3.5" /> Autocompletar Cuenta Demo
                                 </span>
-                                <span className="text-[10px] text-primary font-mono">luz123</span>
-                            </button>
+                                <span className="text-[10px] text-muted">Detección de Rol Automática</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleQuickFill("carolina.mejia@gmail.com", "luz123")}
+                                    className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium border border-white/10 flex items-center justify-between transition-colors text-left"
+                                >
+                                    <span className="flex items-center gap-1.5 truncate">
+                                        <span>👤</span>
+                                        <span className="truncate">Carolina (Cliente)</span>
+                                    </span>
+                                    <span className="text-[10px] text-primary shrink-0 font-mono">Auto-fill</span>
+                                </button>
 
-                            <button
-                                type="button"
-                                onClick={() => handleQuickLogin("admin")}
-                                disabled={loading}
-                                className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-medium border border-amber-500/20 flex items-center justify-between transition-colors disabled:opacity-50"
-                            >
-                                <span className="flex items-center gap-1.5">
-                                    <span>🛡️</span>
-                                    <span>Henry (Admin)</span>
-                                </span>
-                                <span className="text-[10px] text-amber-400 font-mono">admin123</span>
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleQuickFill("admin@luzmagica.co", "admin123")}
+                                    className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-medium border border-amber-500/20 flex items-center justify-between transition-colors text-left"
+                                >
+                                    <span className="flex items-center gap-1.5 truncate">
+                                        <span>🛡️</span>
+                                        <span className="truncate">Henry (Admin)</span>
+                                    </span>
+                                    <span className="text-[10px] text-amber-400 shrink-0 font-mono">Auto-fill</span>
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Main Form Container */}
                     <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl">
-                        {/* Customer Mode Sub-tabs (Login / Register) */}
-                        {portalType === "customer" && (
-                            <div className="flex border-b border-white/10 mb-6 pb-2">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setIsRegistering(false);
-                                        setStatusMessage(null);
-                                    }}
-                                    className={`mr-6 pb-2 text-sm font-semibold transition-colors relative ${
-                                        !isRegistering ? "text-white" : "text-muted hover:text-white"
-                                    }`}
-                                >
-                                    Iniciar Sesión
-                                    {!isRegistering && (
-                                        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                                    )}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setIsRegistering(true);
-                                        setStatusMessage(null);
-                                    }}
-                                    className={`pb-2 text-sm font-semibold transition-colors relative ${
-                                        isRegistering ? "text-white" : "text-muted hover:text-white"
-                                    }`}
-                                >
-                                    Crear Cuenta
-                                    {isRegistering && (
-                                        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-                                    )}
-                                </button>
-                            </div>
-                        )}
-
-                        {portalType === "admin" && (
-                            <div className="mb-6 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
-                                <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                                <div className="text-xs text-amber-200/90 leading-relaxed">
-                                    <strong>Área Restringida:</strong> Requiere credenciales de nivel operador.
-                                    Gestiona pedidos, márgenes brutos de dropshipping y recuperación de carritos.
+                        {mode === "login" ? (
+                            /* UNIFIED LOGIN FORM: Strictly Email & Password */
+                            <form onSubmit={handleLoginSubmit} className="space-y-4">
+                                <div>
+                                    <label className="text-xs text-muted mb-1 block">Correo Electrónico *</label>
+                                    <div className="relative">
+                                        <Mail className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                        <input
+                                            type="email"
+                                            required
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="tu@correo.com o admin@luzmagica.co"
+                                            className={inputClass}
+                                        />
+                                    </div>
                                 </div>
-                            </div>
-                        )}
 
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {/* Extra fields if registering as customer */}
-                            {portalType === "customer" && isRegistering && (
-                                <>
+                                <div>
+                                    <label className="text-xs text-muted mb-1 block">Contraseña *</label>
+                                    <div className="relative">
+                                        <Lock className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                        <input
+                                            type={showPassword ? "text" : "password"}
+                                            required
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="••••••••"
+                                            className={`${inputClass} pr-10`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-3.5 top-3.5 text-muted hover:text-white"
+                                            aria-label="Ver contraseña"
+                                        >
+                                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {statusMessage && (
+                                    <div
+                                        className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
+                                            statusMessage.error
+                                                ? "bg-red-500/15 border border-red-500/30 text-red-200"
+                                                : "bg-green-500/15 border border-green-500/30 text-green-200"
+                                        }`}
+                                    >
+                                        {statusMessage.error ? (
+                                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                        ) : (
+                                            <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                                        )}
+                                        <span>{statusMessage.text}</span>
+                                    </div>
+                                )}
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-3.5 px-6 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold flex items-center justify-center gap-2 glow-purple transition-all text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+                                >
+                                    {loading ? (
+                                        <span className="animate-pulse">Validando credenciales...</span>
+                                    ) : (
+                                        <>
+                                            <span>Iniciar Sesión</span>
+                                            <ArrowRight className="w-4 h-4" />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        ) : (
+                            /* CUSTOMER REGISTRATION FORM (Role is strictly customer) */
+                            <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                                <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs text-primary/90 flex items-center gap-2 mb-2">
+                                    <Sparkles className="w-4 h-4 shrink-0" />
+                                    <span>
+                                        Al registrarte ganas <strong>150 Puntos LuzClub</strong> de bienvenida y tu enlace de referidos.
+                                    </span>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs text-muted mb-1 block">Nombre Completo *</label>
+                                    <div className="relative">
+                                        <User className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                        <input
+                                            type="text"
+                                            required
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            placeholder="Tu nombre completo"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-xs text-muted mb-1 block">Nombre Completo *</label>
+                                        <label className="text-xs text-muted mb-1 block">Correo Electrónico *</label>
                                         <div className="relative">
-                                            <User className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                            <Mail className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
                                             <input
-                                                type="text"
+                                                type="email"
                                                 required
-                                                value={name}
-                                                onChange={(e) => setName(e.target.value)}
-                                                placeholder="Ej: Carolina Mejía"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                placeholder="tu@correo.com"
                                                 className={inputClass}
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Teléfono / WhatsApp *</label>
-                                            <div className="relative">
-                                                <Phone className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
-                                                <input
-                                                    type="tel"
-                                                    required
-                                                    value={phone}
-                                                    onChange={(e) => setPhone(e.target.value)}
-                                                    placeholder="310 456 7890"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Cédula de Ciudadanía *</label>
-                                            <div className="relative">
-                                                <FileText className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
-                                                <input
-                                                    type="text"
-                                                    required
-                                                    value={cedula}
-                                                    onChange={(e) => setCedula(e.target.value)}
-                                                    placeholder="Para guías de envío"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Dirección de Entrega *</label>
-                                            <div className="relative">
-                                                <MapPin className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
-                                                <input
-                                                    type="text"
-                                                    required
-                                                    value={address}
-                                                    onChange={(e) => setAddress(e.target.value)}
-                                                    placeholder="Calle 127 #15-32"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Ciudad *</label>
+                                    <div>
+                                        <label className="text-xs text-muted mb-1 block">Contraseña *</label>
+                                        <div className="relative">
+                                            <Lock className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
                                             <input
-                                                type="text"
+                                                type="password"
                                                 required
-                                                value={city}
-                                                onChange={(e) => setCity(e.target.value)}
-                                                placeholder="Bogotá, Medellín..."
-                                                className="w-full px-4 py-3 rounded-2xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary text-xs sm:text-sm"
+                                                value={password}
+                                                onChange={(e) => setPassword(e.target.value)}
+                                                placeholder="••••••••"
+                                                className={inputClass}
                                             />
                                         </div>
                                     </div>
-                                </>
-                            )}
-
-                            {/* Email */}
-                            <div>
-                                <label className="text-xs text-muted mb-1 block">
-                                    {portalType === "admin" ? "Correo Corporativo *" : "Correo Electrónico *"}
-                                </label>
-                                <div className="relative">
-                                    <Mail className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
-                                    <input
-                                        type="email"
-                                        required
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder={portalType === "admin" ? "admin@luzmagica.co" : "tu@correo.com"}
-                                        className={inputClass}
-                                    />
                                 </div>
-                            </div>
 
-                            {/* Password */}
-                            <div>
-                                <label className="text-xs text-muted mb-1 block">Contraseña *</label>
-                                <div className="relative">
-                                    <Lock className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
-                                    <input
-                                        type={showPassword ? "text" : "password"}
-                                        required
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="••••••••"
-                                        className={`${inputClass} pr-10`}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3.5 top-3.5 text-muted hover:text-white"
-                                        aria-label="Ver contraseña"
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs text-muted mb-1 block">Teléfono / WhatsApp *</label>
+                                        <div className="relative">
+                                            <Phone className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                            <input
+                                                type="tel"
+                                                required
+                                                value={phone}
+                                                onChange={(e) => setPhone(e.target.value)}
+                                                placeholder="310 000 0000"
+                                                className={inputClass}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-muted mb-1 block">Cédula de Ciudadanía *</label>
+                                        <div className="relative">
+                                            <FileText className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                            <input
+                                                type="text"
+                                                required
+                                                value={cedula}
+                                                onChange={(e) => setCedula(e.target.value)}
+                                                placeholder="Requerido para envíos"
+                                                className={inputClass}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs text-muted mb-1 block">Dirección de Entrega *</label>
+                                        <div className="relative">
+                                            <MapPin className="w-4 h-4 text-muted absolute left-3.5 top-3.5" />
+                                            <input
+                                                type="text"
+                                                required
+                                                value={address}
+                                                onChange={(e) => setAddress(e.target.value)}
+                                                placeholder="Calle, número, apto"
+                                                className={inputClass}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-muted mb-1 block">Ciudad *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={city}
+                                            onChange={(e) => setCity(e.target.value)}
+                                            placeholder="Bogotá, Medellín..."
+                                            className="w-full px-4 py-3 rounded-2xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary text-xs sm:text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs text-muted mb-1 block">
+                                        Código de Referido (Opcional - Recibe $20.000 COP)
+                                    </label>
+                                    <div className="relative">
+                                        <Gift className="w-4 h-4 text-accent absolute left-3.5 top-3.5" />
+                                        <input
+                                            type="text"
+                                            value={referralCode}
+                                            onChange={(e) => setReferralCode(e.target.value)}
+                                            placeholder="Ej: LUZ-CAROLINA"
+                                            className={`${inputClass} uppercase font-mono`}
+                                        />
+                                    </div>
+                                </div>
+
+                                {statusMessage && (
+                                    <div
+                                        className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
+                                            statusMessage.error
+                                                ? "bg-red-500/15 border border-red-500/30 text-red-200"
+                                                : "bg-green-500/15 border border-green-500/30 text-green-200"
+                                        }`}
                                     >
-                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Status Feedback */}
-                            {statusMessage && (
-                                <div
-                                    className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
-                                        statusMessage.error
-                                            ? "bg-red-500/15 border border-red-500/30 text-red-200"
-                                            : "bg-green-500/15 border border-green-500/30 text-green-200"
-                                    }`}
-                                >
-                                    {statusMessage.error ? (
-                                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                                    ) : (
-                                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                                    )}
-                                    <span>{statusMessage.text}</span>
-                                </div>
-                            )}
-
-                            {/* Submit Button */}
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className={`w-full py-3.5 px-6 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all text-xs sm:text-sm cursor-pointer disabled:opacity-50 ${
-                                    portalType === "admin"
-                                        ? "bg-amber-500 hover:bg-amber-400 text-black font-bold shadow-lg shadow-amber-500/20"
-                                        : "bg-primary hover:bg-primary-light text-white glow-purple"
-                                }`}
-                            >
-                                {loading ? (
-                                    <span className="animate-pulse">Verificando credenciales...</span>
-                                ) : (
-                                    <>
-                                        <span>
-                                            {portalType === "admin"
-                                                ? "Acceder al Command Center"
-                                                : isRegistering
-                                                ? "Crear Cuenta y Ganar Puntos"
-                                                : "Iniciar Sesión"}
-                                        </span>
-                                        <ArrowRight className="w-4 h-4" />
-                                    </>
+                                        {statusMessage.error ? (
+                                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                        ) : (
+                                            <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                                        )}
+                                        <span>{statusMessage.text}</span>
+                                    </div>
                                 )}
-                            </button>
-                        </form>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-3.5 px-6 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold flex items-center justify-center gap-2 glow-purple transition-all text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+                                >
+                                    {loading ? (
+                                        <span className="animate-pulse">Creando cuenta...</span>
+                                    ) : (
+                                        <>
+                                            <span>Completar Registro de Cliente</span>
+                                            <ArrowRight className="w-4 h-4" />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        )}
                     </div>
                 </FadeIn>
             </div>

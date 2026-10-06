@@ -5,15 +5,41 @@ import { persist } from "zustand/middleware";
 import { UserAccount, UserRole } from "@/lib/types";
 import { useCartStore } from "./useCartStore";
 
+interface RegisterCustomerData {
+    name: string;
+    email: string;
+    password: string;
+    phone: string;
+    cedula: string;
+    address: string;
+    city: string;
+    department?: string;
+    referralCode?: string;
+}
+
+interface CreateAdminData {
+    name: string;
+    email: string;
+    password: string;
+    phone: string;
+    cedula?: string;
+    address?: string;
+    city?: string;
+}
+
 interface AuthState {
     users: UserAccount[];
     currentUser: UserAccount | null;
     isAuthenticated: boolean;
 
     login: (email: string, password: string) => { success: boolean; message: string; user?: UserAccount };
-    register: (
-        data: Omit<UserAccount, "id" | "createdAt">
+    registerCustomer: (
+        data: RegisterCustomerData
     ) => { success: boolean; message: string; user?: UserAccount };
+    createAdminAccount: (
+        data: CreateAdminData
+    ) => { success: boolean; message: string; user?: UserAccount };
+    deleteAdminAccount: (id: string) => { success: boolean; message: string };
     logout: () => void;
     updateProfile: (data: Partial<UserAccount>) => void;
     quickDemoLogin: (role: UserRole) => UserAccount;
@@ -80,10 +106,14 @@ export const useAuthStore = create<AuthState>()(
                     department: user.department,
                 });
 
-                return { success: true, message: `¡Bienvenido de nuevo, ${user.name}!`, user };
+                return {
+                    success: true,
+                    message: `¡Bienvenido de nuevo, ${user.name}! (${user.role === "admin" ? "Administrador" : "Cliente"})`,
+                    user,
+                };
             },
 
-            register: (data) => {
+            registerCustomer: (data) => {
                 const cleanEmail = data.email.trim().toLowerCase();
                 const existing = get().users.find((u) => u.email.toLowerCase() === cleanEmail);
 
@@ -91,10 +121,18 @@ export const useAuthStore = create<AuthState>()(
                     return { success: false, message: "Ya existe una cuenta registrada con este correo electrónico." };
                 }
 
+                // Public registration ALWAYS creates role: 'customer'
                 const newUser: UserAccount = {
-                    ...data,
                     id: `usr-${Date.now()}`,
                     email: cleanEmail,
+                    password: data.password,
+                    role: "customer",
+                    name: data.name,
+                    phone: data.phone,
+                    cedula: data.cedula,
+                    address: data.address,
+                    city: data.city,
+                    department: data.department || "Colombia",
                     createdAt: new Date().toISOString().split("T")[0],
                 };
 
@@ -115,7 +153,65 @@ export const useAuthStore = create<AuthState>()(
                     department: newUser.department,
                 });
 
-                return { success: true, message: "¡Cuenta creada exitosamente!", user: newUser };
+                return { success: true, message: "¡Cuenta de cliente creada exitosamente!", user: newUser };
+            },
+
+            createAdminAccount: (data) => {
+                const current = get().currentUser;
+                // Security check: Only an active admin can create other admin accounts
+                if (!current || current.role !== "admin") {
+                    return {
+                        success: false,
+                        message: "Acción no autorizada. Solo los administradores pueden crear nuevas cuentas de administrador.",
+                    };
+                }
+
+                const cleanEmail = data.email.trim().toLowerCase();
+                const existing = get().users.find((u) => u.email.toLowerCase() === cleanEmail);
+
+                if (existing) {
+                    return { success: false, message: "Ya existe un usuario con este correo electrónico." };
+                }
+
+                const newAdmin: UserAccount = {
+                    id: `usr-admin-${Date.now()}`,
+                    email: cleanEmail,
+                    password: data.password,
+                    role: "admin",
+                    name: data.name,
+                    phone: data.phone,
+                    cedula: data.cedula || "N/A",
+                    address: data.address || "Sede Administrativa",
+                    city: data.city || "Bogotá",
+                    department: "Cundinamarca",
+                    createdAt: new Date().toISOString().split("T")[0],
+                };
+
+                set({ users: [...get().users, newAdmin] });
+                return {
+                    success: true,
+                    message: `Administrador ${data.name} creado exitosamente.`,
+                    user: newAdmin,
+                };
+            },
+
+            deleteAdminAccount: (id: string) => {
+                const current = get().currentUser;
+                if (!current || current.role !== "admin") {
+                    return { success: false, message: "No autorizado." };
+                }
+
+                const admins = get().users.filter((u) => u.role === "admin");
+                if (admins.length <= 1) {
+                    return { success: false, message: "No puedes eliminar el único administrador del sistema." };
+                }
+
+                if (current.id === id) {
+                    return { success: false, message: "No puedes eliminar tu propia cuenta en uso." };
+                }
+
+                set({ users: get().users.filter((u) => u.id !== id) });
+                return { success: true, message: "Administrador eliminado correctamente." };
             },
 
             logout: () => {
@@ -160,7 +256,7 @@ export const useAuthStore = create<AuthState>()(
             },
         }),
         {
-            name: "luzmagica-auth-v1",
+            name: "luzmagica-auth-v2",
         }
     )
 );

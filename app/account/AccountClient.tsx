@@ -32,7 +32,7 @@ export default function AccountClient() {
     const router = useRouter();
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
-    const { currentUser, logout, updateProfile, quickDemoLogin } = useAuthStore();
+    const { currentUser, logout, updateProfile } = useAuthStore();
     const { account, openModal, getTierProgress } = useLoyaltyStore();
     const { orders } = useOrderStore();
     const { addItem } = useCartStore();
@@ -68,26 +68,14 @@ export default function AccountClient() {
                             Inicia Sesión en LuzClub
                         </h1>
                         <p className="text-xs sm:text-sm text-muted mb-6">
-                            Para acceder a tu perfil, historial de pedidos y recompensas exclusivas, por favor inicia sesión o entra con la cuenta demo.
+                            Para acceder a tu perfil, historial de pedidos y recompensas exclusivas, inicia sesión o crea tu cuenta.
                         </p>
-                        <div className="space-y-3">
-                            <Link
-                                href="/login?redirect=/account"
-                                className="block w-full py-3.5 px-6 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-xs sm:text-sm glow-purple transition-all"
-                            >
-                                Iniciar Sesión o Registrarme
-                            </Link>
-
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    quickDemoLogin("customer");
-                                }}
-                                className="w-full py-3 px-6 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-medium text-xs border border-white/10 transition-colors"
-                            >
-                                ⚡ Entrar como Carolina Mejía (Demo)
-                            </button>
-                        </div>
+                        <Link
+                            href="/login?redirect=/account"
+                            className="block w-full py-3.5 px-6 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-xs sm:text-sm glow-purple transition-all"
+                        >
+                            Iniciar Sesión o Registrarme
+                        </Link>
                     </div>
                 </FadeIn>
             </div>

@@ -30,7 +30,7 @@ const emptySubscribe = () => () => {};
 
 export default function OperatorClient() {
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
-    const { currentUser, logout, quickDemoLogin } = useAuthStore();
+    const { currentUser, logout, quickDemoLogin, users, createAdminAccount, deleteAdminAccount } = useAuthStore();
 
     const { orders, updateOrderStatus } = useOrderStore();
     const {
@@ -46,7 +46,13 @@ export default function OperatorClient() {
     const { account } = useLoyaltyStore();
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist">("overview");
+    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "team">("overview");
+    const adminUsers = users.filter((u) => u.role === "admin");
+    const customerCount = users.filter((u) => u.role === "customer").length;
+    const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", phone: "" });
+    const [adminFormError, setAdminFormError] = useState("");
+    const [adminFormSuccess, setAdminFormSuccess] = useState("");
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     // Order status update modal / inline selection
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
@@ -221,6 +227,16 @@ export default function OperatorClient() {
                     }`}
                 >
                     <span>Checklist de Lanzamiento</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab("team")}
+                    className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+                        activeTab === "team"
+                            ? "bg-primary text-white glow-purple"
+                            : "text-muted hover:text-white hover:bg-white/5"
+                    }`}
+                >
+                    <span>Equipo Admin ({adminUsers.length})</span>
                 </button>
             </div>
 
@@ -760,6 +776,177 @@ export default function OperatorClient() {
                                 </span>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: EQUIPO ADMIN */}
+            {activeTab === "team" && (
+                <div className="space-y-8">
+                    {/* Header + Stats */}
+                    <div>
+                        <h3 className="font-heading text-xl font-bold text-white">
+                            Equipo Administrador
+                        </h3>
+                        <p className="text-xs text-muted mt-1">
+                            Solo los administradores pueden crear o eliminar otras cuentas de admin.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        <div className="p-5 rounded-2xl bg-surface-card border border-white/5 text-center">
+                            <div className="font-heading text-3xl font-bold text-primary">{adminUsers.length}</div>
+                            <div className="text-xs text-muted mt-1">Administradores</div>
+                        </div>
+                        <div className="p-5 rounded-2xl bg-surface-card border border-white/5 text-center">
+                            <div className="font-heading text-3xl font-bold text-white">{customerCount}</div>
+                            <div className="text-xs text-muted mt-1">Clientes registrados</div>
+                        </div>
+                        <div className="p-5 rounded-2xl bg-surface-card border border-white/5 text-center col-span-2 sm:col-span-1">
+                            <div className="font-heading text-3xl font-bold text-white">{adminUsers.length + customerCount}</div>
+                            <div className="text-xs text-muted mt-1">Usuarios totales</div>
+                        </div>
+                    </div>
+
+                    {/* Admin List */}
+                    <div className="glass rounded-3xl p-6 md:p-8 space-y-4">
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4 text-primary" />
+                            Administradores activos
+                        </h4>
+                        {adminUsers.map((admin) => (
+                            <div
+                                key={admin.id}
+                                className="p-4 rounded-2xl bg-surface-card border border-white/5 flex items-center justify-between gap-4"
+                            >
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-white truncate">{admin.name}</div>
+                                    <div className="text-xs text-muted truncate">{admin.email}</div>
+                                    {admin.phone && (
+                                        <div className="text-xs text-muted">{admin.phone}</div>
+                                    )}
+                                    <div className="text-[11px] text-muted mt-0.5">
+                                        Creado: {admin.createdAt}
+                                        {admin.id === currentUser?.id && (
+                                            <span className="ml-2 text-primary font-semibold">(tú)</span>
+                                        )}
+                                    </div>
+                                </div>
+                                {admin.id !== currentUser?.id && (
+                                    confirmDeleteId === admin.id ? (
+                                        <div className="flex gap-2 shrink-0">
+                                            <button
+                                                onClick={() => {
+                                                    deleteAdminAccount(admin.id);
+                                                    setConfirmDeleteId(null);
+                                                }}
+                                                className="px-3 py-1.5 rounded-xl bg-red-500/90 hover:bg-red-500 text-white text-xs font-semibold transition-colors"
+                                            >
+                                                Confirmar
+                                            </button>
+                                            <button
+                                                onClick={() => setConfirmDeleteId(null)}
+                                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setConfirmDeleteId(admin.id)}
+                                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-muted hover:text-red-400 text-xs transition-all shrink-0"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    )
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Create Admin Form */}
+                    <div className="glass rounded-3xl p-6 md:p-8">
+                        <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                            <Send className="w-4 h-4 text-primary" />
+                            Crear nueva cuenta de administrador
+                        </h4>
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                setAdminFormError("");
+                                setAdminFormSuccess("");
+                                const result = createAdminAccount(adminForm);
+                                if (result.success) {
+                                    setAdminFormSuccess(`✅ Admin "${adminForm.name}" creado exitosamente.`);
+                                    setAdminForm({ name: "", email: "", password: "", phone: "" });
+                                } else {
+                                    setAdminFormError(result.message);
+                                }
+                            }}
+                            className="space-y-4"
+                        >
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs text-muted mb-1">Nombre completo</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={adminForm.name}
+                                        onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                                        placeholder="Ej. Valeria Torres"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-muted focus:outline-none focus:border-primary/50 transition-colors"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-muted mb-1">Correo electrónico</label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={adminForm.email}
+                                        onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                                        placeholder="admin@luzmagica.co"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-muted focus:outline-none focus:border-primary/50 transition-colors"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-muted mb-1">Contraseña</label>
+                                    <input
+                                        type="password"
+                                        required
+                                        minLength={6}
+                                        value={adminForm.password}
+                                        onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                                        placeholder="Mínimo 6 caracteres"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-muted focus:outline-none focus:border-primary/50 transition-colors"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-muted mb-1">Teléfono</label>
+                                    <input
+                                        type="tel"
+                                        required
+                                        value={adminForm.phone}
+                                        onChange={(e) => setAdminForm({ ...adminForm, phone: e.target.value })}
+                                        placeholder="310 000 0000"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-muted focus:outline-none focus:border-primary/50 transition-colors"
+                                    />
+                                </div>
+                            </div>
+
+                            {adminFormError && (
+                                <p className="text-xs text-red-400 bg-red-500/10 rounded-xl px-4 py-2">{adminFormError}</p>
+                            )}
+                            {adminFormSuccess && (
+                                <p className="text-xs text-green-400 bg-green-500/10 rounded-xl px-4 py-2">{adminFormSuccess}</p>
+                            )}
+
+                            <button
+                                type="submit"
+                                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-sm glow-purple transition-all"
+                            >
+                                Crear administrador
+                            </button>
+                        </form>
                     </div>
                 </div>
             )}
