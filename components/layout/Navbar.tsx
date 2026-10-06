@@ -202,7 +202,7 @@ export default function Navbar() {
 
                                         <button
                                             onClick={() => {
-                                                logout();
+                                                void logout();
                                                 setIsMobileOpen(false);
                                             }}
                                             className="text-red-400 py-1.5 flex items-center gap-2 text-left"

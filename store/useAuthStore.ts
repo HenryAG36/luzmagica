@@ -1,8 +1,9 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { UserAccount, UserRole } from "@/lib/types";
+import type { UserAccount, UserRole } from "@/lib/types";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { SupabaseClientLike } from "@/lib/supabase/types";
 import { useCartStore } from "./useCartStore";
 
 interface RegisterCustomerData {
@@ -17,246 +18,292 @@ interface RegisterCustomerData {
     referralCode?: string;
 }
 
-interface CreateAdminData {
-    name: string;
-    email: string;
-    password: string;
-    phone: string;
-    cedula?: string;
-    address?: string;
-    city?: string;
+interface AuthResult {
+    success: boolean;
+    message: string;
+    user?: UserAccount;
 }
 
 interface AuthState {
-    users: UserAccount[];
     currentUser: UserAccount | null;
     isAuthenticated: boolean;
+    authReady: boolean;
 
-    login: (email: string, password: string) => { success: boolean; message: string; user?: UserAccount };
-    registerCustomer: (
-        data: RegisterCustomerData
-    ) => { success: boolean; message: string; user?: UserAccount };
-    createAdminAccount: (
-        data: CreateAdminData
-    ) => { success: boolean; message: string; user?: UserAccount };
-    deleteAdminAccount: (id: string) => { success: boolean; message: string };
-    logout: () => void;
-    updateProfile: (data: Partial<UserAccount>) => void;
-    quickDemoLogin: (role: UserRole) => UserAccount;
+    initialize: () => Promise<void>;
+    login: (email: string, password: string) => Promise<AuthResult>;
+    registerCustomer: (data: RegisterCustomerData) => Promise<AuthResult>;
+    logout: () => Promise<AuthResult>;
+    updateProfile: (data: Partial<UserAccount>) => Promise<AuthResult>;
 }
 
-const SEEDED_USERS: UserAccount[] = [
-    {
-        id: "usr-admin-1",
-        email: "admin@luzmagica.co",
-        password: "admin123",
-        role: "admin",
-        name: "Henry Admin",
-        phone: "3109998877",
-        cedula: "1098765432",
-        address: "Cra 7 #71-21 Torre A",
-        city: "Bogotá",
-        department: "Cundinamarca",
-        createdAt: "2026-09-01",
+interface ProfileRow {
+    id: string;
+    email: string | null;
+    name: string | null;
+    phone: string | null;
+    cedula: string | null;
+    address: string | null;
+    city: string | null;
+    department: string | null;
+    created_at: string;
+}
+
+async function loadAccount(
+    supabase: SupabaseClientLike,
+    userId: string,
+    email: string,
+    createdAt: string
+): Promise<UserAccount | null> {
+    const { data: profileData } = await supabase
+        .from("profiles")
+        .select("id,email,name,phone,cedula,address,city,department,created_at")
+        .eq("id", userId)
+        .maybeSingle();
+    const profile = profileData as ProfileRow | null;
+
+    const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .maybeSingle();
+    const roleRow = roleData as { role: UserRole } | null;
+
+    if (!profile && !roleRow) return null;
+
+    const account: UserAccount = {
+        id: userId,
+        email: profile?.email || email,
+        role: roleRow?.role === "admin" ? "admin" : "customer",
+        name: profile?.name || email.split("@")[0] || "Usuario",
+        phone: profile?.phone || "",
+        cedula: profile?.cedula || "",
+        address: profile?.address || "",
+        city: profile?.city || "",
+        department: profile?.department || undefined,
+        createdAt: (profile?.created_at || createdAt || "").split("T")[0],
+    };
+
+    // Sync customer profile with cart store for instant checkout
+    useCartStore.getState().setCustomerProfile({
+        name: account.name,
+        email: account.email,
+        phone: account.phone,
+        address: account.address,
+        city: account.city,
+        cedula: account.cedula,
+        department: account.department,
+    });
+
+    return account;
+}
+
+let initialized = false;
+let sessionEpoch = 0;
+
+function clearLegacyAuthStorage() {
+    try {
+        localStorage.removeItem("luzmagica-auth-v2");
+        localStorage.removeItem("luzmagica-auth-v1");
+        localStorage.removeItem("luzmagica-auth");
+    } catch {
+    }
+}
+
+export const useAuthStore = create<AuthState>()((set, get) => ({
+    currentUser: null,
+    isAuthenticated: false,
+    authReady: false,
+
+    initialize: async () => {
+        if (initialized) return;
+        initialized = true;
+        clearLegacyAuthStorage();
+
+        try {
+            const supabase = getSupabaseBrowserClient();
+            if (!supabase) {
+                set({ authReady: true });
+                return;
+            }
+
+            const { data } = await supabase.auth.getSession();
+            const session = data.session;
+            if (session?.user) {
+                const epoch = sessionEpoch;
+                const account = await loadAccount(supabase, session.user.id, session.user.email || "", session.user.created_at);
+                if (epoch === sessionEpoch) {
+                    set({ currentUser: account, isAuthenticated: !!account });
+                }
+            }
+
+            supabase.auth.onAuthStateChange((event, nextSession) => {
+                setTimeout(() => {
+                    if (event === "SIGNED_OUT" || !nextSession?.user) {
+                        sessionEpoch++;
+                        set({ currentUser: null, isAuthenticated: false });
+                        return;
+                    }
+                    const epoch = sessionEpoch;
+                    const nextUser = nextSession.user;
+                    loadAccount(
+                        supabase,
+                        nextUser.id,
+                        nextUser.email || "",
+                        nextUser.created_at
+                    ).then((account) => {
+                        if (epoch !== sessionEpoch) return;
+                        const current = get().currentUser;
+                        if (event === "SIGNED_IN" || event === "USER_UPDATED" || account?.role !== current?.role || !current) {
+                            set({ currentUser: account, isAuthenticated: !!account });
+                        }
+                    }).catch(() => {
+                    });
+                }, 0);
+            });
+        } catch {
+        } finally {
+            set({ authReady: true });
+        }
     },
-    {
-        id: "usr-cust-1",
-        email: "carolina.mejia@gmail.com",
-        password: "luz123",
-        role: "customer",
-        name: "Carolina Mejía",
-        phone: "3104567890",
-        cedula: "1018459203",
-        address: "Calle 127 #15-32 Apto 402",
-        city: "Bogotá",
-        department: "Cundinamarca",
-        createdAt: "2026-09-15",
+
+    login: async (email, password) => {
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+            return { success: false, message: "La autenticación no está configurada en este entorno." };
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+        });
+
+        if (error || !data.user) {
+            return {
+                success: false,
+                message: "Correo o contraseña incorrectos. Por favor verifica tus datos.",
+            };
+        }
+
+        const epoch = sessionEpoch;
+        const account = await loadAccount(supabase, data.user.id, data.user.email || "", data.user.created_at);
+        if (epoch !== sessionEpoch) {
+            return { success: false, message: "La sesión cambió durante el inicio. Intenta de nuevo." };
+        }
+        if (!account) {
+            return { success: false, message: "No pudimos cargar tu perfil. Intenta de nuevo." };
+        }
+
+        set({ currentUser: account, isAuthenticated: true });
+        return {
+            success: true,
+            message: `¡Bienvenido de nuevo, ${account.name}! (${account.role === "admin" ? "Administrador" : "Cliente"})`,
+            user: account,
+        };
     },
-];
 
-export const useAuthStore = create<AuthState>()(
-    persist(
-        (set, get) => ({
-            users: SEEDED_USERS,
-            currentUser: null,
-            isAuthenticated: false,
+    registerCustomer: async (data) => {
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+            return { success: false, message: "El registro no está configurado en este entorno." };
+        }
 
-            login: (email: string, password: string) => {
-                const cleanEmail = email.trim().toLowerCase();
-                const user = get().users.find((u) => u.email.toLowerCase() === cleanEmail);
-
-                if (!user) {
-                    return { success: false, message: "No encontramos ninguna cuenta con ese correo electrónico." };
-                }
-
-                if (user.password !== password) {
-                    return { success: false, message: "Contraseña incorrecta. Por favor verifica tus datos." };
-                }
-
-                set({ currentUser: user, isAuthenticated: true });
-
-                // Sync customer profile with cart store for instant checkout
-                useCartStore.getState().setCustomerProfile({
-                    name: user.name,
-                    email: user.email,
-                    phone: user.phone,
-                    address: user.address,
-                    city: user.city,
-                    cedula: user.cedula,
-                    department: user.department,
-                });
-
-                return {
-                    success: true,
-                    message: `¡Bienvenido de nuevo, ${user.name}! (${user.role === "admin" ? "Administrador" : "Cliente"})`,
-                    user,
-                };
-            },
-
-            registerCustomer: (data) => {
-                const cleanEmail = data.email.trim().toLowerCase();
-                const existing = get().users.find((u) => u.email.toLowerCase() === cleanEmail);
-
-                if (existing) {
-                    return { success: false, message: "Ya existe una cuenta registrada con este correo electrónico." };
-                }
-
-                // Public registration ALWAYS creates role: 'customer'
-                const newUser: UserAccount = {
-                    id: `usr-${Date.now()}`,
-                    email: cleanEmail,
-                    password: data.password,
-                    role: "customer",
+        // Public registration ALWAYS creates role: 'customer'
+        const { data: signUpData, error } = await supabase.auth.signUp({
+            email: data.email.trim().toLowerCase(),
+            password: data.password,
+            options: {
+                data: {
                     name: data.name,
                     phone: data.phone,
                     cedula: data.cedula,
                     address: data.address,
                     city: data.city,
                     department: data.department || "Colombia",
-                    createdAt: new Date().toISOString().split("T")[0],
-                };
-
-                const updatedUsers = [...get().users, newUser];
-                set({
-                    users: updatedUsers,
-                    currentUser: newUser,
-                    isAuthenticated: true,
-                });
-
-                useCartStore.getState().setCustomerProfile({
-                    name: newUser.name,
-                    email: newUser.email,
-                    phone: newUser.phone,
-                    address: newUser.address,
-                    city: newUser.city,
-                    cedula: newUser.cedula,
-                    department: newUser.department,
-                });
-
-                return { success: true, message: "¡Cuenta de cliente creada exitosamente!", user: newUser };
+                    referral_code: data.referralCode || null,
+                },
             },
+        });
 
-            createAdminAccount: (data) => {
-                const current = get().currentUser;
-                // Security check: Only an active admin can create other admin accounts
-                if (!current || current.role !== "admin") {
-                    return {
-                        success: false,
-                        message: "Acción no autorizada. Solo los administradores pueden crear nuevas cuentas de administrador.",
-                    };
-                }
-
-                const cleanEmail = data.email.trim().toLowerCase();
-                const existing = get().users.find((u) => u.email.toLowerCase() === cleanEmail);
-
-                if (existing) {
-                    return { success: false, message: "Ya existe un usuario con este correo electrónico." };
-                }
-
-                const newAdmin: UserAccount = {
-                    id: `usr-admin-${Date.now()}`,
-                    email: cleanEmail,
-                    password: data.password,
-                    role: "admin",
-                    name: data.name,
-                    phone: data.phone,
-                    cedula: data.cedula || "N/A",
-                    address: data.address || "Sede Administrativa",
-                    city: data.city || "Bogotá",
-                    department: "Cundinamarca",
-                    createdAt: new Date().toISOString().split("T")[0],
-                };
-
-                set({ users: [...get().users, newAdmin] });
-                return {
-                    success: true,
-                    message: `Administrador ${data.name} creado exitosamente.`,
-                    user: newAdmin,
-                };
-            },
-
-            deleteAdminAccount: (id: string) => {
-                const current = get().currentUser;
-                if (!current || current.role !== "admin") {
-                    return { success: false, message: "No autorizado." };
-                }
-
-                const admins = get().users.filter((u) => u.role === "admin");
-                if (admins.length <= 1) {
-                    return { success: false, message: "No puedes eliminar el único administrador del sistema." };
-                }
-
-                if (current.id === id) {
-                    return { success: false, message: "No puedes eliminar tu propia cuenta en uso." };
-                }
-
-                set({ users: get().users.filter((u) => u.id !== id) });
-                return { success: true, message: "Administrador eliminado correctamente." };
-            },
-
-            logout: () => {
-                set({ currentUser: null, isAuthenticated: false });
-            },
-
-            updateProfile: (data) => {
-                const current = get().currentUser;
-                if (!current) return;
-
-                const updated: UserAccount = { ...current, ...data };
-                const updatedUsers = get().users.map((u) => (u.id === current.id ? updated : u));
-
-                set({ currentUser: updated, users: updatedUsers });
-
-                useCartStore.getState().setCustomerProfile({
-                    name: updated.name,
-                    email: updated.email,
-                    phone: updated.phone,
-                    address: updated.address,
-                    city: updated.city,
-                    cedula: updated.cedula,
-                    department: updated.department,
-                });
-            },
-
-            quickDemoLogin: (role: UserRole) => {
-                const target = get().users.find((u) => u.role === role) || SEEDED_USERS.find((u) => u.role === role)!;
-                set({ currentUser: target, isAuthenticated: true });
-
-                useCartStore.getState().setCustomerProfile({
-                    name: target.name,
-                    email: target.email,
-                    phone: target.phone,
-                    address: target.address,
-                    city: target.city,
-                    cedula: target.cedula,
-                    department: target.department,
-                });
-
-                return target;
-            },
-        }),
-        {
-            name: "luzmagica-auth-v2",
+        if (error) {
+            const duplicate = /already registered|already exists|duplicate/i.test(error.message);
+            return {
+                success: false,
+                message: duplicate
+                    ? "Ya existe una cuenta registrada con este correo electrónico."
+                    : "No pudimos crear tu cuenta. Intenta de nuevo.",
+            };
         }
-    )
-);
+
+        if (!signUpData.user) {
+            return { success: false, message: "No pudimos crear tu cuenta. Intenta de nuevo." };
+        }
+
+        if (signUpData.session) {
+            const epoch = sessionEpoch;
+            const account = await loadAccount(
+                supabase,
+                signUpData.user.id,
+                signUpData.user.email || data.email,
+                signUpData.user.created_at
+            );
+            if (account && epoch === sessionEpoch) {
+                set({ currentUser: account, isAuthenticated: true });
+                return { success: true, message: "¡Cuenta de cliente creada exitosamente!", user: account };
+            }
+        }
+
+        return {
+            success: true,
+            message: "¡Cuenta creada! Revisa tu correo para confirmar el registro antes de iniciar sesión.",
+        };
+    },
+
+    logout: async () => {
+        const supabase = getSupabaseBrowserClient();
+        if (!supabase) {
+            sessionEpoch++;
+            set({ currentUser: null, isAuthenticated: false });
+            return { success: true, message: "Sesión cerrada." };
+        }
+
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            return { success: false, message: "No se pudo cerrar la sesión. Intenta de nuevo." };
+        }
+        sessionEpoch++;
+        set({ currentUser: null, isAuthenticated: false });
+        return { success: true, message: "Sesión cerrada." };
+    },
+
+    updateProfile: async (data) => {
+        const supabase = getSupabaseBrowserClient();
+        const current = get().currentUser;
+        if (!supabase || !current) {
+            return { success: false, message: "No hay una sesión activa." };
+        }
+
+        const update: Record<string, unknown> = {};
+        if (data.name !== undefined) update.name = data.name;
+        if (data.phone !== undefined) update.phone = data.phone;
+        if (data.cedula !== undefined) update.cedula = data.cedula;
+        if (data.address !== undefined) update.address = data.address;
+        if (data.city !== undefined) update.city = data.city;
+        if (data.department !== undefined) update.department = data.department;
+
+        const { error } = await supabase
+            .from("profiles")
+            .update(update)
+            .eq("id", current.id);
+
+        if (error) {
+            return { success: false, message: "No pudimos actualizar tu perfil." };
+        }
+
+        const epoch = sessionEpoch;
+        const account = await loadAccount(supabase, current.id, current.email, "");
+        if (epoch === sessionEpoch) {
+            set({ currentUser: account || { ...current, ...data, role: current.role } });
+        }
+        return { success: true, message: "Datos actualizados correctamente." };
+    },
+}));

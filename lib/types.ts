@@ -34,7 +34,6 @@ export type UserRole = "customer" | "admin";
 export interface UserAccount {
     id: string;
     email: string;
-    password?: string;
     role: UserRole;
     name: string;
     phone: string;

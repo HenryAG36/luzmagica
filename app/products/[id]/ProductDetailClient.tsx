@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
     ShoppingCart,
@@ -30,7 +31,10 @@ export default function ProductDetailClient({
     const [selectedImage, setSelectedImage] = useState(0);
     const [quantity, setQuantity] = useState(1);
     const [added, setAdded] = useState(false);
+    const [imageErrors, setImageErrors] = useState<Record<number, boolean>>({});
     const addItem = useCartStore((s) => s.addItem);
+
+    const externalImages = product.images.filter((src) => /^https?:\/\//.test(src));
 
     const discount = product.originalPrice
         ? Math.round(
@@ -73,9 +77,21 @@ export default function ProductDetailClient({
                         <div>
                             {/* Main image */}
                             <div className="glass rounded-3xl overflow-hidden aspect-square mb-4 relative">
-                                <div className="w-full h-full bg-gradient-to-br from-primary/20 via-surface to-secondary/10 flex items-center justify-center product-glow">
-                                    <span className="text-8xl">💡</span>
-                                </div>
+                                {externalImages[selectedImage] && !imageErrors[selectedImage] ? (
+                                    <Image
+                                        src={externalImages[selectedImage]}
+                                        alt={product.name}
+                                        fill
+                                        unoptimized
+                                        sizes="(max-width: 1024px) 100vw, 50vw"
+                                        onError={() => setImageErrors((prev) => ({ ...prev, [selectedImage]: true }))}
+                                        className="object-cover"
+                                    />
+                                ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-primary/20 via-surface to-secondary/10 flex items-center justify-center product-glow">
+                                        <span className="text-8xl">💡</span>
+                                    </div>
+                                )}
                                 {product.badge && (
                                     <span
                                         className={`absolute top-4 left-4 px-4 py-1.5 rounded-full text-sm font-bold uppercase ${product.badge === "sale"
@@ -89,7 +105,7 @@ export default function ProductDetailClient({
                             </div>
                             {/* Thumbnails */}
                             <div className="flex gap-3">
-                                {product.images.map((_, i) => (
+                                {externalImages.map((src, i) => (
                                     <button
                                         key={i}
                                         onClick={() => setSelectedImage(i)}
@@ -98,9 +114,21 @@ export default function ProductDetailClient({
                                                 : "border-transparent hover:border-primary/40"
                                             }`}
                                     >
-                                        <div className="w-full h-full bg-gradient-to-br from-primary/10 via-surface to-secondary/5 flex items-center justify-center">
-                                            <span className="text-2xl">💡</span>
-                                        </div>
+                                        {imageErrors[i] ? (
+                                            <div className="w-full h-full bg-gradient-to-br from-primary/10 via-surface to-secondary/5 flex items-center justify-center">
+                                                <span className="text-2xl">💡</span>
+                                            </div>
+                                        ) : (
+                                            <Image
+                                                src={src}
+                                                alt=""
+                                                width={80}
+                                                height={80}
+                                                unoptimized
+                                                onError={() => setImageErrors((prev) => ({ ...prev, [i]: true }))}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        )}
                                     </button>
                                 ))}
                             </div>

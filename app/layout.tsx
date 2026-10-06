@@ -4,6 +4,7 @@ import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import LoyaltyModal from "@/components/loyalty/LoyaltyModal";
+import AuthInitializer from "@/components/auth/AuthInitializer";
 import ExitIntentRecoveryModal from "@/components/retention/ExitIntentRecoveryModal";
 
 const inter = Inter({
@@ -34,6 +35,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${spaceGrotesk.variable} antialiased bg-background text-foreground font-body`}
       >
+        <AuthInitializer />
         <Navbar />
         <main className="min-h-screen">{children}</main>
         <Footer />

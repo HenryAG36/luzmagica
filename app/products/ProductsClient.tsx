@@ -8,22 +8,29 @@ import ProductCard from "@/components/products/ProductCard";
 import FadeIn from "@/components/common/FadeIn";
 import { Product } from "@/lib/types";
 
-const rooms = [
-    { value: "", label: "Todas" },
-    { value: "dormitorio", label: "Dormitorio" },
-    { value: "sala", label: "Sala" },
-    { value: "gaming", label: "Gaming" },
-    { value: "cocina", label: "Cocina" },
-];
+const roomLabels: Record<string, string> = {
+    dormitorio: "Dormitorio",
+    sala: "Sala",
+    gaming: "Gaming",
+    cocina: "Cocina",
+};
 
-const types = [
-    { value: "", label: "Todos" },
-    { value: "proyector", label: "Proyectores" },
-    { value: "tira-led", label: "Tiras LED" },
-    { value: "lampara", label: "Lámparas" },
-    { value: "panel", label: "Paneles" },
-    { value: "guirnalda", label: "Guirnaldas" },
-];
+const typeLabels: Record<string, string> = {
+    proyector: "Proyectores",
+    "tira-led": "Tiras LED",
+    lampara: "Lámparas",
+    panel: "Paneles",
+    guirnalda: "Guirnaldas",
+};
+
+function optionLabel(map: Record<string, string>, value: string): string {
+    return map[value] || value.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function buildOptions(values: string[], map: Record<string, string>, allLabel: string) {
+    const unique = Array.from(new Set(values.filter(Boolean))).sort();
+    return [{ value: "", label: allLabel }, ...unique.map((v) => ({ value: v, label: optionLabel(map, v) }))];
+}
 
 const priceRanges = [
     { value: "", label: "Todos los precios" },
@@ -44,6 +51,15 @@ export default function ProductsClient({ products }: ProductsClientProps) {
     const [selectedType, setSelectedType] = useState("");
     const [selectedPrice, setSelectedPrice] = useState("");
     const [showFilters, setShowFilters] = useState(false);
+
+    const rooms = useMemo(
+        () => buildOptions(products.map((p) => p.room), roomLabels, "Todas"),
+        [products]
+    );
+    const types = useMemo(
+        () => buildOptions(products.map((p) => p.type), typeLabels, "Todos"),
+        [products]
+    );
 
     const filtered = useMemo(() => {
         return products.filter((p) => {

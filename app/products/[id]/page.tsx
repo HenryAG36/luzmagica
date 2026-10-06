@@ -1,21 +1,16 @@
 import ProductDetailClient from "./ProductDetailClient";
-import productsData from "@/data/products.json";
-import { Product } from "@/lib/types";
+import { getPublishedProduct, listPublishedRelated } from "@/lib/catalog/repository";
 import { notFound } from "next/navigation";
 
-const products = productsData as Product[];
+export const dynamic = "force-dynamic";
 
 interface Props {
     params: Promise<{ id: string }>;
 }
 
-export async function generateStaticParams() {
-    return products.map((p) => ({ id: p.id }));
-}
-
 export async function generateMetadata({ params }: Props) {
     const { id } = await params;
-    const product = products.find((p) => p.id === id);
+    const product = await getPublishedProduct(id);
     if (!product) return { title: "Producto no encontrado" };
 
     return {
@@ -26,13 +21,11 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function ProductDetailPage({ params }: Props) {
     const { id } = await params;
-    const product = products.find((p) => p.id === id);
+    const product = await getPublishedProduct(id);
 
     if (!product) notFound();
 
-    const related = products
-        .filter((p) => p.room === product.room && p.id !== product.id)
-        .slice(0, 4);
+    const related = await listPublishedRelated(product.room, product.id);
 
     return <ProductDetailClient product={product} related={related} />;
 }

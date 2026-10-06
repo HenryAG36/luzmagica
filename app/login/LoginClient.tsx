@@ -19,12 +19,13 @@ import {
     Gift,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { safeRedirectPath } from "@/lib/auth/redirect";
 import FadeIn from "@/components/common/FadeIn";
 
 export default function LoginClient() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const redirectUrl = searchParams.get("redirect") || "/";
+    const redirectUrl = safeRedirectPath(searchParams.get("redirect"));
 
     const { login, registerCustomer } = useAuthStore();
 
@@ -48,44 +49,50 @@ export default function LoginClient() {
     const [statusMessage, setStatusMessage] = useState<{ text: string; error?: boolean } | null>(null);
     const [loading, setLoading] = useState(false);
 
-    const handleLoginSubmit = (e: React.FormEvent) => {
+    const handleLoginSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatusMessage(null);
         setLoading(true);
 
-        setTimeout(() => {
-            const result = login(email, password);
+        let result;
+        try {
+            result = await login(email, password);
+        } catch {
+            setStatusMessage({ text: "Error de red al iniciar sesión.", error: true });
+            return;
+        } finally {
             setLoading(false);
+        }
 
-            if (result.success && result.user) {
-                const isAdmin = result.user.role === "admin";
-                setStatusMessage({
-                    text: `¡Bienvenido, ${result.user.name}! Detectado como ${isAdmin ? "Administrador 🛡️" : "Cliente 👤"}. Redirigiendo...`,
-                });
+        if (result.success && result.user) {
+            const isAdmin = result.user.role === "admin";
+            setStatusMessage({
+                text: `¡Bienvenido, ${result.user.name}! Detectado como ${isAdmin ? "Administrador 🛡️" : "Cliente 👤"}. Redirigiendo...`,
+            });
 
-                setTimeout(() => {
-                    if (isAdmin) {
-                        // Admins are routed to Operator Command Center by default
-                        router.push(redirectUrl === "/" ? "/operator" : redirectUrl);
-                    } else {
-                        // Customers are routed to their Account page or previous page
-                        router.push(redirectUrl === "/" ? "/account" : redirectUrl);
-                    }
-                }, 700);
-            } else {
-                setStatusMessage({ text: result.message, error: true });
-            }
-        }, 350);
+            setTimeout(() => {
+                if (isAdmin) {
+                    // Admins are routed to Operator Command Center by default
+                    router.push(redirectUrl === "/" ? "/operator" : redirectUrl);
+                } else {
+                    // Customers are routed to their Account page or previous page
+                    router.push(redirectUrl === "/" ? "/account" : redirectUrl);
+                }
+            }, 700);
+        } else {
+            setStatusMessage({ text: result.message, error: true });
+        }
     };
 
-    const handleRegisterSubmit = (e: React.FormEvent) => {
+    const handleRegisterSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatusMessage(null);
         setLoading(true);
 
-        setTimeout(() => {
-            // Public registration creates strictly customer accounts
-            const result = registerCustomer({
+        // Public registration creates strictly customer accounts
+        let result;
+        try {
+            result = await registerCustomer({
                 name,
                 email,
                 password,
@@ -95,28 +102,23 @@ export default function LoginClient() {
                 city,
                 referralCode: referralCode || undefined,
             });
-
+        } catch {
+            setStatusMessage({ text: "Error de red al crear la cuenta.", error: true });
+            return;
+        } finally {
             setLoading(false);
-            if (result.success) {
-                setStatusMessage({
-                    text: "¡Cuenta de cliente creada exitosamente! Redirigiendo a tu perfil...",
-                });
+        }
+
+        if (result.success) {
+            setStatusMessage({ text: result.message });
+            if (result.user) {
                 setTimeout(() => {
                     router.push(redirectUrl === "/" ? "/account" : redirectUrl);
                 }, 700);
-            } else {
-                setStatusMessage({ text: result.message, error: true });
             }
-        }, 400);
-    };
-
-    const handleQuickFill = (emailValue: string, passwordValue: string) => {
-        setEmail(emailValue);
-        setPassword(passwordValue);
-        setMode("login");
-        setStatusMessage({
-            text: `Credenciales cargadas para ${emailValue}. Haz clic en Iniciar Sesión para verificar la detección automática de rol.`,
-        });
+        } else {
+            setStatusMessage({ text: result.message, error: true });
+        }
     };
 
     const inputClass =
@@ -176,43 +178,6 @@ export default function LoginClient() {
                             Crear Cuenta (Cliente VIP)
                         </button>
                     </div>
-
-                    {/* Quick Demo Helper Box */}
-                    {mode === "login" && (
-                        <div className="p-4 rounded-2xl bg-gradient-to-r from-surface-card via-surface to-primary/10 border border-primary/20 mb-6">
-                            <div className="flex items-center justify-between gap-3 mb-2.5">
-                                <span className="text-[11px] font-bold uppercase tracking-wider text-accent flex items-center gap-1">
-                                    <Sparkles className="w-3.5 h-3.5" /> Autocompletar Cuenta Demo
-                                </span>
-                                <span className="text-[10px] text-muted">Detección de Rol Automática</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => handleQuickFill("carolina.mejia@gmail.com", "luz123")}
-                                    className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium border border-white/10 flex items-center justify-between transition-colors text-left"
-                                >
-                                    <span className="flex items-center gap-1.5 truncate">
-                                        <span>👤</span>
-                                        <span className="truncate">Carolina (Cliente)</span>
-                                    </span>
-                                    <span className="text-[10px] text-primary shrink-0 font-mono">Auto-fill</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => handleQuickFill("admin@luzmagica.co", "admin123")}
-                                    className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-medium border border-amber-500/20 flex items-center justify-between transition-colors text-left"
-                                >
-                                    <span className="flex items-center gap-1.5 truncate">
-                                        <span>🛡️</span>
-                                        <span className="truncate">Henry (Admin)</span>
-                                    </span>
-                                    <span className="text-[10px] text-amber-400 shrink-0 font-mono">Auto-fill</span>
-                                </button>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Main Form Container */}
                     <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
     TrendingUp,
     RotateCcw,
@@ -24,13 +25,14 @@ import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
+import TrendPanel from "@/components/operator/TrendPanel";
 import { OrderStatus, Order } from "@/lib/types";
 
 const emptySubscribe = () => () => {};
 
 export default function OperatorClient() {
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
-    const { currentUser, logout, quickDemoLogin, users, createAdminAccount, deleteAdminAccount } = useAuthStore();
+    const { currentUser, isAuthenticated, authReady, logout } = useAuthStore();
 
     const { orders, updateOrderStatus } = useOrderStore();
     const {
@@ -46,13 +48,47 @@ export default function OperatorClient() {
     const { account } = useLoyaltyStore();
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "team">("overview");
-    const adminUsers = users.filter((u) => u.role === "admin");
-    const customerCount = users.filter((u) => u.role === "customer").length;
+    const searchParams = useSearchParams();
+    const initialTab = searchParams.get("tab");
+    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "team">(
+        initialTab === "trends" ? "trends" : "overview"
+    );
+
+    interface AdminRow {
+        id: string;
+        email: string;
+        name: string;
+        phone: string;
+        createdAt: string;
+    }
+    const [adminUsers, setAdminUsers] = useState<AdminRow[]>([]);
+    const [customerCount, setCustomerCount] = useState(0);
+    const [teamError, setTeamError] = useState("");
     const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", phone: "" });
     const [adminFormError, setAdminFormError] = useState("");
     const [adminFormSuccess, setAdminFormSuccess] = useState("");
+    const [adminFormLoading, setAdminFormLoading] = useState(false);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+    const loadTeam = useCallback(async () => {
+        setTeamError("");
+        try {
+            const res = await fetch("/api/admin/team");
+            if (!res.ok) {
+                setTeamError("No se pudo cargar el equipo (sesión sin permisos de administrador).");
+                return;
+            }
+            const body = await res.json();
+            setAdminUsers(body.admins ?? []);
+            setCustomerCount(body.customerCount ?? 0);
+        } catch {
+            setTeamError("Error de red al cargar el equipo.");
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === "team" && isAuthenticated) loadTeam();
+    }, [activeTab, isAuthenticated, loadTeam]);
 
     // Order status update modal / inline selection
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
@@ -81,7 +117,7 @@ export default function OperatorClient() {
         setEditingOrderId(null);
     };
 
-    if (!mounted) {
+    if (!mounted || !authReady) {
         return (
             <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
                 <div className="animate-pulse text-muted">Cargando Command Center...</div>
@@ -110,20 +146,12 @@ export default function OperatorClient() {
                         </p>
 
                         <div className="space-y-3">
-                            <button
-                                type="button"
-                                onClick={() => quickDemoLogin("admin")}
-                                className="w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                            >
-                                <ShieldCheck className="w-4 h-4" />
-                                <span>⚡ Acceso Rápido como Henry Admin (Demo)</span>
-                            </button>
-
                             <Link
                                 href="/login?redirect=/operator"
-                                className="block w-full py-3 px-6 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold border border-white/10 transition-colors"
+                                className="block w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
                             >
-                                Iniciar Sesión con Contraseña
+                                <ShieldCheck className="w-4 h-4" />
+                                <span>Iniciar Sesión como Operador</span>
                             </Link>
 
                             <Link
@@ -175,7 +203,7 @@ export default function OperatorClient() {
                         </Link>
 
                         <button
-                            onClick={logout}
+                            onClick={() => void logout()}
                             className="px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold flex items-center gap-1.5 border border-red-500/20 transition-colors"
                             title="Cerrar sesión de administrador"
                         >
@@ -227,6 +255,17 @@ export default function OperatorClient() {
                     }`}
                 >
                     <span>Checklist de Lanzamiento</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab("trends")}
+                    className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+                        activeTab === "trends"
+                            ? "bg-primary text-white glow-purple"
+                            : "text-muted hover:text-white hover:bg-white/5"
+                    }`}
+                >
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>Tendencias</span>
                 </button>
                 <button
                     onClick={() => setActiveTab("team")}
@@ -780,6 +819,9 @@ export default function OperatorClient() {
                 </div>
             )}
 
+            {/* TAB: TENDENCIAS */}
+            {activeTab === "trends" && <TrendPanel />}
+
             {/* TAB: EQUIPO ADMIN */}
             {activeTab === "team" && (
                 <div className="space-y-8">
@@ -789,7 +831,7 @@ export default function OperatorClient() {
                             Equipo Administrador
                         </h3>
                         <p className="text-xs text-muted mt-1">
-                            Solo los administradores pueden crear o eliminar otras cuentas de admin.
+                            Solo los administradores pueden crear o revocar el acceso de otras cuentas de admin.
                         </p>
                     </div>
 
@@ -809,6 +851,10 @@ export default function OperatorClient() {
                     </div>
 
                     {/* Admin List */}
+                    {teamError && (
+                        <p className="text-xs text-red-400 bg-red-500/10 rounded-xl px-4 py-2">{teamError}</p>
+                    )}
+
                     <div className="glass rounded-3xl p-6 md:p-8 space-y-4">
                         <h4 className="text-sm font-semibold text-white flex items-center gap-2">
                             <ShieldCheck className="w-4 h-4 text-primary" />
@@ -836,8 +882,15 @@ export default function OperatorClient() {
                                     confirmDeleteId === admin.id ? (
                                         <div className="flex gap-2 shrink-0">
                                             <button
-                                                onClick={() => {
-                                                    deleteAdminAccount(admin.id);
+                                                onClick={async () => {
+                                                    setTeamError("");
+                                                    const res = await fetch(`/api/admin/team/${admin.id}`, { method: "DELETE" });
+                                                    const body = await res.json().catch(() => ({}));
+                                                    if (!res.ok) {
+                                                        setTeamError(body.error || "No se pudo revocar el acceso del administrador.");
+                                                    } else {
+                                                        await loadTeam();
+                                                    }
                                                     setConfirmDeleteId(null);
                                                 }}
                                                 className="px-3 py-1.5 rounded-xl bg-red-500/90 hover:bg-red-500 text-white text-xs font-semibold transition-colors"
@@ -856,7 +909,7 @@ export default function OperatorClient() {
                                             onClick={() => setConfirmDeleteId(admin.id)}
                                             className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-muted hover:text-red-400 text-xs transition-all shrink-0"
                                         >
-                                            Eliminar
+                                            Revocar acceso
                                         </button>
                                     )
                                 )}
@@ -871,16 +924,29 @@ export default function OperatorClient() {
                             Crear nueva cuenta de administrador
                         </h4>
                         <form
-                            onSubmit={(e) => {
+                            onSubmit={async (e) => {
                                 e.preventDefault();
                                 setAdminFormError("");
                                 setAdminFormSuccess("");
-                                const result = createAdminAccount(adminForm);
-                                if (result.success) {
-                                    setAdminFormSuccess(`✅ Admin "${adminForm.name}" creado exitosamente.`);
-                                    setAdminForm({ name: "", email: "", password: "", phone: "" });
-                                } else {
-                                    setAdminFormError(result.message);
+                                setAdminFormLoading(true);
+                                try {
+                                    const res = await fetch("/api/admin/team", {
+                                        method: "POST",
+                                        headers: { "content-type": "application/json" },
+                                        body: JSON.stringify(adminForm),
+                                    });
+                                    const body = await res.json().catch(() => ({}));
+                                    if (res.ok) {
+                                        setAdminFormSuccess(`✅ Admin "${adminForm.name}" creado exitosamente.`);
+                                        setAdminForm({ name: "", email: "", password: "", phone: "" });
+                                        await loadTeam();
+                                    } else {
+                                        setAdminFormError(body.error || "No se pudo crear el administrador.");
+                                    }
+                                } catch {
+                                    setAdminFormError("Error de red al crear el administrador.");
+                                } finally {
+                                    setAdminFormLoading(false);
                                 }
                             }}
                             className="space-y-4"
@@ -942,9 +1008,10 @@ export default function OperatorClient() {
 
                             <button
                                 type="submit"
-                                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-sm glow-purple transition-all"
+                                disabled={adminFormLoading}
+                                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-sm glow-purple transition-all disabled:opacity-50"
                             >
-                                Crear administrador
+                                {adminFormLoading ? "Creando..." : "Crear administrador"}
                             </button>
                         </form>
                     </div>

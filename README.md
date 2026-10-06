@@ -20,6 +20,84 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Backend setup (Supabase + trend providers)
+
+Authentication, the shared catalog, and the admin "Tendencias" panel run on Supabase
+(Postgres + Auth). Copy `.env.example` to `.env.local` and fill in the values.
+
+### Database migrations
+
+Apply the versioned migrations in `supabase/migrations/` to your Supabase project,
+in order (`20261006023124_foundation` profiles/roles, `20261006023145_trends_and_catalog`
+provider connections/snapshots/leases/catalog, `20261006023202_seed_products`
+seed products). Filenames use Supabase timestamp versions and must not be
+renumbered; remote projects that already applied them will skip replay. With the
+Supabase CLI:
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+### Owner bootstrap
+
+The first administrator is created out of band (there is no public admin signup):
+
+1. Register a normal customer account through `/login`, or create the user in the
+   Supabase Auth dashboard.
+2. In the SQL editor, promote it:
+
+   ```sql
+   insert into public.user_roles (user_id, role)
+   values ('<user-uuid>', 'admin')
+   on conflict (user_id) do update set role = 'admin';
+   ```
+
+Additional admins are managed from Command Center -> Equipo Admin. The last
+administrator cannot be removed (enforced by a database trigger).
+
+### Trend provider credentials
+
+- **Mercado Libre**: create a free app at developers.mercadolibre.com.co, set the
+  redirect URI to `…/api/admin/providers/meli/callback`, then connect it from the
+  Tendencias tab ("Conectar Mercado Libre"). Tokens are stored encrypted using
+  `PROVIDER_TOKEN_ENCRYPTION_KEY`.
+- **AliExpress Affiliate**: create an app at open.aliexpress.com to obtain
+  `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` / `ALIEXPRESS_TRACKING_ID`.
+  Verify Colombia (`ship_to_country=CO`) support and display/storage terms before
+  enabling.
+
+Missing provider configuration disables only that source — the panel shows each
+source's status and the age of the last successful snapshot. Snapshots refresh
+automatically when an admin opens the panel if older than 6 hours; refreshes are
+serialized across instances with database leases.
+
+### Currency conversion (manual FX review)
+
+Imported products keep their original `listing_currency`. The draft `fx_rate` /
+`fx_rate_date` fields record the conversion the reviewer used; there is no live
+FX feed. Reviewers must enter a current rate and date manually before publishing.
+
+### Supabase free-tier notes
+
+- Free-tier projects may pause after inactivity. Check current Supabase limits
+  and restore paused projects through the dashboard before serving traffic.
+- Database leases and the last-admin trigger rely on Postgres functions and are
+  not exercised by the fixture test suite — verify them in a linked project
+  before production use.
+
+### Validation status
+
+Fixture tests (`npm test`) cover signing, normalization, snapshot retention on
+failure, lease serialization, idempotent import, optimistic publish conflicts,
+and input validation with an in-memory client. The three migrations have been
+applied to the configured Supabase project; live inspection confirms RLS,
+public/private catalog grants, lease RPC privileges, installed triggers, and
+eight published seed products. Authenticated browser flows, concurrent Postgres
+behavior, OAuth, and live provider responses still require end-to-end validation.
+The pinned Supabase packages are installed; TypeScript, lint, 50 fixture tests,
+and the production build pass.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

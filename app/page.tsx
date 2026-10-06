@@ -1,9 +1,9 @@
 import HomeClient from "./HomeClient";
-import productsData from "@/data/products.json";
-import { Product } from "@/lib/types";
+import { listPublishedProducts } from "@/lib/catalog/repository";
 
-const products = productsData as Product[];
+export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default async function Home() {
+  const products = await listPublishedProducts();
   return <HomeClient products={products} />;
 }

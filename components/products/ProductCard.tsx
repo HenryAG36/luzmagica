@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { ShoppingCart } from "lucide-react";
 import { Product } from "@/lib/types";
@@ -14,6 +16,8 @@ interface ProductCardProps {
 
 export default function ProductCard({ product, index = 0 }: ProductCardProps) {
     const addItem = useCartStore((s) => s.addItem);
+    const [imageError, setImageError] = useState(false);
+    const externalImage = /^https?:\/\/./.test(product.images[0] || "") ? product.images[0] : null;
 
     const discount = product.originalPrice
         ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
@@ -31,10 +35,22 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
                     {/* Image */}
                     <div className="relative aspect-square overflow-hidden bg-surface">
                         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent z-10" />
-                        {/* Placeholder gradient for product image */}
-                        <div className="w-full h-full bg-gradient-to-br from-primary/20 via-surface to-secondary/10 flex items-center justify-center transition-transform duration-700 group-hover:scale-110">
-                            <span className="text-4xl opacity-60">💡</span>
-                        </div>
+                        {externalImage && !imageError ? (
+                            <Image
+                                src={externalImage}
+                                alt={product.name}
+                                fill
+                                unoptimized
+                                sizes="(max-width: 640px) 100vw, 33vw"
+                                onError={() => setImageError(true)}
+                                className="object-cover transition-transform duration-700 group-hover:scale-110"
+                            />
+                        ) : (
+                            /* Placeholder gradient for product image */
+                            <div className="w-full h-full bg-gradient-to-br from-primary/20 via-surface to-secondary/10 flex items-center justify-center transition-transform duration-700 group-hover:scale-110">
+                                <span className="text-4xl opacity-60">💡</span>
+                            </div>
+                        )}
 
                         {/* Badge */}
                         {product.badge && (

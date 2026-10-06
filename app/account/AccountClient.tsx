@@ -102,12 +102,14 @@ export default function AccountClient() {
         setIsEditing(true);
     };
 
-    const handleSaveProfile = (e: React.FormEvent) => {
+    const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
-        updateProfile(editForm);
-        setIsEditing(false);
-        setSavedSuccess(true);
-        setTimeout(() => setSavedSuccess(false), 2500);
+        const result = await updateProfile(editForm);
+        if (result.success) {
+            setIsEditing(false);
+            setSavedSuccess(true);
+            setTimeout(() => setSavedSuccess(false), 2500);
+        }
     };
 
     const handleReorder = (order: (typeof orders)[0]) => {
@@ -119,7 +121,7 @@ export default function AccountClient() {
     };
 
     const handleLogout = () => {
-        logout();
+        void logout();
         router.push("/");
     };
 
