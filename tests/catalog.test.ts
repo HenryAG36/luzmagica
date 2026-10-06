@@ -10,7 +10,15 @@ import {
     toPublicProduct,
     validatePublishable,
 } from "../lib/catalog/validate.ts";
-import type { PublicProductRow } from "../lib/catalog/validate.ts";
+import type { CatalogRow, PublicProductRow } from "../lib/catalog/validate.ts";
+import { FakeDb } from "./fakeSupabase.ts";
+import type { FakeRow } from "./fakeSupabase.ts";
+import {
+    archiveProduct,
+    listCatalogProducts,
+    publishCatalogProduct,
+    updateProduct,
+} from "../lib/catalog/repository.ts";
 
 test("draft ids are deterministic per provider item for idempotent import", () => {
     assert.equal(buildDraftId("mercadolibre", "MCO123"), "imp-mercadolibre-MCO123");
@@ -156,4 +164,288 @@ test("import fields are allowlisted to pricing/shipping columns only", () => {
     const invalid = sanitizeImportFields({ customer_shipping_cop: -1, fx_rate: 0 });
     assert.equal(invalid.fields.customer_shipping_cop, undefined);
     assert.equal(invalid.errors.length, 2);
+});
+
+// ---------- management repository + international publish guard ----------
+
+function catalogRow(overrides: Partial<CatalogRow> = {}): FakeRow {
+    return {
+        id: "prod-1",
+        source: "aliexpress_ds",
+        provider_item_id: "1001",
+        source_url: null,
+        name: "Lamp",
+        price_cop: 10000,
+        original_price_cop: null,
+        category: "lamparas",
+        room: "",
+        images: ["https://x.test/a.jpg"],
+        badge: null,
+        description: "desc",
+        stock: 5,
+        type: "",
+        listing_price: null,
+        listing_currency: null,
+        supplier_cost_cop: null,
+        supplier_shipping_cop: null,
+        taxes_fees_cop: null,
+        fx_rate: null,
+        fx_rate_date: null,
+        supplier_rights_confirmed: true,
+        supplier_variant: null,
+        customer_shipping_cop: 5000,
+        shipping_estimate_city: "Bogotá",
+        shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        status: "draft",
+        reviewed_by: null,
+        published_at: null,
+        updated_at: "2026-10-01T00:00:00.000Z",
+        created_at: "2026-10-01T00:00:00.000Z",
+        ...overrides,
+    };
+}
+
+test("international sources require confirmed customer shipping to publish", () => {
+    const base = {
+        name: "Lamp",
+        category: "lamparas",
+        description: "desc",
+        images: ["https://x.test/a.jpg"],
+        price_cop: 50000,
+        stock: 5,
+        supplier_rights_confirmed: true,
+    };
+
+    const missingAll = validatePublishable({ ...base, source: "aliexpress_ds" });
+    assert.equal(missingAll.valid, false);
+    for (const f of ["customer_shipping_cop", "shipping_estimate_city", "shipping_checked_at"]) {
+        assert.ok(missingAll.missing.includes(f), `expected ${f} missing`);
+    }
+
+    // explicit 0 (known free) is accepted; null is not
+    assert.equal(
+        validatePublishable({
+            ...base,
+            source: "aliexpress_ds",
+            customer_shipping_cop: 0,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        }).valid,
+        true
+    );
+    assert.ok(
+        validatePublishable({
+            ...base,
+            source: "cjdropshipping",
+            customer_shipping_cop: null,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        }).missing.includes("customer_shipping_cop")
+    );
+    assert.ok(
+        validatePublishable({
+            ...base,
+            source: "aliexpress_ds",
+            customer_shipping_cop: 5000,
+            shipping_estimate_city: "   ",
+            shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        }).missing.includes("shipping_estimate_city")
+    );
+    assert.ok(
+        validatePublishable({
+            ...base,
+            source: "aliexpress_ds",
+            customer_shipping_cop: 5000,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "not-a-date",
+        }).missing.includes("shipping_checked_at")
+    );
+
+    // domestic sources are unaffected
+    assert.equal(validatePublishable({ ...base, source: "mercadolibre" }).valid, true);
+});
+
+test("listCatalogProducts returns every status and surfaces errors", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "a", status: "draft" }),
+        catalogRow({ id: "b", status: "published" }),
+        catalogRow({ id: "c", status: "archived" }),
+    ];
+    const res = await listCatalogProducts(db.asClient());
+    assert.ok("products" in res);
+    if (!("products" in res)) return;
+    assert.equal(res.products.length, 3);
+
+    const dbErr = new FakeDb();
+    dbErr.failSelects.add("catalog_products");
+    const bad = await listCatalogProducts(dbErr.asClient());
+    assert.ok("error" in bad, "select errors must not be masked as an empty list");
+});
+
+test("updateProduct guards published rows like a republish", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "p1", status: "published", customer_shipping_cop: null }),
+    ];
+
+    // published + missing customer shipping -> rejected with missing list
+    const bad = await updateProduct("p1", { name: "New" }, undefined, db.asClient());
+    assert.ok("error" in bad);
+    if ("error" in bad) {
+        assert.equal(bad.error, "product is not publishable");
+        assert.ok(bad.missing?.includes("customer_shipping_cop"));
+    }
+    assert.equal(db.tables.catalog_products[0].name, "Lamp");
+
+    // supplying the confirmed quote fixes it
+    const ok = await updateProduct(
+        "p1",
+        {
+            name: "New",
+            customer_shipping_cop: 0,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-07T00:00:00.000Z",
+        },
+        undefined,
+        db.asClient()
+    );
+    assert.deepEqual(ok, { ok: true, status: "published" });
+    assert.equal(db.tables.catalog_products[0].name, "New");
+    assert.equal(db.tables.catalog_products[0].customer_shipping_cop, 0);
+});
+
+test("updateProduct uses optimistic concurrency and allows draft/archived edits", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "d1", status: "draft", customer_shipping_cop: null }),
+        catalogRow({ id: "a1", status: "archived", stock: 0, price_cop: 0, supplier_rights_confirmed: false }),
+    ];
+
+    // stale expectedUpdatedAt is rejected before writing
+    const stale = await updateProduct("d1", { name: "X" }, "1999-01-01T00:00:00.000Z", db.asClient());
+    assert.ok("error" in stale && stale.error.includes("changed"));
+
+    // drafts and archived rows can be saved incomplete (no publishable guard)
+    const okDraft = await updateProduct("d1", { name: "X" }, "2026-10-01T00:00:00.000Z", db.asClient());
+    assert.deepEqual(okDraft, { ok: true, status: "draft" });
+    const okArchived = await updateProduct("a1", { description: "" }, undefined, db.asClient());
+    assert.deepEqual(okArchived, { ok: true, status: "archived" });
+
+    const missing = await updateProduct("nope", { name: "X" }, undefined, db.asClient());
+    assert.deepEqual(missing, { error: "product not found" });
+});
+
+test("archiveProduct hides without deleting and republish revalidates the guard", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "p1", status: "published" }),
+        catalogRow({ id: "a1", status: "archived", customer_shipping_cop: null }),
+    ];
+
+    const arch = await archiveProduct("p1", undefined, db.asClient());
+    assert.deepEqual(arch, { ok: true, wasPublished: true });
+    assert.equal(db.tables.catalog_products.find((r) => r.id === "p1")?.status, "archived");
+    assert.equal(db.tables.catalog_products.length, 2, "archive must not delete the row");
+
+    const again = await archiveProduct("p1", undefined, db.asClient());
+    assert.ok("error" in again);
+
+    // archived international row cannot republish until the quote is confirmed
+    const blocked = await publishCatalogProduct("a1", "admin-1", {}, undefined, db.asClient());
+    assert.ok("error" in blocked);
+    if ("error" in blocked) assert.ok(blocked.missing?.includes("customer_shipping_cop"));
+
+    const repub = await publishCatalogProduct(
+        "a1",
+        "admin-1",
+        {
+            customer_shipping_cop: 0,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-07T12:00:00.000Z",
+        },
+        undefined,
+        db.asClient()
+    );
+    assert.deepEqual(repub, { ok: true });
+    const row = db.tables.catalog_products.find((r) => r.id === "a1");
+    assert.equal(row?.status, "published");
+    assert.equal(row?.reviewed_by, "admin-1");
+});
+
+test("incomplete drafts save: category/description may be empty, name is required", () => {
+    const res = sanitizeReviewFields({ category: "", description: "", name: "Lamp" });
+    assert.deepEqual(res.errors, []);
+    assert.equal(res.fields.category, "");
+    assert.equal(res.fields.description, "");
+
+    const noName = sanitizeReviewFields({ name: "" });
+    assert.ok(noName.errors.includes("invalid field: name"));
+
+    // publishable guard unchanged: empty strings still fail at publish time
+    const base = {
+        name: "Lamp",
+        category: "",
+        description: "",
+        images: ["https://x.test/a.jpg"],
+        price_cop: 100,
+        stock: 1,
+        supplier_rights_confirmed: true,
+    };
+    const v = validatePublishable(base);
+    assert.ok(v.missing.includes("category"));
+    assert.ok(v.missing.includes("description"));
+});
+
+test("published edits allow stock 0 (sold out) but first publish does not", async () => {
+    const draftBase = {
+        name: "Lamp",
+        category: "lamparas",
+        description: "d",
+        images: ["https://x.test/a.jpg"],
+        price_cop: 100,
+        stock: 0,
+        supplier_rights_confirmed: true,
+    };
+    assert.ok(validatePublishable(draftBase).missing.includes("stock"));
+    assert.equal(validatePublishable(draftBase, { allowSoldOut: true }).valid, true);
+    assert.ok(
+        validatePublishable({ ...draftBase, stock: -1 }, { allowSoldOut: true }).missing.includes("stock")
+    );
+    assert.ok(
+        validatePublishable({ ...draftBase, stock: 1.5 }, { allowSoldOut: true }).missing.includes("stock")
+    );
+
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "p1", status: "published", stock: 4 }),
+    ];
+    const soldOut = await updateProduct("p1", { stock: 0 }, undefined, db.asClient());
+    assert.deepEqual(soldOut, { ok: true, status: "published" });
+    assert.equal(db.tables.catalog_products[0].stock, 0);
+});
+
+test("publishCatalogProduct compares expectedUpdatedAt before writing", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [catalogRow({ id: "d1", status: "draft" })];
+
+    const stale = await publishCatalogProduct(
+        "d1",
+        "admin-1",
+        {},
+        "1999-01-01T00:00:00.000Z",
+        db.asClient()
+    );
+    assert.ok("error" in stale && stale.error.includes("changed"));
+    assert.equal(db.tables.catalog_products[0].status, "draft");
+
+    const ok = await publishCatalogProduct(
+        "d1",
+        "admin-1",
+        {},
+        "2026-10-01T00:00:00.000Z",
+        db.asClient()
+    );
+    assert.deepEqual(ok, { ok: true });
+    assert.equal(db.tables.catalog_products[0].status, "published");
 });

@@ -22,6 +22,7 @@ import { isHttpUrl } from "@/lib/catalog/validate";
 import { describePublishError } from "@/lib/catalog/publishFeedback";
 import { describeEmptyFeed } from "@/lib/trends/emptyFeed";
 import { computeActualContribution, computePriceSuggestion, resolveUsdAmount, usdToCop } from "@/lib/catalog/pricing";
+import PricingControls from "@/components/operator/PricingControls";
 
 const SOURCE_LABELS: Record<string, string> = {
     mercadolibre: "Mercado Libre",
@@ -49,6 +50,10 @@ interface ReviewForm {
     supplierCostCop: string;
     shippingCop: string;
     taxesFeesCop: string;
+    paymentFeePercent: string;
+    customerShippingCop: string;
+    shippingCity: string;
+    shippingCheckedAt: string;
     fxRate: string;
     fxRateDate: string;
     supplierRightsConfirmed: boolean;
@@ -64,9 +69,13 @@ function emptyReview(draft: CatalogRow): ReviewForm {
         priceCop: draft.price_cop ? String(draft.price_cop) : "",
         stock: draft.stock ? String(draft.stock) : "",
         imagesText: (draft.images ?? []).join("\n"),
-        supplierCostCop: draft.supplier_cost_cop ? String(draft.supplier_cost_cop) : "",
-        shippingCop: draft.supplier_shipping_cop ? String(draft.supplier_shipping_cop) : "",
-        taxesFeesCop: draft.taxes_fees_cop ? String(draft.taxes_fees_cop) : "",
+        supplierCostCop: draft.supplier_cost_cop !== null ? String(draft.supplier_cost_cop) : "",
+        shippingCop: draft.supplier_shipping_cop !== null ? String(draft.supplier_shipping_cop) : "",
+        taxesFeesCop: draft.taxes_fees_cop !== null ? String(draft.taxes_fees_cop) : "",
+        paymentFeePercent: "",
+        customerShippingCop: draft.customer_shipping_cop !== null ? String(draft.customer_shipping_cop) : "",
+        shippingCity: draft.shipping_estimate_city ?? "",
+        shippingCheckedAt: draft.shipping_checked_at ?? "",
         fxRate: draft.fx_rate ? String(draft.fx_rate) : "",
         fxRateDate: draft.fx_rate_date ?? "",
         supplierRightsConfirmed: draft.supplier_rights_confirmed === true,
@@ -458,10 +467,43 @@ export default function TrendPanel() {
         supplier_cost_cop: form.supplierCostCop ? Number(form.supplierCostCop) : null,
         supplier_shipping_cop: form.shippingCop ? Number(form.shippingCop) : null,
         taxes_fees_cop: form.taxesFeesCop ? Number(form.taxesFeesCop) : null,
+        customer_shipping_cop:
+            form.customerShippingCop.trim() === "" ? null : Number(form.customerShippingCop),
+        shipping_estimate_city: form.shippingCity,
+        shipping_checked_at: form.shippingCheckedAt || null,
         fx_rate: form.fxRate ? Number(form.fxRate) : null,
         fx_rate_date: form.fxRateDate || null,
         supplier_rights_confirmed: form.supplierRightsConfirmed,
     });
+
+    const handleSaveDraft = async (draft: CatalogRow) => {
+        if (!reviewForm) return;
+        setSubmitting(true);
+        setPublishError("");
+        try {
+            const res = await fetch(`/api/admin/catalog/${draft.id}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    action: "update",
+                    fields: reviewFields(reviewForm),
+                    expectedUpdatedAt: draft.updated_at,
+                }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (res.ok) {
+                setNotice(`Borrador "${draft.name}" guardado.`);
+                const draftsRes = await fetch("/api/admin/catalog");
+                if (draftsRes.ok) setDrafts((await draftsRes.json()).drafts ?? []);
+            } else {
+                setPublishError(describePublishError(body));
+            }
+        } catch {
+            setPublishError("Error de red al guardar el borrador.");
+        } finally {
+            setSubmitting(false);
+        }
+    };
 
     const handlePublish = async (draft: CatalogRow) => {
         if (!reviewForm) return;
@@ -471,7 +513,11 @@ export default function TrendPanel() {
             const res = await fetch(`/api/admin/catalog/${draft.id}`, {
                 method: "PATCH",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ action: "publish", fields: reviewFields(reviewForm) }),
+                body: JSON.stringify({
+                    action: "publish",
+                    fields: reviewFields(reviewForm),
+                    expectedUpdatedAt: draft.updated_at,
+                }),
             });
             const body = await res.json().catch(() => ({}));
             if (res.ok) {
@@ -500,10 +546,14 @@ export default function TrendPanel() {
         }
     };
 
-    const marginPreview = (form: ReviewForm): number | null => {
-        const price = Number(form.priceCop) || 0;
-        if (!price || !form.supplierCostCop || !form.shippingCop || !form.taxesFeesCop) return null;
-        return price - Number(form.supplierCostCop) - Number(form.shippingCop) - Number(form.taxesFeesCop);
+    // USD listing → confirmed cost conversion, only when a dated positive FX rate was entered
+    const listingCostCop = (draft: CatalogRow, form: ReviewForm): number | null => {
+        if (draft.listing_currency !== "USD" || draft.listing_price === null) return null;
+        const rate = Number(form.fxRate);
+        if (!Number.isFinite(rate) || rate <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(form.fxRateDate)) {
+            return null;
+        }
+        return usdToCop(draft.listing_price, rate);
     };
 
     const meliItems = data?.items.filter((i) => i.source === "mercadolibre") ?? [];
@@ -1144,7 +1194,6 @@ export default function TrendPanel() {
                             <div className="space-y-4">
                                 {drafts.map((draft) => {
                                     const isReviewing = reviewingId === draft.id;
-                                    const margin = reviewForm && isReviewing ? marginPreview(reviewForm) : null;
                                     return (
                                         <div
                                             key={draft.id}
@@ -1219,18 +1268,6 @@ export default function TrendPanel() {
                                                             <input type="number" min={0} value={reviewForm.stock} onChange={(e) => setReviewForm({ ...reviewForm, stock: e.target.value })} className={inputClass} />
                                                         </div>
                                                         <div>
-                                                            <label className="text-[11px] text-muted block mb-1">Costo proveedor COP</label>
-                                                            <input type="number" min={0} value={reviewForm.supplierCostCop} onChange={(e) => setReviewForm({ ...reviewForm, supplierCostCop: e.target.value })} className={inputClass} />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[11px] text-muted block mb-1">Envío proveedor COP</label>
-                                                            <input type="number" min={0} value={reviewForm.shippingCop} onChange={(e) => setReviewForm({ ...reviewForm, shippingCop: e.target.value })} className={inputClass} />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[11px] text-muted block mb-1">Impuestos y tarifas COP</label>
-                                                            <input type="number" min={0} value={reviewForm.taxesFeesCop} onChange={(e) => setReviewForm({ ...reviewForm, taxesFeesCop: e.target.value })} className={inputClass} />
-                                                        </div>
-                                                        <div>
                                                             <label className="text-[11px] text-muted block mb-1">Tasa USD→COP (opcional)</label>
                                                             <input type="number" min={0} step="0.01" value={reviewForm.fxRate} onChange={(e) => setReviewForm({ ...reviewForm, fxRate: e.target.value })} className={inputClass} />
                                                         </div>
@@ -1239,6 +1276,14 @@ export default function TrendPanel() {
                                                             <input type="date" value={reviewForm.fxRateDate} onChange={(e) => setReviewForm({ ...reviewForm, fxRateDate: e.target.value })} className={inputClass} />
                                                         </div>
                                                     </div>
+                                                    <PricingControls
+                                                        key={draft.id}
+                                                        value={reviewForm}
+                                                        onChange={(patch) => setReviewForm({ ...reviewForm, ...patch })}
+                                                        listingPrice={draft.listing_price}
+                                                        listingCurrency={draft.listing_currency}
+                                                        listingCostCop={listingCostCop(draft, reviewForm)}
+                                                    />
                                                     <div>
                                                         <label className="text-[11px] text-muted block mb-1">Imágenes permitidas (URLs http/https, una por línea) *</label>
                                                         <textarea
@@ -1257,11 +1302,6 @@ export default function TrendPanel() {
                                                             className={inputClass}
                                                         />
                                                     </div>
-                                                    {margin !== null && (
-                                                        <div className={`text-xs font-mono ${margin >= 0 ? "text-green-400" : "text-red-400"}`}>
-                                                            Margen estimado: {formatCOP(margin)} (precio − costo − envío − impuestos)
-                                                        </div>
-                                                    )}
                                                     <label className="flex items-start gap-2 text-xs text-muted cursor-pointer">
                                                         <input
                                                             type="checkbox"
@@ -1272,6 +1312,13 @@ export default function TrendPanel() {
                                                         <span>Confirmo que tengo derecho a usar las imágenes y datos del proveedor y que el stock fue verificado antes de publicar. *</span>
                                                     </label>
                                                     <div className="flex flex-wrap items-center gap-3">
+                                                        <button
+                                                            onClick={() => handleSaveDraft(draft)}
+                                                            disabled={submitting}
+                                                            className="px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                                                        >
+                                                            {submitting ? "Guardando..." : "Guardar borrador"}
+                                                        </button>
                                                         <button
                                                             onClick={() => handlePublish(draft)}
                                                             disabled={submitting}

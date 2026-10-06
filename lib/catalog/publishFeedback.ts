@@ -16,6 +16,9 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
     fx_rate: "tasa de cambio",
     fx_rate_date: "fecha de la tasa",
     supplier_rights_confirmed: "confirmación de derechos del proveedor",
+    customer_shipping_cop: "envío al cliente",
+    shipping_estimate_city: "ciudad de envío estimada",
+    shipping_checked_at: "fecha de verificación del envío",
 };
 
 const FALLBACK = "No se pudo publicar.";

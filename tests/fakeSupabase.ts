@@ -12,6 +12,8 @@ interface Op {
     filters: { col: string; val: unknown }[];
     neqFilters: { col: string; val: unknown }[];
     limitN?: number;
+    rangeFrom?: number;
+    rangeTo?: number;
     single?: boolean;
     maybe?: boolean;
     columns?: string;
@@ -77,6 +79,11 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
         this.op.limitN = n;
         return this;
     }
+    range(from: number, to: number) {
+        this.op.rangeFrom = from;
+        this.op.rangeTo = to;
+        return this;
+    }
     single() {
         this.op.single = true;
         return this.exec();
@@ -116,9 +123,15 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
         let result: { data: unknown; error: { message: string; code?: string } | null };
 
         if (op.kind === "select") {
+            if (this.db.failSelects.has(this.table)) {
+                return Promise.resolve({ data: null, error: { message: "select failed" } });
+            }
             let matched = rows.filter((r) => this.matches(r)).map((r) => this.project(r));
             if (op.orderCol) {
                 matched = matched.slice().sort((a, b) => String(a[op.orderCol!]).localeCompare(String(b[op.orderCol!])));
+            }
+            if (op.rangeFrom !== undefined) {
+                matched = matched.slice(op.rangeFrom, (op.rangeTo ?? op.rangeFrom) + 1);
             }
             if (op.limitN !== undefined) matched = matched.slice(0, op.limitN);
             if (op.single) result = { data: matched[0] ?? null, error: matched.length ? null : { message: "no rows", code: "PGRST116" } };
@@ -184,6 +197,7 @@ export class FakeDb {
     unique: Record<string, string[][]> = {};
     failUpdates: Set<string> = new Set();
     failUpserts: Set<string> = new Set();
+    failSelects: Set<string> = new Set();
     leases: Map<string, { owner: string; expiresAt: number }> = new Map();
     nowMs: () => number = () => Date.now();
 

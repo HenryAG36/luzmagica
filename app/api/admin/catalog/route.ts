@@ -1,14 +1,32 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
-import { importDraft, listDrafts } from "@/lib/catalog/repository";
+import { importDraft, listCatalogProducts, listDrafts } from "@/lib/catalog/repository";
 import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeImportFields, sanitizeSupplierVariant } from "@/lib/catalog/validate";
 
 const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"]);
+const PAGE_MAX = 100;
 
-export async function GET() {
+function boundedInt(raw: string | null, fallback: number, max: number): number {
+    const value = raw === null ? Number.NaN : Number(raw);
+    if (!Number.isInteger(value) || value < 0) return fallback;
+    return Math.min(value, max);
+}
+
+export async function GET(request: Request) {
     const auth = await authorizeAdmin();
     if (!auth.ok) {
         return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
+    }
+
+    const scope = new URL(request.url).searchParams.get("scope");
+    if (scope === "all") {
+        const limit = boundedInt(new URL(request.url).searchParams.get("limit"), PAGE_MAX, PAGE_MAX);
+        const offset = boundedInt(new URL(request.url).searchParams.get("offset"), 0, Number.MAX_SAFE_INTEGER);
+        const result = await listCatalogProducts(undefined, { limit, offset });
+        if ("error" in result) {
+            return NextResponse.json({ error: result.error }, { status: 502 });
+        }
+        return NextResponse.json({ products: result.products, limit, offset });
     }
 
     const drafts = await listDrafts();

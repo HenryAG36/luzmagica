@@ -33,7 +33,8 @@ provider connections/snapshots/leases/catalog, `20261006023202_seed_products`
 seed products, `20261006172120_aliexpress_ds` DS provider/SKU columns,
 `20261006190950_ds_shipping` customer shipping fields on the public view,
 `20261006190956_discovery_providers` widens the provider check for
-`cjdropshipping`).
+`cjdropshipping`, `20261006213419_published_products_shipping_guard` hides
+international products missing a confirmed customer shipping quote).
 Filenames use Supabase timestamp versions and must not be
 renumbered; remote projects that already applied them will skip replay. With the
 Supabase CLI:
@@ -101,6 +102,15 @@ administrator cannot be removed (enforced by a database trigger).
   once every 6 hours with a ≥1s gap between auth and list calls. `listedNum`
   is shown as the provider's listing count — it is not sales data.
 
+Publishing (or saving edits to a published row) for `aliexpress_ds` /
+`cjdropshipping` products requires a confirmed customer shipping quote:
+`customer_shipping_cop` (explicit non-negative integer — 0 only when free
+shipping is knowingly confirmed), `shipping_estimate_city`, and
+`shipping_checked_at`. The `published_products` view hides international rows
+missing these fields until an admin corrects them in the operator **Productos**
+tab, which lists every status and supports editing, archiving (rows are kept),
+and republishing.
+
 Missing provider configuration disables only that source — the panel shows each
 source's status and the age of the last successful snapshot. Snapshots refresh
 automatically when an admin opens the panel if older than 6 hours; refreshes are
@@ -129,10 +139,12 @@ applied to the configured Supabase project; live inspection confirms RLS,
 public/private catalog grants, lease RPC privileges, installed triggers, and
 eight published seed products. The `20261006190950_ds_shipping` and
 `20261006190956_discovery_providers` migrations are also applied — public
-customer-shipping fields and supplier-private grants are verified remotely.
+customer-shipping fields and supplier-private grants are verified remotely. The
+`20261006213419_published_products_shipping_guard` migration is also applied and
+verified remotely — zero incomplete international rows are publicly readable.
 Authenticated browser flows, concurrent Postgres
 behavior, OAuth, and live provider responses still require end-to-end validation.
-The pinned Supabase packages are installed; TypeScript, lint, 140 fixture tests,
+The pinned Supabase packages are installed; TypeScript, lint, 152 fixture tests,
 and the production build pass.
 
 ## Learn More

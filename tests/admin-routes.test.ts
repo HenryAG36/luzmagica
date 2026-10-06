@@ -44,3 +44,14 @@ test("no plaintext password or demo-login paths remain in auth store", () => {
     assert.doesNotMatch(store, /persist\(/);
     assert.match(store, /signInWithPassword/);
 });
+
+test("catalog PATCH route sanitizes fields, whitelists actions, and checks origin", () => {
+    const src = readFileSync(join(adminDir, "catalog/[id]/route.ts"), "utf8");
+    assert.match(src, /sanitizeReviewFields/);
+    assert.match(src, /checkOrigin/);
+    assert.match(src, /unknown action/);
+    assert.match(src, /expectedUpdatedAt/);
+    assert.match(src, /publishCatalogProduct/);
+    assert.match(src, /updateProduct/);
+    assert.match(src, /archiveProduct/);
+});

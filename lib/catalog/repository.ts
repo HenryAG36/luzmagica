@@ -195,3 +195,164 @@ export async function discardDraft(
     }
     return { ok: true };
 }
+
+const MANAGE_PAGE_MAX = 100;
+
+export async function listCatalogProducts(
+    client?: SupabaseClientLike,
+    opts: { limit?: number; offset?: number } = {}
+): Promise<{ products: CatalogRow[] } | { error: string }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+    const limit =
+        Number.isInteger(opts.limit) && (opts.limit as number) > 0
+            ? Math.min(opts.limit as number, MANAGE_PAGE_MAX)
+            : MANAGE_PAGE_MAX;
+    const offset = Number.isInteger(opts.offset) && (opts.offset as number) >= 0 ? (opts.offset as number) : 0;
+    const { data, error } = await service
+        .from("catalog_products")
+        .select("*")
+        .order("created_at")
+        .range(offset, offset + limit - 1);
+    if (error) return { error: error.message };
+    return { products: (data as CatalogRow[] | null) ?? [] };
+}
+
+export interface UpdateProductResult {
+    ok: true;
+    status: string;
+}
+
+export async function updateProduct(
+    id: string,
+    fields: Record<string, unknown>,
+    expectedUpdatedAt?: string,
+    client?: SupabaseClientLike
+): Promise<UpdateProductResult | { error: string; missing?: string[] }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+
+    const { data: rowData } = await service
+        .from("catalog_products")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+    const row = rowData as CatalogRow | null;
+    if (!row) return { error: "product not found" };
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== row.updated_at) {
+        return { error: "product changed during edit; reload and retry" };
+    }
+
+    const merged = { ...row, ...fields };
+    if (row.status === "published") {
+        // a published row must remain publishable: same guard as publish,
+        // but stock 0 (sold out) is a valid state for a live product
+        const validation = validatePublishable(merged as CatalogRow, { allowSoldOut: true });
+        if (!validation.valid) {
+            return { error: "product is not publishable", missing: validation.missing };
+        }
+    }
+
+    const { data: updated, error } = await service
+        .from("catalog_products")
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("status", row.status)
+        .eq("updated_at", row.updated_at)
+        .select("id");
+
+    if (error) return { error: error.message };
+    if (!updated || (updated as unknown[]).length === 0) {
+        return { error: "product changed during edit; reload and retry" };
+    }
+    return { ok: true, status: row.status };
+}
+
+export async function archiveProduct(
+    id: string,
+    expectedUpdatedAt?: string,
+    client?: SupabaseClientLike
+): Promise<{ ok: true; wasPublished: boolean } | { error: string }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+
+    const { data: rowData } = await service
+        .from("catalog_products")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+    const row = rowData as CatalogRow | null;
+    if (!row) return { error: "product not found" };
+    if (row.status !== "draft" && row.status !== "published") {
+        return { error: "product already archived" };
+    }
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== row.updated_at) {
+        return { error: "product changed during edit; reload and retry" };
+    }
+    const wasPublished = row.status === "published";
+
+    const { data: updated, error } = await service
+        .from("catalog_products")
+        .update({ status: "archived", updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("status", row.status)
+        .eq("updated_at", row.updated_at)
+        .select("id");
+
+    if (error) return { error: error.message };
+    if (!updated || (updated as unknown[]).length === 0) {
+        return { error: "product changed during edit; reload and retry" };
+    }
+    return { ok: true, wasPublished };
+}
+
+export async function publishCatalogProduct(
+    id: string,
+    reviewerId: string,
+    fields: Record<string, unknown> = {},
+    expectedUpdatedAt?: string,
+    client?: SupabaseClientLike
+): Promise<{ ok: true } | { error: string; missing?: string[] }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+
+    const { data: rowData } = await service
+        .from("catalog_products")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+    const row = rowData as CatalogRow | null;
+    if (!row || (row.status !== "draft" && row.status !== "archived")) {
+        return { error: "product not found" };
+    }
+    if (expectedUpdatedAt !== undefined && expectedUpdatedAt !== row.updated_at) {
+        return { error: "product changed during review; reload and retry" };
+    }
+
+    const merged = { ...row, ...fields };
+    const validation = validatePublishable(merged as CatalogRow);
+    if (!validation.valid) {
+        return { error: "product is not ready to publish", missing: validation.missing };
+    }
+
+    const now = new Date().toISOString();
+    const { data: updated, error } = await service
+        .from("catalog_products")
+        .update({
+            ...fields,
+            status: "published",
+            reviewed_by: reviewerId,
+            published_at: now,
+            updated_at: now,
+        })
+        .eq("id", id)
+        .eq("status", row.status)
+        .eq("updated_at", row.updated_at)
+        .select("id");
+
+    if (error) return { error: error.message };
+    if (!updated || (updated as unknown[]).length === 0) {
+        return { error: "product changed during review; reload and retry" };
+    }
+    return { ok: true };
+}

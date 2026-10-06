@@ -26,6 +26,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 import TrendPanel from "@/components/operator/TrendPanel";
+import ProductsPanel from "@/components/operator/ProductsPanel";
 import { OrderStatus, Order } from "@/lib/types";
 
 const emptySubscribe = () => () => {};
@@ -50,8 +51,8 @@ export default function OperatorClient() {
     // Tab state
     const searchParams = useSearchParams();
     const initialTab = searchParams.get("tab");
-    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "team">(
-        initialTab === "trends" ? "trends" : "overview"
+    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "products" | "team">(
+        initialTab === "trends" || initialTab === "products" ? initialTab : "overview"
     );
 
     interface AdminRow {
@@ -266,6 +267,16 @@ export default function OperatorClient() {
                 >
                     <TrendingUp className="w-3.5 h-3.5" />
                     <span>Tendencias</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab("products")}
+                    className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+                        activeTab === "products"
+                            ? "bg-primary text-white glow-purple"
+                            : "text-muted hover:text-white hover:bg-white/5"
+                    }`}
+                >
+                    <span>Productos</span>
                 </button>
                 <button
                     onClick={() => setActiveTab("team")}
@@ -821,6 +832,9 @@ export default function OperatorClient() {
 
             {/* TAB: TENDENCIAS */}
             {activeTab === "trends" && <TrendPanel />}
+
+            {/* TAB: PRODUCTOS */}
+            {activeTab === "products" && <ProductsPanel />}
 
             {/* TAB: EQUIPO ADMIN */}
             {activeTab === "team" && (

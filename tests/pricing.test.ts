@@ -93,3 +93,18 @@ test("usd amount resolves only for USD sku or USD product fallback", () => {
     assert.equal(resolveUsdAmount(12.3, null), null);
     assert.equal(resolveUsdAmount(null, "USD"), null);
 });
+
+test("pricing field parsers: empty is unset, invalid is null, zero is explicit", async () => {
+    const { parseCopInput, parsePercentInput } = await import("../lib/catalog/pricing.ts");
+    assert.equal(parseCopInput(""), null);
+    assert.equal(parseCopInput("   "), null);
+    assert.equal(parseCopInput("0"), 0);
+    assert.equal(parseCopInput("5000"), 5000);
+    assert.equal(parseCopInput("-1"), null);
+    assert.equal(parseCopInput("1.5"), null);
+    assert.equal(parseCopInput("abc"), null);
+    assert.equal(parseCopInput("9999999999999"), null);
+    assert.equal(parsePercentInput(""), null);
+    assert.equal(parsePercentInput("2.5"), 2.5);
+    assert.equal(parsePercentInput("x"), null);
+});

@@ -53,6 +53,18 @@ export function computeActualContribution(
     return customerProductCop - supplierCostCop;
 }
 
+export function parseCopInput(value: string): number | null {
+    if (typeof value !== "string" || value.trim() === "") return null;
+    const n = Number(value);
+    return Number.isSafeInteger(n) && n >= 0 && n <= INT32_MAX ? n : null;
+}
+
+export function parsePercentInput(value: string): number | null {
+    if (typeof value !== "string" || value.trim() === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function computePriceSuggestion(input: PriceSuggestionInput): PriceSuggestion | null {
     const { supplierCostCop, shippingCop } = input;
     const taxes = input.taxesFeesCop ?? null;

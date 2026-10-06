@@ -197,10 +197,12 @@ export function buildDraftInsert(input: {
 
 export const REVIEW_FIELD_VALIDATORS: Record<string, (v: unknown) => unknown | null> = {
     name: (v) => boundedString(v, MAX_NAME),
-    category: (v) => boundedString(v, MAX_SLUG),
+    // category/description are schema-valid as empty strings so incomplete
+    // drafts can be saved; validatePublishable still requires them nonempty
+    category: (v) => boundedString(v, MAX_SLUG, true),
     room: (v) => boundedString(v, MAX_SLUG, true),
     type: (v) => boundedString(v, MAX_SLUG, true),
-    description: (v) => boundedString(v, MAX_TEXT),
+    description: (v) => boundedString(v, MAX_TEXT, true),
     badge: (v) => (v === "sale" || v === "new" || v === null ? v : null),
     images: (v) => sanitizeImageList(v),
     price_cop: (v) => nonNegativeInt(v),
@@ -271,23 +273,55 @@ export interface PublishValidationResult {
     missing: string[];
 }
 
-export function validatePublishable(draft: {
-    name: string;
-    category: string;
-    description: string;
-    images: string[] | null;
-    price_cop: number;
-    stock: number;
-    supplier_rights_confirmed?: boolean;
-}): PublishValidationResult {
+export const INTERNATIONAL_SHIPPING_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+
+export function validatePublishable(
+    draft: {
+        name: string;
+        category: string;
+        description: string;
+        images: string[] | null;
+        price_cop: number;
+        stock: number;
+        supplier_rights_confirmed?: boolean;
+        source?: string;
+        customer_shipping_cop?: number | null;
+        shipping_estimate_city?: string | null;
+        shipping_checked_at?: string | null;
+    },
+    opts: { allowSoldOut?: boolean } = {}
+): PublishValidationResult {
     const missing: string[] = [];
     if (!draft.name?.trim()) missing.push("name");
     if (!draft.category?.trim()) missing.push("category");
     if (!draft.description?.trim()) missing.push("description");
     if (!draft.images || draft.images.length === 0) missing.push("images");
     if (!(draft.price_cop > 0)) missing.push("price_cop");
-    if (!(draft.stock > 0)) missing.push("stock");
+    // published rows may legitimately sell out (stock 0); first publish still requires stock > 0
+    const stockOk = opts.allowSoldOut
+        ? Number.isInteger(draft.stock) && draft.stock >= 0
+        : draft.stock > 0;
+    if (!stockOk) missing.push("stock");
     if (draft.supplier_rights_confirmed !== true) missing.push("supplier_rights_confirmed");
+    if (draft.source && INTERNATIONAL_SHIPPING_SOURCES.has(draft.source)) {
+        // international rows need an explicit confirmed customer quote; null is
+        // never treated as free — 0 must be entered deliberately
+        if (
+            !Number.isInteger(draft.customer_shipping_cop) ||
+            (draft.customer_shipping_cop as number) < 0
+        ) {
+            missing.push("customer_shipping_cop");
+        }
+        if (typeof draft.shipping_estimate_city !== "string" || draft.shipping_estimate_city.trim() === "") {
+            missing.push("shipping_estimate_city");
+        }
+        if (
+            typeof draft.shipping_checked_at !== "string" ||
+            Number.isNaN(Date.parse(draft.shipping_checked_at))
+        ) {
+            missing.push("shipping_checked_at");
+        }
+    }
     return { valid: missing.length === 0, missing };
 }
 
