@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
     TrendingUp,
     RefreshCw,
@@ -16,6 +17,7 @@ import Image from "next/image";
 import { formatCOP } from "@/lib/utils";
 import type { TrendItem, TrendsPayload } from "@/lib/trends/types";
 import type { CatalogRow } from "@/lib/catalog/validate";
+import type { DsProduct } from "@/lib/suppliers/types";
 import { isHttpUrl } from "@/lib/catalog/validate";
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -77,6 +79,12 @@ export default function TrendPanel() {
     const [reviewingId, setReviewingId] = useState<string | null>(null);
     const [reviewForm, setReviewForm] = useState<ReviewForm | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [dsProductId, setDsProductId] = useState("");
+    const [dsProduct, setDsProduct] = useState<DsProduct | null>(null);
+    const [dsSkuId, setDsSkuId] = useState("");
+    const [dsBusy, setDsBusy] = useState(false);
+    const searchParams = useSearchParams();
+    const dsConnectResult = searchParams.get("ae_ds");
 
     const load = useCallback(async () => {
         setError("");
@@ -161,6 +169,92 @@ export default function TrendPanel() {
         }
     };
 
+    const handleDsLookup = async () => {
+        setDsBusy(true);
+        setError("");
+        setNotice("");
+        setDsProduct(null);
+        setDsSkuId("");
+        try {
+            const res = await fetch("/api/admin/suppliers/aliexpress-ds/product", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ productId: dsProductId.trim() }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setError(body.error || "No se pudo consultar el producto.");
+                return;
+            }
+            setDsProduct(body.product);
+            setDsSkuId(body.product?.skus?.length === 1 ? body.product.skus[0].skuId : "");
+        } catch {
+            setError("Error de red al consultar el producto.");
+        } finally {
+            setDsBusy(false);
+        }
+    };
+
+    const handleDsImport = async () => {
+        if (!dsProduct) return;
+        const sku = dsProduct.skus.find((s) => s.skuId === dsSkuId);
+        if (dsProduct.skus.length > 1 && !sku) {
+            setError("Selecciona una variante (SKU) antes de importar.");
+            return;
+        }
+        const chosen = sku ?? dsProduct.skus[0] ?? null;
+        if (dsProduct.skus.length >= 1 && !chosen) {
+            setError("Selecciona una variante (SKU) antes de importar.");
+            return;
+        }
+        setDsBusy(true);
+        setError("");
+        try {
+            const res = await fetch("/api/admin/catalog", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    source: "aliexpress_ds",
+                    providerItemId: chosen ? `${dsProduct.productId}-${chosen.skuId}` : dsProduct.productId,
+                    sourceUrl: dsProduct.sourceUrl,
+                    title: dsProduct.title,
+                    images: dsProduct.images,
+                    listingPrice: chosen?.offerSalePrice ?? chosen?.skuPrice ?? null,
+                    listingCurrency: chosen?.currency ?? dsProduct.currency,
+                    supplierVariant: chosen
+                        ? {
+                              product_id: dsProduct.productId,
+                              sku_id: chosen.skuId,
+                              sku_attr: chosen.skuAttr,
+                              offer_sale_price: chosen.offerSalePrice,
+                              sku_price: chosen.skuPrice,
+                              sku_available_stock: chosen.availableStock,
+                              currency_code: chosen.currency,
+                              delivery_time_days: dsProduct.deliveryTimeDays,
+                              provider_reported_sales: dsProduct.providerReportedSales,
+                          }
+                        : null,
+                }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (res.ok) {
+                setNotice(
+                    body.created
+                        ? `Borrador creado: ${dsProduct.title}. Revisa y publica desde la lista de borradores.`
+                        : `Este producto ya existe como borrador o publicado (${body.id}).`
+                );
+                const draftsRes = await fetch("/api/admin/catalog");
+                if (draftsRes.ok) setDrafts((await draftsRes.json()).drafts ?? []);
+            } else {
+                setError(body.error || "No se pudo importar el producto.");
+            }
+        } catch {
+            setError("Error de red al importar.");
+        } finally {
+            setDsBusy(false);
+        }
+    };
+
     const reviewFields = (form: ReviewForm) => ({
         name: form.name,
         category: form.category,
@@ -226,6 +320,15 @@ export default function TrendPanel() {
 
     const meliItems = data?.items.filter((i) => i.source === "mercadolibre") ?? [];
     const aliItems = data?.items.filter((i) => i.source === "aliexpress") ?? [];
+
+    const dsResultMessage = dsConnectResult
+        ? ({
+              connected: ["AliExpress DS conectado correctamente.", true],
+              exchange_failed: ["No se pudo completar la conexión con AliExpress DS.", false],
+              persist_failed: ["La conexión DS no se pudo guardar. Intenta de nuevo.", false],
+              connection_busy: ["Otra operación DS está en curso. Intenta de nuevo.", false],
+          }[dsConnectResult] ?? ["No se pudo conectar AliExpress DS. Vuelve a intentarlo.", false])
+        : null;
 
     const inputClass =
         "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white placeholder-muted focus:outline-none focus:border-primary";
@@ -360,6 +463,104 @@ export default function TrendPanel() {
                                 {aliItems.map((item) => (
                                     <TrendCard key={item.id} item={item} onImport={handleImport} importing={importingId === item.id} />
                                 ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="glass rounded-3xl p-6 md:p-8">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+                            <h4 className="font-heading text-base font-bold text-white">
+                                Proveedor · AliExpress Dropshipping
+                            </h4>
+                            <a
+                                href="/api/admin/providers/aliexpress-ds/authorize"
+                                className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors self-start"
+                            >
+                                <PlugZap className="w-3.5 h-3.5" />
+                                Conectar AliExpress DS
+                            </a>
+                        </div>
+                        <p className="text-[11px] text-muted mb-4">
+                            Busca un producto por su ID de AliExpress. Las ventas mostradas son reportadas por el proveedor, no una tendencia. Requiere la app DS conectada por OAuth.
+                        </p>
+                        {dsResultMessage && (
+                            <p className={`text-xs mb-3 ${dsResultMessage[1] ? "text-green-300" : "text-red-300"}`}>
+                                {dsResultMessage[0]}
+                            </p>
+                        )}
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={dsProductId}
+                                onChange={(e) => setDsProductId(e.target.value)}
+                                placeholder="ID de producto (ej. 1005001234567890)"
+                                className={inputClass}
+                            />
+                            <button
+                                onClick={handleDsLookup}
+                                disabled={dsBusy || !dsProductId.trim()}
+                                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold transition-all disabled:opacity-50 shrink-0"
+                            >
+                                {dsBusy ? "Consultando..." : "Buscar producto"}
+                            </button>
+                        </div>
+                        {dsProduct && (
+                            <div className="mt-4 rounded-2xl border border-white/10 p-4 space-y-3">
+                                <div className="flex gap-3 items-start">
+                                    {dsProduct.images[0] && isHttpUrl(dsProduct.images[0]) && (
+                                        <Image
+                                            src={dsProduct.images[0]}
+                                            alt={dsProduct.title}
+                                            width={64}
+                                            height={64}
+                                            unoptimized
+                                            className="rounded-xl object-cover shrink-0"
+                                        />
+                                    )}
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-white truncate">{dsProduct.title}</p>
+                                        <p className="text-[11px] text-muted">
+                                            ID {dsProduct.productId}
+                                            {dsProduct.currency ? ` · ${dsProduct.currency}` : ""}
+                                            {dsProduct.providerReportedSales != null &&
+                                                ` · ${dsProduct.providerReportedSales} ventas reportadas por el proveedor`}
+                                            {dsProduct.deliveryTimeDays != null &&
+                                                ` · entrega aprox. ${dsProduct.deliveryTimeDays} días`}
+                                        </p>
+                                    </div>
+                                </div>
+                                {dsProduct.skus.length > 1 ? (
+                                    <select
+                                        value={dsSkuId}
+                                        onChange={(e) => setDsSkuId(e.target.value)}
+                                        className={inputClass}
+                                    >
+                                        <option value="">Selecciona variante (SKU)...</option>
+                                        {dsProduct.skus.map((sku) => (
+                                            <option key={sku.skuId} value={sku.skuId}>
+                                                {sku.skuAttr || sku.skuId}
+                                                {sku.offerSalePrice != null || sku.skuPrice != null
+                                                    ? ` · ${sku.offerSalePrice ?? sku.skuPrice} ${sku.currency ?? ""}`
+                                                    : ""}
+                                                {sku.availableStock != null ? ` · stock ${sku.availableStock}` : ""}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : dsProduct.skus.length === 1 ? (
+                                    <p className="text-[11px] text-muted">
+                                        Variante: {dsProduct.skus[0].skuAttr || dsProduct.skus[0].skuId}
+                                        {dsProduct.skus[0].availableStock != null &&
+                                            ` · stock ${dsProduct.skus[0].availableStock}`}
+                                    </p>
+                                ) : null}
+                                <button
+                                    onClick={handleDsImport}
+                                    disabled={dsBusy || (dsProduct.skus.length > 1 && !dsSkuId)}
+                                    className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-light text-white text-xs font-semibold transition-all disabled:opacity-50"
+                                >
+                                    {dsBusy ? "Importando..." : "Importar como borrador"}
+                                </button>
                             </div>
                         )}
                     </div>

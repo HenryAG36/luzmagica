@@ -29,9 +29,9 @@ const SCOPES: Record<TrendSource, string[]> = {
 };
 const PROVIDER_SCOPE = "__provider__";
 
-async function getConnection(
+export async function getConnection(
     service: SupabaseClientLike,
-    provider: TrendSource
+    provider: string
 ): Promise<ProviderConnectionRow | null> {
     const { data } = await service
         .from("provider_connections")
@@ -41,7 +41,7 @@ async function getConnection(
     return (data as ProviderConnectionRow | null) ?? null;
 }
 
-async function markConnectionError(service: SupabaseClientLike, provider: TrendSource, message: string) {
+export async function markConnectionError(service: SupabaseClientLike, provider: string, message: string) {
     await service
         .from("provider_connections")
         .upsert({ provider, status: "error", last_error: message, updated_at: new Date().toISOString() });
@@ -72,7 +72,7 @@ async function getMeliAccessToken(
         return { error: "token refresh failed" };
     }
 
-    await service
+    const { error: persistError } = await service
         .from("provider_connections")
         .update({
             access_token_encrypted: encryptSecret(result.data.accessToken, secret),
@@ -85,6 +85,11 @@ async function getMeliAccessToken(
             updated_at: new Date().toISOString(),
         })
         .eq("provider", "mercadolibre");
+
+    if (persistError) {
+        await markConnectionError(service, "mercadolibre", "credential persistence failed");
+        return { error: "credential persistence failed" };
+    }
 
     return { token: result.data.accessToken };
 }
@@ -145,9 +150,9 @@ async function writeSnapshotError(
     }
 }
 
-async function acquireProviderLease(
+export async function acquireProviderLease(
     service: SupabaseClientLike,
-    source: TrendSource,
+    source: string,
     owner: string
 ): Promise<boolean> {
     const { data, error } = await service.rpc("try_acquire_refresh_lease", {
@@ -160,7 +165,7 @@ async function acquireProviderLease(
     return data === true;
 }
 
-async function releaseProviderLease(service: SupabaseClientLike, source: TrendSource, owner: string) {
+export async function releaseProviderLease(service: SupabaseClientLike, source: string, owner: string) {
     await service.rpc("release_refresh_lease", {
         p_source: source,
         p_scope: PROVIDER_SCOPE,

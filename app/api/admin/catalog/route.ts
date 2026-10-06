@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
 import { importDraft, listDrafts } from "@/lib/catalog/repository";
-import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList } from "@/lib/catalog/validate";
+import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeSupplierVariant } from "@/lib/catalog/validate";
 
-const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress"]);
+const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress", "aliexpress_ds"]);
 
 export async function GET() {
     const auth = await authorizeAdmin();
@@ -46,6 +46,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "invalid source url" }, { status: 400 });
     }
     const images = sanitizeImageList(body.images) ?? [];
+    const supplierVariant = sanitizeSupplierVariant(body.supplierVariant);
+    if (body.supplierVariant !== undefined && body.supplierVariant !== null && supplierVariant === null) {
+        return NextResponse.json({ error: "invalid supplier variant" }, { status: 400 });
+    }
 
     const result = await importDraft({
         source,
@@ -56,6 +60,7 @@ export async function POST(request: Request) {
         listingPrice: typeof body.listingPrice === "number" && Number.isFinite(body.listingPrice) ? body.listingPrice : null,
         listingCurrency: typeof body.listingCurrency === "string" ? body.listingCurrency : null,
         category: typeof body.category === "string" ? body.category : null,
+        supplierVariant,
         createdBy: auth.user.id,
     });
 

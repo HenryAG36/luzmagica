@@ -146,6 +146,9 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
                 else rows.push({ ...values });
                 matched = [found ?? values];
             } else {
+                if (this.db.failUpdates.has(this.table)) {
+                    return Promise.resolve({ data: null, error: { message: "update failed" } });
+                }
                 matched = rows.filter((r) => this.matches(r));
                 for (const r of matched) Object.assign(r, values);
             }
@@ -176,6 +179,7 @@ export class FakeDb {
     ops: { table: string; kind: string }[] = [];
     rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
     unique: Record<string, string[][]> = {};
+    failUpdates: Set<string> = new Set();
     leases: Map<string, { owner: string; expiresAt: number }> = new Map();
     nowMs: () => number = () => Date.now();
 

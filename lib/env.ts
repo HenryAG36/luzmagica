@@ -51,6 +51,28 @@ export function getAliExpressEnv(): AliExpressEnv | null {
     return { appKey, appSecret, trackingId };
 }
 
+export interface AliExpressDsEnv {
+    appKey: string;
+    appSecret: string;
+    redirectUri: string;
+}
+
+export function getAliExpressDsEnv(): AliExpressDsEnv | null {
+    const appKey = process.env.ALIEXPRESS_DS_APP_KEY;
+    const appSecret = process.env.ALIEXPRESS_DS_APP_SECRET;
+    const redirectUri = process.env.ALIEXPRESS_DS_REDIRECT_URI;
+    if (!appKey || !appSecret || !redirectUri) return null;
+    try {
+        const url = new URL(redirectUri);
+        if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
+            return null;
+        }
+    } catch {
+        return null;
+    }
+    return { appKey, appSecret, redirectUri };
+}
+
 export function getMeliCategoryIds(): string[] {
     const raw = process.env.MELI_CATEGORY_IDS || "";
     return raw

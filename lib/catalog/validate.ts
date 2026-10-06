@@ -23,6 +23,7 @@ export interface CatalogRow {
     fx_rate: number | null;
     fx_rate_date: string | null;
     supplier_rights_confirmed: boolean;
+    supplier_variant: Record<string, unknown> | null;
     status: string;
     reviewed_by: string | null;
     published_at: string | null;
@@ -126,7 +127,21 @@ export interface DraftInsert {
     category: string;
     description: string;
     type: string;
+    supplier_variant: Record<string, unknown> | null;
     created_by: string;
+}
+
+const MAX_VARIANT_BYTES = 8000;
+
+export function sanitizeSupplierVariant(value: unknown): Record<string, unknown> | null {
+    if (value === null || value === undefined) return null;
+    if (!isPlainObject(value)) return null;
+    try {
+        if (JSON.stringify(value).length > MAX_VARIANT_BYTES) return null;
+    } catch {
+        return null;
+    }
+    return value;
 }
 
 export function buildDraftInsert(input: {
@@ -138,6 +153,7 @@ export function buildDraftInsert(input: {
     listingPrice?: number | null;
     listingCurrency?: string | null;
     category?: string | null;
+    supplierVariant?: Record<string, unknown> | null;
     createdBy: string;
 }): DraftInsert {
     return {
@@ -155,6 +171,7 @@ export function buildDraftInsert(input: {
         category: typeof input.category === "string" ? input.category.slice(0, MAX_SLUG) : "",
         description: "",
         type: "",
+        supplier_variant: sanitizeSupplierVariant(input.supplierVariant ?? null),
         created_by: input.createdBy,
     };
 }
@@ -176,6 +193,7 @@ export const REVIEW_FIELD_VALIDATORS: Record<string, (v: unknown) => unknown | n
     fx_rate: (v) => (v === null ? null : typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null),
     fx_rate_date: (v) => (v === null ? null : typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null),
     supplier_rights_confirmed: (v) => (v === true ? true : v === false ? false : null),
+    supplier_variant: (v) => sanitizeSupplierVariant(v),
 };
 
 export function sanitizeReviewFields(body: unknown): { fields: Record<string, unknown>; errors: string[] } {

@@ -77,6 +77,7 @@ export interface ImportDraftInput {
     listingPrice?: number | null;
     listingCurrency?: string | null;
     category?: string | null;
+    supplierVariant?: Record<string, unknown> | null;
     createdBy: string;
 }
 

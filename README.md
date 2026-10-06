@@ -66,6 +66,17 @@ administrator cannot be removed (enforced by a database trigger).
   `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` / `ALIEXPRESS_TRACKING_ID`.
   Verify Colombia (`ship_to_country=CO`) support and display/storage terms before
   enabling.
+- **AliExpress Dropshipping (DS)**: a separate app registration (not the
+  affiliate keys). Configure `ALIEXPRESS_DS_APP_KEY`, `ALIEXPRESS_DS_APP_SECRET`,
+  and `ALIEXPRESS_DS_REDIRECT_URI` matching the `callback_url` registered in the
+  DS app console, then connect from the Tendencias tab ("Conectar AliExpress
+  DS"). If the rotated DS secret is currently stored in your host as
+  `ALIEXPRESS_APP_SECRET`, rename that variable to `ALIEXPRESS_DS_APP_SECRET`
+  and reserve `ALIEXPRESS_APP_SECRET` for the affiliate app. OAuth tokens are
+  encrypted with `PROVIDER_TOKEN_ENCRYPTION_KEY` and refreshed under the shared
+  provider lease. Product lookup is ID-only (`ship_to_country=CO`, USD, `es`),
+  and variants are imported one SKU per draft — SKU data is stored in the
+  private `supplier_variant` column, never in the public catalog view.
 
 Missing provider configuration disables only that source — the panel shows each
 source's status and the age of the last successful snapshot. Snapshots refresh
