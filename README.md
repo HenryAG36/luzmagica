@@ -39,11 +39,12 @@ international products missing a confirmed customer shipping quote,
 — `source='seed'`, ids `1`–`8`, rows preserved, not deleted),
 `20261007120000_orders` creates the orders schema — `orders`, `order_items`
 (price + supplier-cost snapshots), `order_events` (customer-visible
-timeline), and `payment_events` (provider webhook audit + dedupe). All four
-tables are RLS-enabled with no public policies: every read/write goes
-through the service role, guest lookup requires the order reference plus the
-purchase phone/email (or the unguessable `lookup_token`), and admin access
-uses the `user_roles` check.
+timeline), and `payment_events` (provider webhook audit + dedupe);
+`20261007120100_orders_grants` revokes all anon/authenticated table grants.
+All four tables are RLS-enabled with no public policies and no client-role
+privileges: every read/write goes through the service role, guest lookup
+requires the order reference plus the purchase phone/email (or the
+unguessable `lookup_token`), and admin access uses the `user_roles` check.
 Filenames use Supabase timestamp versions and must not be
 renumbered; remote projects that already applied them will skip replay. With the
 Supabase CLI:
@@ -154,7 +155,10 @@ verified remotely — zero incomplete international rows are publicly readable.
 The `20261006221448_archive_seed_products` migration is applied and verified
 remotely — the eight original seed products are archived (not deleted) and none
 remain published; imported CJ/AliExpress DS products, roles, provider
-connections, and snapshots are unaffected.
+connections, and snapshots are unaffected. The `20261007120000_orders` and
+`20261007120100_orders_grants` migrations are applied and verified remotely —
+tables, indexes, and unique constraints exist, RLS is enabled with zero
+policies, and only `postgres`/`service_role` hold table privileges.
 
 ### Orders and payments (Wompi)
 
