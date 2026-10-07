@@ -5,7 +5,6 @@
 import type { CustomerProfile } from "../lib/types.ts";
 import { calculateTier } from "../lib/loyalty.ts";
 
-export const SEEDED_ORDER_IDS = new Set(["LM-8921", "LM-9402", "LM-9811"]);
 export const SEEDED_ABANDONED_CART_IDS = new Set(["AB-3021", "AB-2940"]);
 export const SEEDED_TASK_IDS = new Set(["tsk-1", "tsk-2", "tsk-3"]);
 export const SEEDED_LOYALTY_TX_IDS = new Set(["tx-1", "tx-2"]);
@@ -68,16 +67,6 @@ function dropById(list: unknown, ids: Set<string>): unknown {
                 ids.has((entry as PersistedRecord).id as string)
             ),
     );
-}
-
-export function migrateOrdersPersisted(persisted: unknown): unknown {
-    if (!persisted || typeof persisted !== "object") return persisted;
-    const state = persisted as PersistedObject;
-    const next: PersistedObject = { ...state };
-    if (state.orders !== undefined) {
-        next.orders = dropById(state.orders, SEEDED_ORDER_IDS);
-    }
-    return next;
 }
 
 export function migrateOperatorPersisted(

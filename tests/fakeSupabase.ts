@@ -11,6 +11,7 @@ interface Op {
     returning?: boolean;
     filters: { col: string; val: unknown }[];
     neqFilters: { col: string; val: unknown }[];
+    inFilters: { col: string; vals: unknown[] }[];
     limitN?: number;
     rangeFrom?: number;
     rangeTo?: number;
@@ -60,7 +61,7 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
         return this;
     }
     in(col: string, vals: unknown[]) {
-        for (const v of vals) this.op.filters.push({ col, val: v });
+        this.op.inFilters.push({ col, vals });
         return this;
     }
     gt(col: string, val: unknown) {
@@ -105,6 +106,9 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
         }
         for (const f of this.op.neqFilters) {
             if (row[f.col] === f.val) return false;
+        }
+        for (const f of this.op.inFilters) {
+            if (!f.vals.includes(row[f.col])) return false;
         }
         return true;
     }
@@ -218,6 +222,7 @@ export class FakeDb {
                     kind: "select",
                     filters: [],
                     neqFilters: [],
+                    inFilters: [],
                 }),
             rpc: (fn: string, args?: Record<string, unknown>) => {
                 this.rpcCalls.push({ fn, args: args ?? {} });

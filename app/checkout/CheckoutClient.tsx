@@ -7,11 +7,7 @@ import {
     ShieldCheck,
     ArrowLeft,
     ShoppingBag,
-    Sparkles,
     Truck,
-    CreditCard,
-    Smartphone,
-    Building2,
     Tag,
     X,
     Lock,
@@ -19,7 +15,6 @@ import {
     ArrowRight,
 } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
-import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
@@ -42,19 +37,17 @@ export default function CheckoutClient() {
         setPointsRedeemed,
         getSubtotal,
         getCouponDiscountCOP,
-        getPointsDiscountCOP,
         getShippingBreakdown,
         getFreeShippingProgress,
     } = useCartStore();
 
-    const { account } = useLoyaltyStore();
     const { currentUser } = useAuthStore();
 
     const [couponInput, setCouponInput] = useState("");
     const [couponMessage, setCouponMessage] = useState<{ text: string; error?: boolean } | null>(null);
-    const [paymentMethod, setPaymentMethod] = useState<
-        "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega"
-    >("nequi");
+    const [consent, setConsent] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState("");
 
     const recoverParam = searchParams.get("recover");
 
@@ -63,6 +56,13 @@ export default function CheckoutClient() {
             applyCoupon("RETORNO10");
         }
     }, [recoverParam, couponCode, applyCoupon]);
+
+    // LuzPoints balances live in browser state and cannot be verified
+    // server-side, so they never apply to a paid order. Reset any leftover
+    // selection so the displayed total matches what Wompi will charge.
+    useEffect(() => {
+        if (pointsRedeemed > 0) setPointsRedeemed(0);
+    }, [pointsRedeemed, setPointsRedeemed]);
 
     if (!mounted) {
         return (
@@ -98,7 +98,6 @@ export default function CheckoutClient() {
 
     const subtotal = getSubtotal();
     const couponDiscount = getCouponDiscountCOP();
-    const pointsDiscount = getPointsDiscountCOP();
     const breakdown = getShippingBreakdown();
     const total = breakdown.total;
     const shippingProgress = getFreeShippingProgress();
@@ -114,21 +113,50 @@ export default function CheckoutClient() {
         if (result.success) setCouponInput("");
     };
 
-    const handlePointsToggle = (pts: number) => {
-        if (pointsRedeemed === pts) {
-            setPointsRedeemed(0);
-        } else {
-            // Check max points permitted (cannot exceed subtotal)
-            const maxPointsForSubtotal = Math.floor(subtotal / 10);
-            const actual = Math.min(pts, account.points, maxPointsForSubtotal);
-            setPointsRedeemed(actual);
-        }
-    };
-
-    // Purchases are disabled until a real payment/order pipeline is connected.
-    // Submitting must not create orders, award points, or simulate fulfillment.
-    const handleSubmitOrder = (e: React.FormEvent) => {
+    const handleSubmitOrder = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submitting) return;
+        setSubmitError("");
+        if (!consent) {
+            setSubmitError("Debes aceptar la política de tratamiento de datos para continuar.");
+            return;
+        }
+        if (total === null) {
+            setSubmitError("No se pudo confirmar el total del pedido.");
+            return;
+        }
+        setSubmitting(true);
+        try {
+            const res = await fetch("/api/orders", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
+                    customer: {
+                        name: customerProfile.name,
+                        email: customerProfile.email,
+                        phone: customerProfile.phone,
+                        cedula: customerProfile.cedula,
+                        address: customerProfile.address,
+                        city: customerProfile.city,
+                        department: customerProfile.department,
+                        notes: customerProfile.notes,
+                    },
+                    couponCode,
+                    consent: true,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setSubmitError(data.error || "No se pudo crear el pedido. Intenta de nuevo.");
+                setSubmitting(false);
+                return;
+            }
+            window.location.href = data.checkoutUrl;
+        } catch {
+            setSubmitError("Error de red. Verifica tu conexión e intenta de nuevo.");
+            setSubmitting(false);
+        }
     };
 
     const inputClass =
@@ -319,119 +347,51 @@ export default function CheckoutClient() {
                                 </div>
                             </FadeIn>
 
-                            {/* Payment Methods */}
+                            {/* Payment via Wompi */}
                             <FadeIn delay={0.2}>
                                 <div className="glass rounded-2xl p-6 sm:p-8">
                                     <h2 className="font-heading text-lg font-bold text-white mb-4">
-                                        2. Método de Pago Seguro
+                                        2. Pago & Consentimiento
                                     </h2>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                                        {/* Nequi */}
-                                        <label
-                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                                                paymentMethod === "nequi"
-                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
-                                                    : "border-white/10 bg-surface hover:border-white/20"
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="radio"
-                                                    name="payment"
-                                                    checked={paymentMethod === "nequi"}
-                                                    onChange={() => setPaymentMethod("nequi")}
-                                                    className="accent-primary"
-                                                />
-                                                <div>
-                                                    <span className="font-bold text-sm text-white block">Nequi</span>
-                                                    <span className="text-[11px] text-muted">Pago inmediato con celular</span>
-                                                </div>
-                                            </div>
-                                            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">
-                                                Popular
+                                    <div className="p-4 rounded-2xl bg-surface border border-white/10 mb-5">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <ShieldCheck className="w-5 h-5 text-secondary shrink-0" />
+                                            <span className="font-bold text-sm text-white">
+                                                Pago procesado por Wompi
                                             </span>
-                                        </label>
-
-                                        {/* PSE */}
-                                        <label
-                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                                                paymentMethod === "pse"
-                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
-                                                    : "border-white/10 bg-surface hover:border-white/20"
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="radio"
-                                                    name="payment"
-                                                    checked={paymentMethod === "pse"}
-                                                    onChange={() => setPaymentMethod("pse")}
-                                                    className="accent-primary"
-                                                />
-                                                <div>
-                                                    <span className="font-bold text-sm text-white block">PSE</span>
-                                                    <span className="text-[11px] text-muted">Todos los bancos de Colombia</span>
-                                                </div>
-                                            </div>
-                                            <Building2 className="w-5 h-5 text-muted" />
-                                        </label>
-
-                                        {/* Bancolombia */}
-                                        <label
-                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                                                paymentMethod === "bancolombia"
-                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
-                                                    : "border-white/10 bg-surface hover:border-white/20"
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="radio"
-                                                    name="payment"
-                                                    checked={paymentMethod === "bancolombia"}
-                                                    onChange={() => setPaymentMethod("bancolombia")}
-                                                    className="accent-primary"
-                                                />
-                                                <div>
-                                                    <span className="font-bold text-sm text-white block">Bancolombia</span>
-                                                    <span className="text-[11px] text-muted">Transferencia directa</span>
-                                                </div>
-                                            </div>
-                                            <Smartphone className="w-5 h-5 text-muted" />
-                                        </label>
-
-                                        {/* Credit Card */}
-                                        <label
-                                            className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
-                                                paymentMethod === "credit_card"
-                                                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/10"
-                                                    : "border-white/10 bg-surface hover:border-white/20"
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <input
-                                                    type="radio"
-                                                    name="payment"
-                                                    checked={paymentMethod === "credit_card"}
-                                                    onChange={() => setPaymentMethod("credit_card")}
-                                                    className="accent-primary"
-                                                />
-                                                <div>
-                                                    <span className="font-bold text-sm text-white block">Tarjeta Débito/Crédito</span>
-                                                    <span className="text-[11px] text-muted">Visa, Mastercard, AMEX</span>
-                                                </div>
-                                            </div>
-                                            <CreditCard className="w-5 h-5 text-muted" />
-                                        </label>
+                                        </div>
+                                        <p className="text-[11px] text-muted mb-3">
+                                            Al continuar serás redirigido a la página segura de Wompi, donde podrás
+                                            elegir tu método de pago.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {["Nequi", "PSE", "Tarjetas débito/crédito", "Bancolombia"].map((m) => (
+                                                <span
+                                                    key={m}
+                                                    className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-white"
+                                                >
+                                                    {m}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    <div className="p-3.5 rounded-xl bg-surface border border-white/5 flex items-center gap-3 text-xs text-muted">
-                                        <ShieldCheck className="w-5 h-5 text-secondary shrink-0" />
-                                        <span>
-                                            Los métodos de pago se habilitarán cuando la pasarela de pagos esté conectada.
+                                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={consent}
+                                            onChange={(e) => setConsent(e.target.checked)}
+                                            className="mt-0.5 accent-primary w-4 h-4"
+                                        />
+                                        <span className="text-xs text-muted leading-relaxed">
+                                            Acepto la{" "}
+                                            <Link href="/legal/privacidad" className="text-primary hover:underline" target="_blank">
+                                                política de tratamiento de datos personales
+                                            </Link>{" "}
+                                            (Ley 1581 de 2012). Mis datos serán usados para procesar y entregar este pedido.
                                         </span>
-                                    </div>
+                                    </label>
                                 </div>
                             </FadeIn>
                         </div>
@@ -457,41 +417,6 @@ export default function CheckoutClient() {
                                             </div>
                                         ))}
                                     </div>
-
-                                    {/* Loyalty Points Redemption Box */}
-                                    {account.points > 0 && (
-                                        <div className="p-4 rounded-xl bg-surface-card border border-primary/20 mb-5">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-xs font-semibold text-white flex items-center gap-1.5">
-                                                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                                                    Canjear LuzClub ({account.points} pts)
-                                                </span>
-                                                <span className="text-[11px] text-green-400 font-bold">
-                                                    {formatCOP(account.points * 10)}
-                                                </span>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                {[100, 200, 350].map((pts) => {
-                                                    if (pts > account.points) return null;
-                                                    const isSelected = pointsRedeemed === pts;
-                                                    return (
-                                                        <button
-                                                            key={pts}
-                                                            type="button"
-                                                            onClick={() => handlePointsToggle(pts)}
-                                                            className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition-all ${
-                                                                isSelected
-                                                                    ? "bg-primary text-white border-primary"
-                                                                    : "bg-surface text-muted border-white/10 hover:border-white/20"
-                                                            }`}
-                                                        >
-                                                            {pts} pts (-{formatCOP(pts * 10)})
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
 
                                     {/* Coupon input */}
                                     <div className="mb-5">
@@ -553,13 +478,6 @@ export default function CheckoutClient() {
                                             </div>
                                         )}
 
-                                        {pointsDiscount > 0 && (
-                                            <div className="flex justify-between text-green-400">
-                                                <span>Canje LuzPoints ({pointsRedeemed} pts)</span>
-                                                <span>-{formatCOP(pointsDiscount)}</span>
-                                            </div>
-                                        )}
-
                                         {breakdown.legacyItemCount > 0 && (
                                             <div className="flex justify-between text-muted">
                                                 <span>Envío Nacional (productos locales)</span>
@@ -596,17 +514,28 @@ export default function CheckoutClient() {
                                             No se puede completar el pedido: falta la cotización de envío del proveedor internacional.
                                         </p>
                                     )}
-                                    <p role="alert" className="text-[11px] text-amber-300 mb-3">
-                                        Compras aún no disponibles; estamos configurando pagos y pedidos.
-                                    </p>
+                                    {submitError && (
+                                        <p role="alert" className="text-[11px] text-red-300 mb-3">
+                                            {submitError}
+                                        </p>
+                                    )}
                                     <button
                                         type="submit"
-                                        disabled
+                                        disabled={submitting || dsPending || total === null}
                                         className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
                                     >
                                         <Lock className="w-4 h-4" />
-                                        <span>Pagos en configuración</span>
+                                        <span>
+                                            {submitting
+                                                ? "Creando pedido…"
+                                                : total === null
+                                                  ? "Continuar al pago"
+                                                  : `Pagar ${formatCOP(total)} con Wompi`}
+                                        </span>
                                     </button>
+                                    <p className="text-[10px] text-muted mt-3 text-center">
+                                        Serás redirigido a Wompi para completar el pago de forma segura.
+                                    </p>
                                 </div>
                             </FadeIn>
                         </div>

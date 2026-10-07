@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
-import { useOrderStore } from "@/store/useOrderStore";
 import { useCartStore } from "@/store/useCartStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
+import type { Product } from "@/lib/types";
+import { FULFILLMENT_STATUS_LABELS, type PublicOrder } from "@/lib/orders/types";
 
 const emptySubscribe = () => () => {};
 
@@ -34,7 +35,6 @@ export default function AccountClient() {
 
     const { currentUser, logout, updateProfile } = useAuthStore();
     const { account, openModal, getTierProgress } = useLoyaltyStore();
-    const { orders } = useOrderStore();
     const { addItem } = useCartStore();
 
     const [isEditing, setIsEditing] = useState(false);
@@ -47,6 +47,25 @@ export default function AccountClient() {
     });
     const [savedSuccess, setSavedSuccess] = useState(false);
     const [reorderSuccessId, setReorderSuccessId] = useState<string | null>(null);
+    const [customerOrders, setCustomerOrders] = useState<PublicOrder[] | null>(null);
+    const [ordersError, setOrdersError] = useState(false);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        let cancelled = false;
+        fetch("/api/orders/mine")
+            .then(async (res) => {
+                if (!res.ok) throw new Error("fetch failed");
+                const body = await res.json();
+                if (!cancelled) setCustomerOrders(body.orders ?? []);
+            })
+            .catch(() => {
+                if (!cancelled) setOrdersError(true);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser]);
 
     if (!mounted) {
         return (
@@ -84,13 +103,6 @@ export default function AccountClient() {
 
     const { currentTier, progressPercent } = getTierProgress();
 
-    // Customer's orders
-    const customerOrders = orders.filter(
-        (o) =>
-            o.customer.email.toLowerCase() === currentUser.email.toLowerCase() ||
-            o.customer.phone.replace(/\D/g, "") === currentUser.phone.replace(/\D/g, "")
-    );
-
     const handleStartEdit = () => {
         setEditForm({
             name: currentUser.name,
@@ -112,11 +124,20 @@ export default function AccountClient() {
         }
     };
 
-    const handleReorder = (order: (typeof orders)[0]) => {
-        order.items.forEach((item) => {
-            addItem(item.product, item.quantity);
-        });
-        setReorderSuccessId(order.id);
+    // Reorder re-adds items at their CURRENT published price — never the
+    // historical snapshot, since supplier pricing may have changed.
+    const handleReorder = async (order: PublicOrder) => {
+        for (const item of order.items) {
+            try {
+                const res = await fetch(`/api/products/${encodeURIComponent(item.productId)}`);
+                if (!res.ok) continue;
+                const body = await res.json();
+                if (body.product) addItem(body.product as Product, item.quantity);
+            } catch {
+                // skip unavailable item
+            }
+        }
+        setReorderSuccessId(order.ref);
         setTimeout(() => setReorderSuccessId(null), 2500);
     };
 
@@ -337,7 +358,7 @@ export default function AccountClient() {
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
                                     <Package className="w-5 h-5 text-primary" />
-                                    <span>Tus Pedidos & Despachos ({customerOrders.length})</span>
+                                    <span>Tus Pedidos & Despachos{customerOrders ? ` (${customerOrders.length})` : ""}</span>
                                 </h3>
                                 <Link
                                     href="/products"
@@ -347,36 +368,50 @@ export default function AccountClient() {
                                 </Link>
                             </div>
 
-                            {customerOrders.length === 0 ? (
+                            {ordersError ? (
+                                <div className="text-center py-10 text-muted text-xs">
+                                    No pudimos cargar tus pedidos. Recarga la página o consulta por referencia en{" "}
+                                    <Link href="/tracking" className="text-primary hover:underline">
+                                        Rastreo
+                                    </Link>
+                                    .
+                                </div>
+                            ) : customerOrders === null ? (
+                                <div className="text-center py-10 text-muted text-xs animate-pulse">
+                                    Cargando tus pedidos…
+                                </div>
+                            ) : customerOrders.length === 0 ? (
                                 <div className="text-center py-10 text-muted text-xs">
                                     Aún no tienes pedidos registrados con esta cuenta.
                                 </div>
                             ) : (
                                 <div className="space-y-4">
                                     {customerOrders.map((order) => {
-                                        const isReordered = reorderSuccessId === order.id;
+                                        const isReordered = reorderSuccessId === order.ref;
 
                                         return (
                                             <div
-                                                key={order.id}
+                                                key={order.ref}
                                                 className="p-4 sm:p-5 rounded-2xl bg-surface-card border border-white/5 hover:border-white/15 transition-all"
                                             >
                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
                                                             <span className="font-mono font-bold text-white text-sm">
-                                                                #{order.id}
+                                                                #{order.ref}
                                                             </span>
                                                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-white">
-                                                                {order.status}
+                                                                {FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
                                                             </span>
                                                         </div>
-                                                        <span className="text-[11px] text-muted">{order.date}</span>
+                                                        <span className="text-[11px] text-muted">
+                                                            {new Date(order.createdAt).toLocaleDateString("es-CO")}
+                                                        </span>
                                                     </div>
 
                                                     <div className="flex items-center gap-2">
                                                         <button
-                                                            onClick={() => handleReorder(order)}
+                                                            onClick={() => void handleReorder(order)}
                                                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
                                                                 isReordered
                                                                     ? "bg-green-600 text-white"
@@ -388,7 +423,7 @@ export default function AccountClient() {
                                                         </button>
 
                                                         <Link
-                                                            href={`/tracking?orderId=${order.id}`}
+                                                            href={`/tracking?orderId=${order.ref}`}
                                                             className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold flex items-center gap-1.5 glow-purple transition-all"
                                                         >
                                                             <Truck className="w-3 h-3" />
@@ -401,17 +436,21 @@ export default function AccountClient() {
                                                 <div className="pt-3 text-xs space-y-2">
                                                     <div className="flex justify-between text-muted">
                                                         <span>Transportadora:</span>
-                                                        <span className="text-white font-medium">{order.carrier} (Guía: {order.trackingNumber})</span>
+                                                        <span className="text-white font-medium">
+                                                            {order.carrier
+                                                                ? `${order.carrier} (Guía: ${order.trackingNumber ?? "pendiente"})`
+                                                                : "Por asignar"}
+                                                        </span>
                                                     </div>
                                                     <div className="flex justify-between text-muted">
                                                         <span>Productos:</span>
                                                         <span className="text-white truncate max-w-[280px]">
-                                                            {order.items.map((i) => `${i.product.name} (x${i.quantity})`).join(", ")}
+                                                            {order.items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between font-bold text-white pt-1">
                                                         <span>Total Pagado:</span>
-                                                        <span className="text-accent">{formatCOP(order.total)}</span>
+                                                        <span className="text-accent">{formatCOP(order.totalCop)}</span>
                                                     </div>
                                                 </div>
                                             </div>

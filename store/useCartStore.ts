@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Product, CartItem, CustomerProfile } from "@/lib/types";
 import { computeCartTotals, legacyFreeShippingProgress, CartTotals } from "@/lib/cart/totals";
+import { resolveCoupon } from "@/lib/cart/coupons";
 import {
     BLANK_PROFILE,
     SEEDED_PRODUCT_IDS,
@@ -100,20 +101,18 @@ export const useCartStore = create<CartState>()(
                 }),
 
             applyCoupon: (code: string) => {
-                const clean = code.trim().toUpperCase();
-                if (clean === "MAGIA10" || clean === "RETORNO10") {
-                    set({ couponCode: clean, discountPercent: 10 });
-                    return { success: true, message: "¡Cupón del 10% aplicado exitosamente!" };
+                const resolved = resolveCoupon(code);
+                if (!resolved) {
+                    return { success: false, message: "Código de descuento no válido o vencido." };
                 }
-                if (clean === "LUZVIP15") {
-                    set({ couponCode: clean, discountPercent: 15 });
-                    return { success: true, message: "¡Cupón VIP del 15% aplicado exitosamente!" };
-                }
-                if (clean === "ENVIOGRATIS") {
-                    set({ couponCode: clean, discountPercent: 0 });
+                set({ couponCode: resolved.code, discountPercent: resolved.percent });
+                if (resolved.code === "ENVIOGRATIS") {
                     return { success: true, message: "¡Envío gratis nacional aplicado!" };
                 }
-                return { success: false, message: "Código de descuento no válido o vencido." };
+                if (resolved.percent >= 15) {
+                    return { success: true, message: "¡Cupón VIP del 15% aplicado exitosamente!" };
+                }
+                return { success: true, message: "¡Cupón del 10% aplicado exitosamente!" };
             },
 
             removeCoupon: () => set({ couponCode: null, discountPercent: 0 }),

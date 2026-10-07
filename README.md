@@ -36,7 +36,14 @@ seed products, `20261006172120_aliexpress_ds` DS provider/SKU columns,
 `cjdropshipping`, `20261006213419_published_products_shipping_guard` hides
 international products missing a confirmed customer shipping quote,
 `20261006221448_archive_seed_products` archives the eight demo seed products
-— `source='seed'`, ids `1`–`8`, rows preserved, not deleted).
+— `source='seed'`, ids `1`–`8`, rows preserved, not deleted),
+`20261007120000_orders` creates the orders schema — `orders`, `order_items`
+(price + supplier-cost snapshots), `order_events` (customer-visible
+timeline), and `payment_events` (provider webhook audit + dedupe). All four
+tables are RLS-enabled with no public policies: every read/write goes
+through the service role, guest lookup requires the order reference plus the
+purchase phone/email (or the unguessable `lookup_token`), and admin access
+uses the `user_roles` check.
 Filenames use Supabase timestamp versions and must not be
 renumbered; remote projects that already applied them will skip replay. With the
 Supabase CLI:
@@ -91,9 +98,9 @@ administrator cannot be removed (enforced by a database trigger).
   provisional when taxes/payment fees are unknown and never guarantee profit.
   Published DS products expose only `customer_shipping_cop`,
   `shipping_estimate_city`, `shipping_checked_at`, and `shipping_quote_required`
-  in the public view; carts sum the per-unit estimate and checkout is blocked
-  while a DS item has no quote. Checkout remains a demo order flow with no
-  automated fulfillment. When connected, the DS app also feeds a product-feed
+  in the public view; carts sum the per-unit estimate and order creation is
+  rejected while a DS item has no quote. Supplier fulfillment is manual for
+  now — paid orders are placed with the provider by the operator. When connected, the DS app also feeds a product-feed
   supplier signal via `aliexpress.ds.feed.itemids.get`. The operator must pick
   a feed explicitly (`aliexpress.ds.feedname.get` lists provider feeds; the
   choice is stored in `provider_connections.meta.ds_feed_name`) — no feed is
@@ -149,7 +156,43 @@ remotely — the eight original seed products are archived (not deleted) and non
 remain published; imported CJ/AliExpress DS products, roles, provider
 connections, and snapshots are unaffected.
 
-### Local demo data cleanup and checkout status
+### Orders and payments (Wompi)
+
+- Checkout submits item ids + quantities + customer fields to `POST /api/orders`.
+  The server reloads the catalog and recomputes every price, discount, and
+  shipping amount — client totals are informational only. Orders are created as
+  `pending_payment` and the customer is redirected to a single-use Wompi
+  payment link.
+- `POST /api/webhooks/wompi` verifies the `signature.checksum` (SHA-256 over the
+  `signature.properties` values + timestamp + `WOMPI_EVENTS_SECRET`) before
+  touching state. Only `APPROVED` events with a matching `amount_in_cents` mark
+  an order `paid`; mismatches go to `payment_review` and are never auto-fulfilled.
+  Events are deduplicated on `(provider, transaction_id, status)`.
+- The browser redirect is never proof of payment — the confirmation page polls
+  `/api/orders/status` with the unguessable `lookup_token` embedded in the
+  redirect URL. Guest tracking (`/tracking`) needs the order reference plus the
+  purchase phone or email via `POST /api/orders/lookup` (uniform 404 — no
+  enumeration of which value failed).
+- `WOMPI_ENVIRONMENT` defaults to `sandbox`; an explicit `production` value is
+  required for real charges. Without `WOMPI_PRIVATE_KEY` + `WOMPI_EVENTS_SECRET`
+  checkout returns 503.
+- The Command Center "Pedidos" tab lists real orders, allows fulfillment-status
+  updates (forward-only transitions), tracking number/carrier entry, cancel on
+  unpaid orders, and refund flagging on paid ones (the money movement itself is
+  done in the Wompi dashboard). Payment status is never editable by hand.
+- Confirmation email (Resend) is sent only after a verified `APPROVED` event.
+  `RESEND_FROM_EMAIL` needs a domain verified in Resend — `luzmagica.vercel.app`
+  cannot be verified since it isn't a domain you own. Email failure never
+  changes payment state.
+- Checkout requires the customer to accept the data-processing policy
+  (`/legal/privacidad`, Ley 1581) and records `consent_at`. LuzPoints
+  redemption is disabled at checkout — balances live in browser state and
+  cannot be verified server-side. Contraentrega is not offered.
+- The browser-local order store was removed; account order history comes from
+  `GET /api/orders/mine` (session email match) and reorder flows re-fetch
+  current published prices rather than trusting order snapshots.
+
+### Local demo data cleanup
 
 - Browser stores no longer ship demo orders, abandoned carts, operator tasks,
   loyalty history, or the demo customer profile. Persisted `luzmagica-*` keys are
@@ -157,10 +200,6 @@ connections, and snapshots are unaffected.
   `LM-9811`, `AB-3021`, `AB-2940`, `tsk-1`–`tsk-3`, `tx-1`–`tx-2`), seed product
   ids `1`–`8`, and the exact-match demo profile are removed; all other persisted
   data is preserved.
-- **Checkout submission is disabled** until real payment/order infrastructure is
-  connected. The store no longer fabricates orders, payment confirmations,
-  tracking numbers, supplier costs, or tracking timelines — `updateOrderStatus`
-  only appends a real, timestamped event to an existing order.
 
 Authenticated browser flows, concurrent Postgres behavior, OAuth, and live
 provider responses still require end-to-end validation. The pinned Supabase

@@ -6,14 +6,12 @@ import {
     BLANK_PROFILE,
     SEEDED_ABANDONED_CART_IDS,
     SEEDED_LOYALTY_TX_IDS,
-    SEEDED_ORDER_IDS,
     SEEDED_PRODUCT_IDS,
     SEEDED_TASK_IDS,
     isSeededProfile,
     migrateCartPersisted,
     migrateLoyaltyPersisted,
     migrateOperatorPersisted,
-    migrateOrdersPersisted,
 } from "../store/migrations.ts";
 
 const DEMO_PROFILE = {
@@ -26,32 +24,6 @@ const DEMO_PROFILE = {
     cedula: "1018459203",
     notes: "Dejar en portería con vigilancia",
 };
-
-test("orders migration removes only exact seeded order ids", () => {
-    const persisted = {
-        orders: [
-            { id: "LM-8921" },
-            { id: "LM-9402" },
-            { id: "LM-9811" },
-            { id: "LM-0001", customer: { name: "Real" } },
-            { id: "lm-8921" }, // different case is not the seeded id
-        ],
-    };
-    const out = migrateOrdersPersisted(persisted) as { orders: { id: string }[] };
-    assert.deepEqual(
-        out.orders.map((o) => o.id).sort(),
-        ["LM-0001", "lm-8921"],
-    );
-    for (const id of SEEDED_ORDER_IDS) {
-        assert.ok(!out.orders.some((o) => o.id === id));
-    }
-});
-
-test("orders migration tolerates non-array or missing orders", () => {
-    assert.deepEqual(migrateOrdersPersisted({ orders: "nope" }), { orders: "nope" });
-    assert.deepEqual(migrateOrdersPersisted({}), {});
-    assert.equal(migrateOrdersPersisted(null), null);
-});
 
 test("operator migration strips seeded carts/tasks and resets seeded checklist", () => {
     const checklistDefaults = [
@@ -196,33 +168,39 @@ test("seed archive migration archives exact ids without deleting", () => {
     assert.doesNotMatch(sql, /\bdrop\b/i);
 });
 
-test("checkout no longer creates simulated orders or fake payment state", () => {
+test("checkout submits to the real orders API and never fabricates payment state", () => {
     const src = readFileSync(
         resolve(process.cwd(), "app/checkout/CheckoutClient.tsx"),
         "utf8",
     );
-    assert.ok(src.includes("Compras aún no disponibles; estamos configurando pagos y pedidos."));
+    // server-side order creation via the API, never a local order record
+    assert.ok(src.includes('"/api/orders"'));
     assert.ok(!src.includes("createOrder"));
     assert.ok(!src.includes("awardPoints"));
-    assert.ok(!src.includes("payment_confirmed"));
     assert.ok(!src.includes("useOrderStore"));
     assert.ok(!src.includes("markCartRecovered"));
+    // redirect only to the Wompi-hosted URL returned by the server
+    assert.ok(src.includes("data.checkoutUrl"));
+    // data-processing consent is required before creating an order
+    assert.ok(src.includes("consent"));
+    // browser-local points are never sent as payment input
+    assert.ok(!src.includes("pointsRedeemed:"));
 });
 
-test("order store contains no fabricated order/tracking generators", () => {
-    const src = readFileSync(
-        resolve(process.cwd(), "store/useOrderStore.ts"),
-        "utf8",
+test("the browser-local order store is retired from the codebase", () => {
+    assert.throws(() =>
+        readFileSync(resolve(process.cwd(), "store/useOrderStore.ts"), "utf8"),
     );
-    for (const id of SEEDED_ORDER_IDS) assert.ok(!src.includes(id));
-    assert.ok(!src.includes("createOrder"));
-    assert.ok(!src.includes("buildTrackingEvents"));
-    assert.ok(!src.includes("Math.random"));
-    // status updates record a real timestamp, never a backdated offset
-    assert.ok(!src.includes("daysAgo"));
-    // order lookup also matches real tracking numbers; blank phone returns none
-    assert.ok(src.includes("o.trackingNumber === clean"));
-    assert.ok(src.includes("if (!normalized) return []"));
+    for (const file of [
+        "app/checkout/CheckoutClient.tsx",
+        "app/tracking/TrackingClient.tsx",
+        "app/account/AccountClient.tsx",
+        "app/operator/OperatorClient.tsx",
+        "components/retention/OrderAgainSection.tsx",
+    ]) {
+        const src = readFileSync(resolve(process.cwd(), file), "utf8");
+        assert.ok(!src.includes("useOrderStore"), `${file} still uses the local order store`);
+    }
 });
 
 test("support/recovery URLs have no hardcoded phone or domain", () => {

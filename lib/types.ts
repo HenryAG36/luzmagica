@@ -66,49 +66,6 @@ export interface LoyaltyAccount {
     history: PointsTransaction[];
 }
 
-export type OrderStatus =
-    | "payment_confirmed"
-    | "supplier_processing"
-    | "international_transit"
-    | "customs_cleared"
-    | "local_delivery"
-    | "delivered";
-
-export interface TrackingEvent {
-    status: OrderStatus;
-    label: string;
-    description: string;
-    timestamp: string;
-    location: string;
-    completed: boolean;
-}
-
-export interface Order {
-    id: string;
-    date: string;
-    customer: CustomerProfile;
-    items: CartItem[];
-    subtotal: number;
-    discountAmount: number;
-    shippingFee: number;
-    total: number;
-    supplierCostTotal: number;
-    paymentMethod: "nequi" | "pse" | "bancolombia" | "credit_card" | "contraentrega";
-    status: OrderStatus;
-    trackingNumber: string;
-    carrier: "Coordinadora" | "Servientrega" | "Interrapidísimo" | "Envía" | "4-72";
-    trackingEvents: TrackingEvent[];
-    loyaltyPointsEarned: number;
-    loyaltyPointsUsed: number;
-    isReorder?: boolean;
-    recoveredFromCartId?: string;
-    review?: {
-        rating: number;
-        comment: string;
-        date: string;
-    };
-}
-
 export interface AbandonedCart {
     id: string;
     customerName?: string;

@@ -13,13 +13,11 @@ import {
     Sparkles,
     ShieldCheck,
     Check,
-    ExternalLink,
     Store,
     Send,
     Lock,
     LogOut,
 } from "lucide-react";
-import { useOrderStore } from "@/store/useOrderStore";
 import { useOperatorStore } from "@/store/useOperatorStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -27,7 +25,7 @@ import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
 import TrendPanel from "@/components/operator/TrendPanel";
 import ProductsPanel from "@/components/operator/ProductsPanel";
-import { OrderStatus, Order } from "@/lib/types";
+import OrdersPanel from "@/components/operator/OrdersPanel";
 
 const emptySubscribe = () => () => {};
 
@@ -35,7 +33,6 @@ export default function OperatorClient() {
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
     const { currentUser, isAuthenticated, authReady, logout } = useAuthStore();
 
-    const { orders, updateOrderStatus } = useOrderStore();
     const {
         abandonedCarts,
         tasks,
@@ -91,32 +88,32 @@ export default function OperatorClient() {
         if (activeTab === "team" && isAuthenticated) loadTeam();
     }, [activeTab, isAuthenticated, loadTeam]);
 
-    // Order status update modal / inline selection
-    const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
-    const [editStatus, setEditStatus] = useState<OrderStatus>("supplier_processing");
-    const [editTrackingNo, setEditTrackingNo] = useState("");
-    const [editCarrier, setEditCarrier] = useState<Order["carrier"]>("Coordinadora");
+    interface OrderSummaryData {
+        paidCount: number;
+        paidRevenueCop: number;
+        pendingCount: number;
+        pendingRevenueCop: number;
+        supplierCostCop: number;
+        reviewCount: number;
+        deliveredCount: number;
+        totalCount: number;
+    }
+    const [orderSummary, setOrderSummary] = useState<OrderSummaryData | null>(null);
 
-    // Calculations for the Value Engine
-    const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-    const totalSupplierCost = orders.reduce((sum, o) => sum + o.supplierCostTotal, 0);
-    const grossProfit = totalRevenue - totalSupplierCost;
-    const grossMarginPercent = totalRevenue > 0 ? Math.round((grossProfit / totalRevenue) * 100) : 0;
+    const loadOrderSummary = useCallback(async () => {
+        try {
+            const res = await fetch("/api/admin/orders?summary=1");
+            if (!res.ok) return;
+            const body = await res.json();
+            setOrderSummary(body.summary ?? null);
+        } catch {
+            // keep last known summary; overview is informational only
+        }
+    }, []);
 
-    // Retention metrics
-    const repeatOrders = orders.filter((o) => o.isReorder || o.loyaltyPointsUsed > 0);
-    const repeatRevenue = repeatOrders.reduce((sum, o) => sum + o.total, 0);
-    const recoveredOrders = orders.filter((o) => o.recoveredFromCartId);
-    const recoveredRevenue = recoveredOrders.reduce((sum, o) => sum + o.total, 0);
-
-    // Total Retention Value (The Value Engine proof)
-    const totalRetentionValue = repeatRevenue + recoveredRevenue;
-    const repeatCustomerRate = orders.length > 0 ? Math.round((repeatOrders.length / orders.length) * 100) : 0;
-
-    const handleSaveOrderStatus = (orderId: string) => {
-        updateOrderStatus(orderId, editStatus, editTrackingNo || undefined, editCarrier);
-        setEditingOrderId(null);
-    };
+    useEffect(() => {
+        if (isAuthenticated) void loadOrderSummary();
+    }, [isAuthenticated, loadOrderSummary]);
 
     if (!mounted || !authReady) {
         return (
@@ -235,7 +232,7 @@ export default function OperatorClient() {
                             : "text-muted hover:text-white hover:bg-white/5"
                     }`}
                 >
-                    <span>Despacho Dropshipping ({orders.length})</span>
+                    <span>Pedidos & Despacho{orderSummary ? ` (${orderSummary.totalCount})` : ""}</span>
                 </button>
                 <button
                     onClick={() => setActiveTab("abandoned")}
@@ -295,56 +292,58 @@ export default function OperatorClient() {
                 <div className="space-y-8">
                     {/* KPI Cards Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Gross Revenue */}
+                        {/* Confirmed Revenue */}
                         <FadeIn delay={0.05}>
                             <div className="p-5 rounded-2xl bg-surface-card border border-white/5">
                                 <div className="flex items-center justify-between text-xs text-muted mb-2">
-                                    <span>Ventas Brutas</span>
+                                    <span>Ventas Confirmadas</span>
                                     <div className="p-1.5 rounded-lg bg-green-500/10 text-green-400">
                                         <DollarSign className="w-4 h-4" />
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-white mb-1">
-                                    {formatCOP(totalRevenue)}
+                                    {formatCOP(orderSummary?.paidRevenueCop ?? 0)}
                                 </div>
                                 <span className="text-[11px] text-green-400 font-medium">
-                                    {orders.length} pedidos procesados
+                                    {orderSummary?.paidCount ?? 0} pedidos pagados
                                 </span>
                             </div>
                         </FadeIn>
 
-                        {/* Real Gross Margin */}
+                        {/* Estimated Gross Margin */}
                         <FadeIn delay={0.1}>
                             <div className="p-5 rounded-2xl bg-surface-card border border-white/5">
                                 <div className="flex items-center justify-between text-xs text-muted mb-2">
-                                    <span>Margen Bruto Real</span>
+                                    <span>Margen Bruto Est.</span>
                                     <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
                                         <TrendingUp className="w-4 h-4" />
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-white mb-1">
-                                    {formatCOP(grossProfit)}
+                                    {orderSummary && orderSummary.supplierCostCop > 0
+                                        ? formatCOP(orderSummary.paidRevenueCop - orderSummary.supplierCostCop)
+                                        : "—"}
                                 </div>
                                 <span className="text-[11px] text-primary font-medium">
-                                    {grossMarginPercent}% margen neto tras proveedor
+                                    tras costo de proveedor registrado
                                 </span>
                             </div>
                         </FadeIn>
 
-                        {/* Repeat Customer Rate */}
+                        {/* Pending Payments */}
                         <FadeIn delay={0.15}>
                             <div className="p-5 rounded-2xl bg-surface-card border border-white/5">
                                 <div className="flex items-center justify-between text-xs text-muted mb-2">
-                                    <span>Tasa de Recurrencia (RCR)</span>
+                                    <span>Pagos por Confirmar</span>
                                     <div className="p-1.5 rounded-lg bg-secondary/10 text-secondary">
                                         <RotateCcw className="w-4 h-4" />
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-white mb-1">
-                                    {repeatCustomerRate}%
+                                    {orderSummary?.pendingCount ?? 0}
                                 </div>
                                 <span className="text-[11px] text-secondary font-medium">
-                                    Impulsado por LuzClub & Reorder
+                                    {formatCOP(orderSummary?.pendingRevenueCop ?? 0)} en checkouts abiertos
                                 </span>
                             </div>
                         </FadeIn>
@@ -368,58 +367,58 @@ export default function OperatorClient() {
                         </FadeIn>
                     </div>
 
-                    {/* THE VALUE ENGINE: Proving Business Value (Owner Olympus pattern) */}
+                    {/* PIPELINE SNAPSHOT — real order funnel, no projections */}
                     <FadeIn delay={0.25}>
                         <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-primary/15 via-surface-card to-secondary/15 border border-primary/30 glow-purple">
                             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                                 <div className="max-w-xl">
                                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/20 border border-accent/40 text-accent text-xs font-bold uppercase tracking-wider mb-3">
                                         <ShieldCheck className="w-3.5 h-3.5" />
-                                        Motor de Retención • Demostración de Valor
+                                        Operación en Vivo
                                     </div>
                                     <h2 className="font-heading text-2xl sm:text-3xl font-bold text-white mb-2">
-                                        Ingresos Generados por <span className="gradient-text">Retención de Audiencia</span>
+                                        Estado del <span className="gradient-text">Pipeline de Pedidos</span>
                                     </h2>
                                     <p className="text-xs sm:text-sm text-muted">
-                                        Este cálculo demuestra el valor comercial incremental generado por la plataforma que
-                                        un dropshipping tradicional de tráfico frío habría perdido por falta de lealtad y seguimiento.
+                                        Checkouts abiertos son compradores que iniciaron el pago y aún no lo confirman — tu mejor
+                                        oportunidad de recuperación inmediata.
                                     </p>
                                 </div>
 
                                 <div className="p-5 rounded-2xl bg-surface/90 border border-white/10 text-center shrink-0 min-w-[240px]">
-                                    <span className="text-xs text-muted block mb-1">Valor Incremental Retenido</span>
-                                    <span className="font-heading text-3xl sm:text-4xl font-extrabold text-green-400 block tracking-tight">
-                                        {formatCOP(totalRetentionValue > 0 ? totalRetentionValue : 139500)}
+                                    <span className="text-xs text-muted block mb-1">Checkouts por Confirmar</span>
+                                    <span className="font-heading text-3xl sm:text-4xl font-extrabold text-amber-300 block tracking-tight">
+                                        {formatCOP(orderSummary?.pendingRevenueCop ?? 0)}
                                     </span>
                                     <span className="text-[11px] text-muted mt-1 block">
-                                        +{(totalRevenue > 0 ? Math.round((totalRetentionValue / totalRevenue) * 100) : 42)}% sobre ventas directas
+                                        {orderSummary?.pendingCount ?? 0} pedidos en pago pendiente
                                     </span>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10 text-xs">
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-white/5">
-                                    <span className="text-muted block mb-1">Carritos Recuperados WhatsApp</span>
+                                    <span className="text-muted block mb-1">Pedidos Pagados</span>
                                     <span className="font-bold text-white text-sm">
-                                        {formatCOP(recoveredRevenue > 0 ? recoveredRevenue : 113000)}
+                                        {orderSummary?.paidCount ?? 0}
                                     </span>
-                                    <span className="text-[10px] text-green-400 block mt-0.5">Retención por exit-intent</span>
+                                    <span className="text-[10px] text-green-400 block mt-0.5">Confirmados por pasarela</span>
                                 </div>
 
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-white/5">
-                                    <span className="text-muted block mb-1">Re-compras &ldquo;Pedir de Nuevo&rdquo;</span>
+                                    <span className="text-muted block mb-1">Entregados</span>
                                     <span className="font-bold text-white text-sm">
-                                        {formatCOP(repeatRevenue > 0 ? repeatRevenue : 139500)}
+                                        {orderSummary?.deliveredCount ?? 0}
                                     </span>
-                                    <span className="text-[10px] text-primary block mt-0.5">Pedidos recurrentes 1-clic</span>
+                                    <span className="text-[10px] text-primary block mt-0.5">Ciclo completado</span>
                                 </div>
 
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-white/5">
-                                    <span className="text-muted block mb-1">Lealtad LuzClub Canjeada</span>
+                                    <span className="text-muted block mb-1">Pagos en Revisión</span>
                                     <span className="font-bold text-white text-sm">
-                                        {formatCOP(account.lifetimePoints * 10)}
+                                        {orderSummary?.reviewCount ?? 0}
                                     </span>
-                                    <span className="text-[10px] text-accent block mt-0.5">Incentivo de fidelidad VIP</span>
+                                    <span className="text-[10px] text-accent block mt-0.5">Requieren verificación manual</span>
                                 </div>
                             </div>
                         </div>
@@ -505,7 +504,6 @@ export default function OperatorClient() {
                                                 <button
                                                     onClick={() => {
                                                         setActiveTab("orders");
-                                                        setEditingOrderId(task.actionTarget || "");
                                                     }}
                                                     className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
                                                 >
@@ -523,181 +521,7 @@ export default function OperatorClient() {
             )}
 
             {/* TAB: ORDERS / DROPSHIP DISPATCH */}
-            {activeTab === "orders" && (
-                <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h3 className="font-heading text-xl font-bold text-white">
-                                Despacho Dropshipping & Guías
-                            </h3>
-                            <p className="text-xs text-muted">
-                                Actualiza los estados de la transportadora para mantener informado al cliente y reducir la incertidumbre post-compra.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="glass rounded-3xl overflow-hidden border border-white/10">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs">
-                                <thead className="bg-surface border-b border-white/10 text-muted uppercase tracking-wider text-[10px]">
-                                    <tr>
-                                        <th className="py-3.5 px-4">Orden</th>
-                                        <th className="py-3.5 px-4">Cliente</th>
-                                        <th className="py-3.5 px-4">Artículos</th>
-                                        <th className="py-3.5 px-4">Total</th>
-                                        <th className="py-3.5 px-4">Costo Prov.</th>
-                                        <th className="py-3.5 px-4">Ganancia Bruta</th>
-                                        <th className="py-3.5 px-4">Guía & Carrier</th>
-                                        <th className="py-3.5 px-4">Estado</th>
-                                        <th className="py-3.5 px-4 text-right">Acción</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {orders.map((o) => {
-                                        const profit = o.total - o.supplierCostTotal;
-                                        const isEditing = editingOrderId === o.id;
-
-                                        return (
-                                            <tr
-                                                key={o.id}
-                                                className={`transition-colors ${
-                                                    isEditing ? "bg-primary/20" : "hover:bg-white/5"
-                                                }`}
-                                            >
-                                                <td className="py-3.5 px-4 font-mono font-bold text-white">
-                                                    <Link href={`/tracking?orderId=${o.id}`} className="hover:text-primary flex items-center gap-1">
-                                                        #{o.id}
-                                                        <ExternalLink className="w-3 h-3 opacity-60" />
-                                                    </Link>
-                                                    {o.isReorder && (
-                                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-secondary/20 text-secondary block mt-1">
-                                                            Recurrente
-                                                        </span>
-                                                    )}
-                                                </td>
-
-                                                <td className="py-3.5 px-4">
-                                                    <div className="font-semibold text-white">{o.customer.name}</div>
-                                                    <div className="text-[11px] text-muted">{o.customer.city} • {o.customer.phone}</div>
-                                                </td>
-
-                                                <td className="py-3.5 px-4 text-muted">
-                                                    {o.items.map((i) => `${i.product.name} (x${i.quantity})`).join(", ")}
-                                                </td>
-
-                                                <td className="py-3.5 px-4 font-bold text-white">
-                                                    {formatCOP(o.total)}
-                                                </td>
-
-                                                <td className="py-3.5 px-4 text-muted font-mono">
-                                                    {formatCOP(o.supplierCostTotal)}
-                                                </td>
-
-                                                <td className="py-3.5 px-4 font-bold text-green-400 font-mono">
-                                                    +{formatCOP(profit)}
-                                                </td>
-
-                                                <td className="py-3.5 px-4">
-                                                    <div className="font-mono font-bold text-accent">{o.trackingNumber}</div>
-                                                    <div className="text-[10px] text-muted">{o.carrier}</div>
-                                                </td>
-
-                                                <td className="py-3.5 px-4">
-                                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white/10 text-white">
-                                                        {o.status}
-                                                    </span>
-                                                </td>
-
-                                                <td className="py-3.5 px-4 text-right">
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditingOrderId(o.id);
-                                                            setEditStatus(o.status);
-                                                            setEditTrackingNo(o.trackingNumber === "PENDIENTE" ? "" : o.trackingNumber);
-                                                            setEditCarrier(o.carrier);
-                                                        }}
-                                                        className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
-                                                    >
-                                                        Gestionar
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Inline Editor Modal */}
-                    {editingOrderId && (
-                        <div className="p-6 rounded-3xl bg-surface border border-primary/40 glow-purple">
-                            <h4 className="font-heading text-base font-bold text-white mb-4">
-                                Actualizar Estado y Guía de Orden #{editingOrderId}
-                            </h4>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                                <div>
-                                    <label className="text-xs text-muted mb-1 block">Estado de Entrega</label>
-                                    <select
-                                        value={editStatus}
-                                        onChange={(e) => setEditStatus(e.target.value as OrderStatus)}
-                                        className="w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="payment_confirmed">Pago Confirmado</option>
-                                        <option value="supplier_processing">Preparación en Bodega</option>
-                                        <option value="international_transit">Tránsito Aéreo Internacional</option>
-                                        <option value="customs_cleared">Nacionalizado DIAN</option>
-                                        <option value="local_delivery">En Reparto Local</option>
-                                        <option value="delivered">Entregado a Satisfacción</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="text-xs text-muted mb-1 block">Número de Guía</label>
-                                    <input
-                                        type="text"
-                                        value={editTrackingNo}
-                                        onChange={(e) => setEditTrackingNo(e.target.value)}
-                                        placeholder="Ej: CO-9988210"
-                                        className="w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white font-mono"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="text-xs text-muted mb-1 block">Transportadora</label>
-                                    <select
-                                        value={editCarrier}
-                                        onChange={(e) => setEditCarrier(e.target.value as Order["carrier"])}
-                                        className="w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white"
-                                    >
-                                        <option value="Coordinadora">Coordinadora</option>
-                                        <option value="Servientrega">Servientrega</option>
-                                        <option value="Interrapidísimo">Interrapidísimo</option>
-                                        <option value="Envía">Envía</option>
-                                        <option value="4-72">4-72</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2">
-                                <button
-                                    onClick={() => setEditingOrderId(null)}
-                                    className="px-4 py-2 rounded-xl bg-white/5 text-muted hover:text-white text-xs font-semibold"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={() => handleSaveOrderStatus(editingOrderId)}
-                                    className="px-5 py-2 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold glow-purple"
-                                >
-                                    Guardar y Notificar al Comprador
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
+            {activeTab === "orders" && <OrdersPanel />}
 
             {/* TAB: ABANDONED CARTS */}
             {activeTab === "abandoned" && (

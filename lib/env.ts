@@ -77,6 +77,47 @@ export function getCjApiKey(): string | null {
     return process.env.CJ_API_KEY || null;
 }
 
+export interface WompiEnv {
+    privateKey: string;
+    eventsSecret: string;
+    environment: "sandbox" | "production";
+    baseUrl: string;
+}
+
+// Wompi is only "configured" when both the private key and the events
+// (webhook) secret exist — checkout without signature verification would
+// leave orders permanently unconfirmed. WOMPI_ENVIRONMENT defaults to
+// sandbox so an explicit flag is required to accept real charges.
+export function getWompiEnv(): WompiEnv | null {
+    const privateKey = process.env.WOMPI_PRIVATE_KEY;
+    const eventsSecret = process.env.WOMPI_EVENTS_SECRET;
+    if (!privateKey || !eventsSecret) return null;
+    const environment = process.env.WOMPI_ENVIRONMENT === "production" ? "production" : "sandbox";
+    return {
+        privateKey,
+        eventsSecret,
+        environment,
+        baseUrl:
+            environment === "production"
+                ? "https://production.wompi.co/v1"
+                : "https://sandbox.wompi.co/v1",
+    };
+}
+
+export interface ResendEnv {
+    apiKey: string;
+    from: string;
+}
+
+// Confirmation email is optional: without it orders still work, the customer
+// just relies on the tracking page.
+export function getResendEnv(): ResendEnv | null {
+    const apiKey = process.env.RESEND_API_KEY;
+    const from = process.env.RESEND_FROM_EMAIL;
+    if (!apiKey || !from) return null;
+    return { apiKey, from };
+}
+
 export function getMeliCategoryIds(): string[] {
     const raw = process.env.MELI_CATEGORY_IDS || "";
     return raw

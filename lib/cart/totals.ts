@@ -1,8 +1,8 @@
 import type { CartItem } from "@/lib/types";
+import { grantsFreeShipping } from "./coupons.ts";
 
-const FREE_SHIPPING_THRESHOLD = 150000;
-const SHIPPING_COST = 15000;
-const FREE_SHIPPING_COUPON = "ENVIOGRATIS";
+export const FREE_SHIPPING_THRESHOLD = 150000;
+export const LEGACY_SHIPPING_COST = 15000;
 
 export interface CartTotals {
     subtotal: number;
@@ -53,10 +53,10 @@ export function computeCartTotals(
 
     let legacyShippingCop = 0;
     if (legacySubtotal > 0) {
-        if (couponCode === FREE_SHIPPING_COUPON || legacySubtotal >= FREE_SHIPPING_THRESHOLD) {
+        if (grantsFreeShipping(couponCode) || legacySubtotal >= FREE_SHIPPING_THRESHOLD) {
             legacyShippingCop = 0;
         } else {
-            legacyShippingCop = SHIPPING_COST;
+            legacyShippingCop = LEGACY_SHIPPING_COST;
         }
     }
 
@@ -95,6 +95,6 @@ export function legacyFreeShippingProgress(legacySubtotal: number, couponCode: s
         threshold: FREE_SHIPPING_THRESHOLD,
         remaining,
         percent: Math.min(100, Math.round((legacySubtotal / FREE_SHIPPING_THRESHOLD) * 100)),
-        isFree: legacySubtotal >= FREE_SHIPPING_THRESHOLD || couponCode === FREE_SHIPPING_COUPON,
+        isFree: legacySubtotal >= FREE_SHIPPING_THRESHOLD || grantsFreeShipping(couponCode),
     };
 }

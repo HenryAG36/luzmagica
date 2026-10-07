@@ -1,27 +1,65 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RotateCcw, Check, ShoppingBag, Sparkles } from "lucide-react";
-import { useOrderStore } from "@/store/useOrderStore";
 import { useCartStore } from "@/store/useCartStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
+import type { Product } from "@/lib/types";
+import type { PublicOrder } from "@/lib/orders/types";
 
 export default function OrderAgainSection() {
-    const { getRecentReorderItems } = useOrderStore();
     const { addItem } = useCartStore();
+    const { currentUser, authReady } = useAuthStore();
+    const [products, setProducts] = useState<Product[] | null>(null);
     const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
 
-    const items = getRecentReorderItems();
+    // Load recent products from the user's real paid orders. Items are
+    // re-fetched so the displayed/added price is always the current one.
+    useEffect(() => {
+        if (!authReady || !currentUser) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/orders/mine");
+                if (!res.ok) return;
+                const body = await res.json();
+                const orders = (body.orders ?? []) as PublicOrder[];
+                const productIds: string[] = [];
+                for (const order of orders) {
+                    if (order.paymentStatus !== "paid") continue;
+                    for (const item of order.items) {
+                        if (!productIds.includes(item.productId)) productIds.push(item.productId);
+                    }
+                    if (productIds.length >= 3) break;
+                }
+                const fetched = await Promise.all(
+                    productIds.slice(0, 3).map(async (id) => {
+                        const r = await fetch(`/api/products/${encodeURIComponent(id)}`);
+                        if (!r.ok) return null;
+                        const b = await r.json();
+                        return (b.product ?? null) as Product | null;
+                    }),
+                );
+                if (!cancelled) setProducts(fetched.filter((p): p is Product => p !== null));
+            } catch {
+                // hide section on error
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [authReady, currentUser]);
 
-    if (items.length === 0) return null;
+    if (!currentUser || !products || products.length === 0) return null;
 
-    const handleReorder = (item: (typeof items)[0]) => {
-        addItem(item.product, 1);
-        setAddedIds((prev) => ({ ...prev, [item.product.id]: true }));
+    const handleReorder = (product: Product) => {
+        addItem(product, 1);
+        setAddedIds((prev) => ({ ...prev, [product.id]: true }));
         setTimeout(() => {
-            setAddedIds((prev) => ({ ...prev, [item.product.id]: false }));
+            setAddedIds((prev) => ({ ...prev, [product.id]: false }));
         }, 2000);
     };
 
@@ -58,11 +96,11 @@ export default function OrderAgainSection() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {items.slice(0, 3).map((item) => {
-                            const isAdded = !!addedIds[item.product.id];
+                        {products.map((product) => {
+                            const isAdded = !!addedIds[product.id];
                             return (
                                 <div
-                                    key={item.product.id}
+                                    key={product.id}
                                     className="flex items-center gap-4 p-3.5 rounded-2xl bg-surface/80 border border-white/5 hover:border-primary/40 transition-all group"
                                 >
                                     {/* Image placeholder / icon */}
@@ -73,20 +111,20 @@ export default function OrderAgainSection() {
                                     {/* Content */}
                                     <div className="flex-1 min-w-0">
                                         <h3 className="text-xs font-semibold text-white truncate group-hover:text-primary transition-colors">
-                                            {item.product.name}
+                                            {product.name}
                                         </h3>
                                         <p className="text-xs font-bold text-accent mt-0.5">
-                                            {formatCOP(item.product.price)}
+                                            {formatCOP(product.price)}
                                         </p>
                                         <div className="flex items-center gap-1 mt-1 text-[10px] text-muted">
                                             <Sparkles className="w-3 h-3 text-secondary" />
-                                            <span>Acumula {Math.floor(item.product.price / 1000)} pts</span>
+                                            <span>Acumula {Math.floor(product.price / 1000)} pts</span>
                                         </div>
                                     </div>
 
                                     {/* Action button */}
                                     <button
-                                        onClick={() => handleReorder(item)}
+                                        onClick={() => handleReorder(product)}
                                         disabled={isAdded}
                                         className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
                                             isAdded
