@@ -74,6 +74,13 @@ export default function OrdersPanel() {
     const [saving, setSaving] = useState(false);
     const [actionError, setActionError] = useState("");
     const [fulfilling, setFulfilling] = useState<string | null>(null);
+    const [syncing, setSyncing] = useState<string | null>(null);
+    const [refundFor, setRefundFor] = useState<AdminOrder | null>(null);
+    const [refundAmount, setRefundAmount] = useState("");
+    const [refundReason, setRefundReason] = useState("defective");
+    const [refundNotes, setRefundNotes] = useState("");
+    const [refundResult, setRefundResult] = useState<string | null>(null);
+    const [refunding, setRefunding] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -98,6 +105,12 @@ export default function OrdersPanel() {
     useEffect(() => {
         void load();
     }, [load]);
+
+    // On-demand tracking sweep when the panel opens — per-order throttling
+    // server-side keeps provider traffic bounded on repeat opens.
+    useEffect(() => {
+        fetch("/api/admin/orders/sync-tracking", { method: "POST" }).catch(() => {});
+    }, []);
 
     const patch = async (id: string, payload: Record<string, unknown>, expectedUpdatedAt: string) => {
         setSaving(true);
@@ -152,6 +165,73 @@ export default function OrdersPanel() {
             setActionError("Error de red al contactar el proveedor.");
         } finally {
             setFulfilling(null);
+        }
+    };
+
+    const syncTracking = async (order: AdminOrder) => {
+        setSyncing(order.id);
+        setActionError("");
+        try {
+            const res = await fetch(`/api/admin/orders/${order.id}/sync`, { method: "POST" });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setActionError(body.error || "No se pudo sincronizar el rastreo.");
+                return;
+            }
+            await load();
+        } catch {
+            setActionError("Error de red al sincronizar.");
+        } finally {
+            setSyncing(null);
+        }
+    };
+
+    const REFUND_REASONS: { value: string; label: string }[] = [
+        { value: "defective", label: "Producto defectuoso" },
+        { value: "damaged", label: "Llegó dañado" },
+        { value: "wrong_item", label: "Producto equivocado" },
+        { value: "not_received", label: "No llegó" },
+        { value: "customer_request", label: "Solicitud del cliente" },
+        { value: "other", label: "Otro" },
+    ];
+
+    const openRefund = (order: AdminOrder) => {
+        setRefundFor(order);
+        setRefundAmount(String(order.total_cop));
+        setRefundReason("defective");
+        setRefundNotes("");
+        setRefundResult(null);
+        setActionError("");
+    };
+
+    const submitRefund = async () => {
+        if (!refundFor) return;
+        setRefunding(true);
+        setRefundResult(null);
+        try {
+            const amount = Number(refundAmount);
+            const res = await fetch(`/api/admin/orders/${refundFor.id}/refund`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    amountCop: Number.isInteger(amount) ? amount : undefined,
+                    reason: refundReason,
+                    notes: refundNotes.trim() || undefined,
+                }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setRefundResult(body.error || "No se pudo procesar el reembolso.");
+                return;
+            }
+            setRefundResult(
+                `Reembolso registrado. ${body.voidOutcome?.detail ?? ""}${body.manualInstructions ? ` ${body.manualInstructions}` : ""}`
+            );
+            await load();
+        } catch {
+            setRefundResult("Error de red al procesar el reembolso.");
+        } finally {
+            setRefunding(false);
         }
     };
 
@@ -432,24 +512,49 @@ export default function OrdersPanel() {
                                                                             Parcial: {o.supplier_order_id ?? "sin ref."}
                                                                         </p>
                                                                     )}
+                                                                    {o.supplier_order_status === "queued" && (
+                                                                        <p className="text-[11px] text-amber-300">
+                                                                            En cola — se enviará automáticamente.
+                                                                        </p>
+                                                                    )}
+                                                                    {o.supplier_order_status === "submitting" && (
+                                                                        <p className="text-[11px] text-muted">Enviando al proveedor…</p>
+                                                                    )}
                                                                     {o.supplier_order_error && (
                                                                         <p className="text-[11px] text-red-300">
                                                                             {o.supplier_order_error}
                                                                         </p>
                                                                     )}
-                                                                    {o.supplier_order_status !== "submitted" && (
-                                                                        <button
-                                                                            onClick={() => void placeSupplierOrder(o)}
-                                                                            disabled={fulfilling === o.id}
-                                                                            className="px-3 py-2 rounded-xl bg-secondary/20 hover:bg-secondary/30 text-secondary text-xs font-semibold border border-secondary/30 disabled:opacity-50"
-                                                                        >
-                                                                            {fulfilling === o.id
-                                                                                ? "Enviando…"
-                                                                                : o.supplier_order_status === "failed" ||
-                                                                                    o.supplier_order_status === "partial"
-                                                                                  ? "Reintentar envío"
-                                                                                  : "Enviar a proveedor"}
-                                                                        </button>
+                                                                    <div className="flex gap-2 flex-wrap">
+                                                                        {o.supplier_order_status !== "submitted" && o.supplier_order_status !== "submitting" && (
+                                                                            <button
+                                                                                onClick={() => void placeSupplierOrder(o)}
+                                                                                disabled={fulfilling === o.id}
+                                                                                className="px-3 py-2 rounded-xl bg-secondary/20 hover:bg-secondary/30 text-secondary text-xs font-semibold border border-secondary/30 disabled:opacity-50"
+                                                                            >
+                                                                                {fulfilling === o.id
+                                                                                    ? "Enviando…"
+                                                                                    : o.supplier_order_status === "failed" ||
+                                                                                        o.supplier_order_status === "partial"
+                                                                                      ? "Reintentar envío"
+                                                                                      : "Enviar a proveedor"}
+                                                                            </button>
+                                                                        )}
+                                                                        {(o.supplier_order_status === "submitted" || o.supplier_order_status === "partial") && (
+                                                                            <button
+                                                                                onClick={() => void syncTracking(o)}
+                                                                                disabled={syncing === o.id}
+                                                                                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/10 disabled:opacity-50 flex items-center gap-1"
+                                                                            >
+                                                                                <RefreshCw className={`w-3 h-3 ${syncing === o.id ? "animate-spin" : ""}`} />
+                                                                                {syncing === o.id ? "Sincronizando…" : "Sincronizar rastreo"}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    {o.supplier_synced_at && (
+                                                                        <p className="text-[10px] text-muted">
+                                                                            Última sync: {new Date(o.supplier_synced_at).toLocaleString("es-CO")}
+                                                                        </p>
                                                                     )}
                                                                 </div>
                                                             )}
@@ -479,18 +584,18 @@ export default function OrdersPanel() {
                                                                 )}
                                                                 {o.payment_status === "paid" && (
                                                                     <button
-                                                                        onClick={() => void patch(o.id, { action: "refund" }, o.updated_at)}
+                                                                        onClick={() => openRefund(o)}
                                                                         disabled={saving}
                                                                         className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 disabled:opacity-50"
                                                                     >
-                                                                        Marcar reembolsado
+                                                                        Reembolsar
                                                                     </button>
                                                                 )}
                                                             </div>
                                                             {o.payment_status === "paid" && (
                                                                 <p className="text-[10px] text-muted">
-                                                                    Los reembolsos se ejecutan en el panel de Wompi; aquí solo se registra
-                                                                    el estado.
+                                                                    El reembolso intenta anular la transacción en Wompi; si no aplica, se
+                                                                    indica el paso manual exacto.
                                                                 </p>
                                                             )}
                                                         </div>
@@ -521,6 +626,78 @@ export default function OrdersPanel() {
             </div>
 
             <ReviewsPanel />
+
+            {/* Refund modal */}
+            {refundFor && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+                    <div className="w-full max-w-md p-6 rounded-3xl bg-surface border border-white/10 space-y-4">
+                        <h4 className="font-heading text-lg font-bold text-white">
+                            Reembolsar pedido #{refundFor.ref}
+                        </h4>
+                        <div className="space-y-3 text-xs">
+                            <div>
+                                <label className="text-muted block mb-1">Monto (COP)</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={refundFor.total_cop}
+                                    value={refundAmount}
+                                    onChange={(e) => setRefundAmount(e.target.value)}
+                                    className={inputClass}
+                                />
+                                <p className="text-[10px] text-muted mt-1">
+                                    Máximo: {formatCOP(refundFor.total_cop)}
+                                </p>
+                            </div>
+                            <div>
+                                <label className="text-muted block mb-1">Motivo</label>
+                                <select
+                                    value={refundReason}
+                                    onChange={(e) => setRefundReason(e.target.value)}
+                                    className={inputClass}
+                                >
+                                    {REFUND_REASONS.map((r) => (
+                                        <option key={r.value} value={r.value}>
+                                            {r.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-muted block mb-1">Notas (opcional)</label>
+                                <textarea
+                                    value={refundNotes}
+                                    onChange={(e) => setRefundNotes(e.target.value.slice(0, 500))}
+                                    rows={2}
+                                    className={`${inputClass} resize-none`}
+                                />
+                            </div>
+                        </div>
+                        {refundResult && (
+                            <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
+                                {refundResult}
+                            </p>
+                        )}
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => setRefundFor(null)}
+                                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold"
+                            >
+                                Cerrar
+                            </button>
+                            {!refundResult && (
+                                <button
+                                    onClick={() => void submitRefund()}
+                                    disabled={refunding}
+                                    className="px-4 py-2 rounded-xl bg-red-500/80 hover:bg-red-500 text-white text-xs font-semibold disabled:opacity-50"
+                                >
+                                    {refunding ? "Procesando…" : "Confirmar reembolso"}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

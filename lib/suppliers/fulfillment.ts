@@ -1,6 +1,7 @@
 import type { SupabaseClientLike } from "../supabase/types.ts";
 import type { FetchLike } from "../trends/http.ts";
 import type { OrderItemRow, OrderRow } from "../orders/types.ts";
+import { FULFILLMENT_STATUS_LABELS } from "../orders/types.ts";
 import { getAliExpressDsEnv } from "../env.ts";
 import * as ds from "./aliexpressDs.ts";
 import { DS_PROVIDER, getDsAccessToken } from "./dsService.ts";
@@ -52,13 +53,15 @@ export async function placeSupplierOrder(
     if (order.payment_status !== "paid") {
         return { error: "supplier orders can only be placed for verified paid orders" };
     }
-    // Idempotency: a fully submitted order never re-places. 'failed' and
-    // 'partial' can be retried — providers dedupe on out_order_id/orderNumber.
+    // Idempotency: a fully submitted order never re-places. 'queued',
+    // 'failed' and 'partial' are startable — providers dedupe on
+    // out_order_id/orderNumber.
     if (
         order.supplier_order_status === "submitted" ||
         (order.supplier_order_id &&
             order.supplier_order_status !== "failed" &&
-            order.supplier_order_status !== "partial")
+            order.supplier_order_status !== "partial" &&
+            order.supplier_order_status !== "queued")
     ) {
         return {
             ok: true,
@@ -95,7 +98,12 @@ export async function placeSupplierOrder(
     const now = new Date().toISOString();
     const { data: claimed } = await service
         .from("orders")
-        .update({ supplier_order_status: "submitting", supplier_order_error: null, updated_at: now })
+        .update({
+            supplier_order_status: "submitting",
+            supplier_order_error: null,
+            auto_fulfill_attempts: (order.auto_fulfill_attempts ?? 0) + 1,
+            updated_at: now,
+        })
         .eq("id", orderId)
         .eq("updated_at", order.updated_at)
         .select("id");
@@ -202,6 +210,12 @@ export async function placeSupplierOrder(
     const supplierOrderId = joinSupplierRefs(refs);
     const failed = errors.length > 0;
     const finalStatus = failed && !supplierOrderId ? "failed" : failed ? "partial" : "submitted";
+    // A submitted supplier leg means the order moved past payment
+    // confirmation — advance fulfillment automatically.
+    const advanceFulfillment =
+        !failed && order.fulfillment_status === "payment_confirmed"
+            ? { fulfillment_status: "supplier_processing" }
+            : {};
     const { data: persisted } = await service
         .from("orders")
         .update({
@@ -209,6 +223,7 @@ export async function placeSupplierOrder(
             supplier_order_status: finalStatus,
             supplier_order_error: failed ? errors.join(" | ").slice(0, 500) : null,
             supplier_order_placed_at: supplierOrderId ? new Date().toISOString() : null,
+            ...advanceFulfillment,
             updated_at: new Date().toISOString(),
         })
         .eq("id", orderId)
@@ -218,6 +233,15 @@ export async function placeSupplierOrder(
         return { error: "order changed while placing supplier order; verify before retry" };
     }
 
+    if (Object.keys(advanceFulfillment).length > 0) {
+        await service.from("order_events").insert({
+            order_id: orderId,
+            kind: "fulfillment",
+            status: "supplier_processing",
+            label: FULFILLMENT_STATUS_LABELS.supplier_processing,
+            description: "El pedido fue enviado al proveedor automáticamente.",
+        });
+    }
     await service.from("order_events").insert({
         order_id: orderId,
         kind: "fulfillment",
@@ -237,4 +261,41 @@ export async function placeSupplierOrder(
         return { error: errors.join(" | ") };
     }
     return { ok: true, supplierOrderId, alreadyPlaced: false, notes };
+}
+
+const RETRY_BATCH = 10;
+const MAX_AUTO_ATTEMPTS = 3;
+
+// Cron entrypoint: retries paid orders whose supplier placement is queued
+// or failed, capped at MAX_AUTO_ATTEMPTS so a persistently failing provider
+// lands in the attention queue instead of retrying forever.
+export async function retryQueuedSupplierOrders(
+    provided?: SupabaseClientLike,
+    fetchImpl?: FetchLike
+): Promise<{ attempted: number; succeeded: number; failed: number } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+
+    const { data, error } = await service
+        .from("orders")
+        .select("id,auto_fulfill_attempts")
+        .eq("payment_status", "paid")
+        .in("supplier_order_status", ["queued", "failed"])
+        .limit(RETRY_BATCH);
+    if (error) return { error: error.message };
+
+    const candidates = ((data as Pick<OrderRow, "id" | "auto_fulfill_attempts">[] | null) ?? []).filter(
+        (o) => (o.auto_fulfill_attempts ?? 0) < MAX_AUTO_ATTEMPTS
+    );
+
+    let attempted = 0;
+    let succeeded = 0;
+    let failed = 0;
+    for (const o of candidates) {
+        attempted += 1;
+        const result = await placeSupplierOrder(o.id, service, fetchImpl);
+        if ("error" in result) failed += 1;
+        else succeeded += 1;
+    }
+    return { attempted, succeeded, failed };
 }

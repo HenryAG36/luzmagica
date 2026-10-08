@@ -3,6 +3,7 @@ import { getWompiEnv } from "@/lib/env";
 import { extractTransaction, verifyEventChecksum, WompiEventBody } from "@/lib/payments/wompi";
 import { applyWompiEvent } from "@/lib/orders/repository";
 import { sendOrderConfirmationEmail } from "@/lib/email/resend";
+import { placeSupplierOrder } from "@/lib/suppliers/fulfillment";
 
 // Wompi retries the same event (up to 3x over 24h) until it gets a 200.
 // - Invalid checksum -> 401 (never Wompi).
@@ -52,6 +53,18 @@ export async function POST(request: Request) {
         const sent = await sendOrderConfirmationEmail(result.paidOrder.order, result.paidOrder.items);
         if (!sent.ok) {
             console.error(`order confirmation email failed (${result.paidOrder.order.ref}): ${sent.error}`);
+        }
+        // Fully automatic supplier placement: bounded provider calls,
+        // idempotent via out_order_id/orderNumber. A failure is recorded on
+        // the order and retried by the fulfill-retry cron — payment state is
+        // never affected.
+        try {
+            const placed = await placeSupplierOrder(result.paidOrder.order.id);
+            if ("error" in placed) {
+                console.error(`supplier placement failed (${result.paidOrder.order.ref}): ${placed.error}`);
+            }
+        } catch (err) {
+            console.error(`supplier placement threw (${result.paidOrder.order.ref}):`, err);
         }
     }
     return NextResponse.json({ ok: true, outcome: result.outcome });

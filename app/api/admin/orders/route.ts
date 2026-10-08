@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
-import { getOrderSummary, listOrdersForAdmin } from "@/lib/orders/repository";
+import { getAttentionQueue, getOrderSummary, listOrdersForAdmin } from "@/lib/orders/repository";
 
 const PAGE_MAX = 50;
 const VALID_FILTERS = new Set([
@@ -31,6 +31,14 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: summary.error }, { status: 502 });
         }
         return NextResponse.json({ summary });
+    }
+
+    if (params.get("attention") === "1") {
+        const attention = await getAttentionQueue();
+        if ("error" in attention) {
+            return NextResponse.json({ error: attention.error }, { status: 502 });
+        }
+        return NextResponse.json({ attention });
     }
 
     const statusParam = params.get("status");

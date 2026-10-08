@@ -350,3 +350,401 @@ export async function createCjOrder(
     if (!parsed) return { ok: false, error: "order response malformed" };
     return { ok: true, data: parsed };
 }
+
+const ORDER_DETAIL_PATH = "/shopping/order/getOrderDetail";
+const TRACK_INFO_PATH = "/logistic/trackInfo";
+const DISPUTE_PRODUCTS_PATH = "/disputes/disputeProducts";
+const DISPUTE_CONFIRM_PATH = "/disputes/disputeConfirmInfo";
+const DISPUTE_CREATE_PATH = "/disputes/create";
+const DISPUTE_DETAIL_PATH = "/disputes/getDisputeDetail";
+const DISPUTE_UPLOAD_PATH = "/disputes/uploadFile";
+
+export interface CjOrderDetail {
+    orderId: string | null;
+    orderNum: string | null;
+    orderStatus: string | null;
+    logisticName: string | null;
+    trackNumber: string | null;
+    trackingUrl: string | null;
+}
+
+export function normalizeCjOrderDetail(raw: unknown): CjOrderDetail | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const d = data as Record<string, unknown>;
+    const str = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 200) : null;
+    return {
+        orderId: str(d.orderId),
+        orderNum: str(d.orderNum),
+        orderStatus: str(d.orderStatus),
+        logisticName: str(d.logisticName),
+        trackNumber: str(d.trackNumber),
+        trackingUrl: str(d.trackingUrl),
+    };
+}
+
+// orderId accepts the custom order number (our ref) or the CJ order id.
+export async function fetchCjOrderDetail(
+    accessToken: string,
+    orderId: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjOrderDetail>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${ORDER_DETAIL_PATH}?orderId=${encodeURIComponent(orderId)}`,
+        { method: "GET", headers: { "CJ-Access-Token": accessToken } },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const detail = normalizeCjOrderDetail(res.data);
+    if (!detail) return { ok: false, error: "order detail malformed" };
+    return { ok: true, data: detail };
+}
+
+export interface CjTrackInfo {
+    trackingNumber: string;
+    logisticName: string | null;
+    trackingStatus: string | null;
+    deliveryTime: string | null;
+    lastMileCarrier: string | null;
+    lastTrackNumber: string | null;
+}
+
+export function normalizeCjTrackInfo(raw: unknown): CjTrackInfo[] | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (!Array.isArray(data)) return null;
+    const str = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 200) : null;
+    const out: CjTrackInfo[] = [];
+    for (const entry of data.slice(0, 10)) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const e = entry as Record<string, unknown>;
+        const trackingNumber = str(e.trackingNumber);
+        if (!trackingNumber) continue;
+        out.push({
+            trackingNumber,
+            logisticName: str(e.logisticName),
+            trackingStatus: str(e.trackingStatus),
+            deliveryTime: str(e.deliveryTime),
+            lastMileCarrier: str(e.lastMileCarrier),
+            lastTrackNumber: str(e.lastTrackNumber),
+        });
+    }
+    return out;
+}
+
+export async function fetchCjTrackInfo(
+    accessToken: string,
+    trackNumber: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjTrackInfo[]>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${TRACK_INFO_PATH}?trackNumber=${encodeURIComponent(trackNumber)}`,
+        { method: "GET", headers: { "CJ-Access-Token": accessToken } },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const info = normalizeCjTrackInfo(res.data);
+    if (!info) return { ok: false, error: "track info malformed" };
+    return { ok: true, data: info };
+}
+
+// ---------- disputes ----------
+
+export interface CjDisputeProduct {
+    lineItemId: string;
+    cjProductId: string | null;
+    cjVariantId: string | null;
+    canChoose: boolean;
+    price: number | null;
+    quantity: number | null;
+    cjProductName: string | null;
+}
+
+export function normalizeCjDisputeProducts(raw: unknown): CjDisputeProduct[] | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const list = (data as Record<string, unknown>).productInfoList;
+    if (!Array.isArray(list)) return null;
+    const str = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+    const out: CjDisputeProduct[] = [];
+    for (const entry of list) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const e = entry as Record<string, unknown>;
+        const lineItemId = str(e.lineItemId);
+        if (!lineItemId) continue;
+        out.push({
+            lineItemId,
+            cjProductId: str(e.cjProductId),
+            cjVariantId: str(e.cjVariantId),
+            canChoose: e.canChoose === true,
+            price: parseNumber(e.price),
+            quantity: parseIntField(e.quantity),
+            cjProductName: str(e.cjProductName),
+        });
+    }
+    return out;
+}
+
+export async function fetchCjDisputeProducts(
+    accessToken: string,
+    orderId: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjDisputeProduct[]>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${DISPUTE_PRODUCTS_PATH}?orderId=${encodeURIComponent(orderId)}`,
+        { method: "GET", headers: { "CJ-Access-Token": accessToken } },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const products = normalizeCjDisputeProducts(res.data);
+    if (!products) return { ok: false, error: "dispute products malformed" };
+    return { ok: true, data: products };
+}
+
+export interface CjDisputeReason {
+    disputeReasonId: number;
+    reasonName: string;
+}
+
+export interface CjDisputeConfirmInfo {
+    maxAmount: number | null;
+    reasons: CjDisputeReason[];
+}
+
+export function normalizeCjDisputeConfirm(raw: unknown): CjDisputeConfirmInfo | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const d = data as Record<string, unknown>;
+    const list = d.disputeReasonList;
+    const reasons: CjDisputeReason[] = [];
+    if (Array.isArray(list)) {
+        for (const entry of list) {
+            if (typeof entry !== "object" || entry === null) continue;
+            const e = entry as Record<string, unknown>;
+            const id = parseIntField(e.disputeReasonId);
+            const name = typeof e.reasonName === "string" ? e.reasonName.trim().slice(0, 200) : null;
+            if (id === null || !name) continue;
+            reasons.push({ disputeReasonId: id, reasonName: name });
+        }
+    }
+    return { maxAmount: parseNumber(d.maxAmount), reasons };
+}
+
+// Preview step required by CJ before createDispute — returns the valid
+// disputeReasonIds for this order, so the caller picks from the provider's
+// own list instead of guessing ids.
+export async function fetchCjDisputeConfirmInfo(
+    accessToken: string,
+    orderId: string,
+    products: { lineItemId: string; quantity: number; price: number }[],
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjDisputeConfirmInfo>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${DISPUTE_CONFIRM_PATH}`,
+        {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+                orderId,
+                productInfoList: products.map((p) => ({
+                    lineItemId: p.lineItemId,
+                    quantity: p.quantity,
+                    price: p.price,
+                })),
+            }),
+        },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const info = normalizeCjDisputeConfirm(res.data);
+    if (!info) return { ok: false, error: "dispute confirm malformed" };
+    return { ok: true, data: info };
+}
+
+export interface CjUploadedFile {
+    url: string;
+    fileType: "IMAGE" | "VIDEO" | null;
+}
+
+export function normalizeCjUploadFile(raw: unknown): CjUploadedFile | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const d = data as Record<string, unknown>;
+    if (typeof d.url !== "string" || d.url === "") return null;
+    const fileType = d.fileType === "IMAGE" || d.fileType === "VIDEO" ? d.fileType : null;
+    return { url: d.url, fileType };
+}
+
+// Copies a publicly reachable file onto CJ's CDN — our private-bucket
+// signed URLs work because CJ downloads synchronously during the call.
+export async function uploadCjDisputeFile(
+    accessToken: string,
+    fileUrl: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjUploadedFile>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${DISPUTE_UPLOAD_PATH}`,
+        {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({ fileUrl }),
+        },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const uploaded = normalizeCjUploadFile(res.data);
+    if (!uploaded) return { ok: false, error: "upload response malformed" };
+    return { ok: true, data: uploaded };
+}
+
+export interface CjDisputeCreateSpec {
+    orderId: string;
+    businessDisputeId: string;
+    disputeReasonId: number;
+    messageText: string;
+    imageUrls: string[];
+    videoUrls: string[];
+    products: { lineItemId: string; quantity: number; price: number }[];
+}
+
+export async function createCjDispute(
+    accessToken: string,
+    spec: CjDisputeCreateSpec,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<{ ok: true }>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${DISPUTE_CREATE_PATH}`,
+        {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+                orderId: spec.orderId,
+                businessDisputeId: spec.businessDisputeId.slice(0, 100),
+                disputeReasonId: spec.disputeReasonId,
+                expectType: 1,
+                refundType: 1,
+                messageText: spec.messageText.slice(0, 500),
+                imageUrl: spec.imageUrls,
+                videoUrl: spec.videoUrls,
+                productInfoList: spec.products.map((p) => ({
+                    lineItemId: p.lineItemId,
+                    quantity: p.quantity,
+                    price: p.price,
+                })),
+            }),
+        },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    return { ok: true, data: { ok: true } };
+}
+
+export interface CjDisputeDetail {
+    id: string;
+    status: string | null;
+    disputeReason: string | null;
+    refundAmount: number | null;
+}
+
+export function normalizeCjDisputeDetail(raw: unknown): CjDisputeDetail | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return null;
+    const d = data as Record<string, unknown>;
+    const str = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 200) : null;
+    const id = str(d.id);
+    if (!id) return null;
+    return {
+        id,
+        status: str(d.status),
+        disputeReason: str(d.disputeReason),
+        refundAmount: parseNumber(d.refundAmount),
+    };
+}
+
+export async function fetchCjDisputeDetail(
+    accessToken: string,
+    disputeId: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjDisputeDetail>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${DISPUTE_DETAIL_PATH}?disputeId=${encodeURIComponent(disputeId)}`,
+        { method: "GET", headers: { "CJ-Access-Token": accessToken } },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const detail = normalizeCjDisputeDetail(res.data);
+    if (!detail) return { ok: false, error: "dispute detail malformed" };
+    return { ok: true, data: detail };
+}

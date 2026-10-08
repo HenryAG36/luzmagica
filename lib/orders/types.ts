@@ -101,6 +101,8 @@ export interface OrderRow {
     supplier_order_status: string | null;
     supplier_order_error: string | null;
     supplier_order_placed_at: string | null;
+    supplier_synced_at: string | null;
+    auto_fulfill_attempts: number;
     review: { rating: number; comment: string; date: string } | null;
     consent_at: string | null;
     paid_at: string | null;
@@ -161,6 +163,77 @@ export interface PublicOrder {
     carrier: string | null;
     events: PublicOrderEvent[];
     reviewedProductIds: string[];
+    claims: PublicClaim[];
+}
+
+export type ClaimReason = "defective" | "damaged" | "wrong_item" | "not_received" | "other";
+
+export const CLAIM_REASONS: ClaimReason[] = [
+    "defective",
+    "damaged",
+    "wrong_item",
+    "not_received",
+    "other",
+];
+
+export const CLAIM_REASON_LABELS: Record<ClaimReason, string> = {
+    defective: "Producto defectuoso",
+    damaged: "Llegó dañado",
+    wrong_item: "Producto equivocado",
+    not_received: "No llegó",
+    other: "Otro motivo",
+};
+
+export type ClaimStatus =
+    | "draft"
+    | "submitted"
+    | "provider_responded"
+    | "resolved"
+    | "rejected"
+    | "cancelled";
+
+export const CLAIM_STATUS_LABELS: Record<ClaimStatus, string> = {
+    draft: "En revisión",
+    submitted: "Enviada al proveedor",
+    provider_responded: "Proveedor respondió",
+    resolved: "Resuelta",
+    rejected: "Rechazada",
+    cancelled: "Cancelada",
+};
+
+export interface PublicClaim {
+    productId: string;
+    reason: ClaimReason;
+    status: ClaimStatus;
+}
+
+export interface SupplierClaimRow {
+    id: string;
+    order_id: string;
+    order_item_id: number;
+    provider: string;
+    reason: ClaimReason;
+    description: string;
+    evidence_paths: string[];
+    status: ClaimStatus;
+    provider_dispute_id: string | null;
+    provider_status: string | null;
+    notes: string | null;
+    created_by: "customer" | "operator";
+    created_at: string;
+    updated_at: string;
+}
+
+export interface RefundRequestRow {
+    id: string;
+    order_id: string;
+    amount_cop: number;
+    reason: string;
+    status: "requested" | "void_attempted" | "manual_required" | "completed" | "failed";
+    wompi_void_result: Record<string, unknown> | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface ProductReviewRow {

@@ -118,6 +118,12 @@ export function getResendEnv(): ResendEnv | null {
     return { apiKey, from };
 }
 
+// Scheduled-route protection: Vercel cron sends this as a Bearer token.
+// Missing secret means the cron routes fail closed (503).
+export function getCronSecret(): string | null {
+    return process.env.CRON_SECRET || null;
+}
+
 export function getMeliCategoryIds(): string[] {
     const raw = process.env.MELI_CATEGORY_IDS || "";
     return raw

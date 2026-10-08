@@ -16,6 +16,7 @@ import {
     Send,
     Lock,
     LogOut,
+    ShieldAlert,
 } from "lucide-react";
 import { useOperatorStore } from "@/store/useOperatorStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
@@ -26,6 +27,7 @@ import TrendPanel from "@/components/operator/TrendPanel";
 import ProductsPanel from "@/components/operator/ProductsPanel";
 import OrdersPanel from "@/components/operator/OrdersPanel";
 import AbandonedPanel from "@/components/operator/AbandonedPanel";
+import ClaimsPanel from "@/components/operator/ClaimsPanel";
 
 const emptySubscribe = () => () => {};
 
@@ -44,8 +46,8 @@ export default function OperatorClient() {
     // Tab state
     const searchParams = useSearchParams();
     const initialTab = searchParams.get("tab");
-    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "products" | "team">(
-        initialTab === "trends" || initialTab === "products" ? initialTab : "overview"
+    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "products" | "claims" | "team">(
+        initialTab === "trends" || initialTab === "products" || initialTab === "claims" ? initialTab : "overview"
     );
 
     interface AdminRow {
@@ -95,6 +97,31 @@ export default function OperatorClient() {
         totalCount: number;
     }
     const [orderSummary, setOrderSummary] = useState<OrderSummaryData | null>(null);
+
+    interface AttentionData {
+        paymentReview: number;
+        supplierFailed: number;
+        supplierStale: number;
+        missingTracking: number;
+        draftClaims: number;
+        orders: { id: string; ref: string; issue: string }[];
+    }
+    const [attention, setAttention] = useState<AttentionData | null>(null);
+
+    const loadAttention = useCallback(async () => {
+        try {
+            const res = await fetch("/api/admin/orders?attention=1");
+            if (!res.ok) return;
+            const body = await res.json();
+            setAttention(body.attention ?? null);
+        } catch {
+            // informational only
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isAuthenticated) void loadAttention();
+    }, [isAuthenticated, loadAttention]);
 
     const loadOrderSummary = useCallback(async () => {
         try {
@@ -272,6 +299,18 @@ export default function OperatorClient() {
                     <span>Productos</span>
                 </button>
                 <button
+                    onClick={() => setActiveTab("claims")}
+                    className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+                        activeTab === "claims"
+                            ? "bg-primary text-white glow-purple"
+                            : "text-muted hover:text-white hover:bg-white/5"
+                    }`}
+                >
+                    <span>
+                        Reclamos{attention && attention.draftClaims > 0 ? ` (${attention.draftClaims})` : ""}
+                    </span>
+                </button>
+                <button
                     onClick={() => setActiveTab("team")}
                     className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
                         activeTab === "team"
@@ -362,6 +401,70 @@ export default function OperatorClient() {
                             </div>
                         </FadeIn>
                     </div>
+
+                    {/* NEEDS ATTENTION — only items that truly need a human */}
+                    {attention &&
+                        (attention.paymentReview +
+                            attention.supplierFailed +
+                            attention.supplierStale +
+                            attention.missingTracking +
+                            attention.draftClaims >
+                            0) && (
+                            <FadeIn delay={0.22}>
+                                <div className="p-6 rounded-3xl bg-red-500/5 border border-red-500/20">
+                                    <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2 mb-4">
+                                        <ShieldAlert className="w-5 h-5 text-red-400" />
+                                        <span>Requiere Atención</span>
+                                    </h3>
+                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs mb-4">
+                                        {attention.paymentReview > 0 && (
+                                            <button onClick={() => setActiveTab("orders")} className="p-3 rounded-xl bg-surface-card border border-red-500/20 text-left hover:border-red-500/40">
+                                                <span className="font-bold text-red-300 text-lg block">{attention.paymentReview}</span>
+                                                <span className="text-muted">Pagos en revisión</span>
+                                            </button>
+                                        )}
+                                        {attention.supplierFailed > 0 && (
+                                            <button onClick={() => setActiveTab("orders")} className="p-3 rounded-xl bg-surface-card border border-red-500/20 text-left hover:border-red-500/40">
+                                                <span className="font-bold text-red-300 text-lg block">{attention.supplierFailed}</span>
+                                                <span className="text-muted">Envíos a proveedor fallidos</span>
+                                            </button>
+                                        )}
+                                        {attention.supplierStale > 0 && (
+                                            <button onClick={() => setActiveTab("orders")} className="p-3 rounded-xl bg-surface-card border border-amber-500/20 text-left hover:border-amber-500/40">
+                                                <span className="font-bold text-amber-300 text-lg block">{attention.supplierStale}</span>
+                                                <span className="text-muted">Envíos atascados</span>
+                                            </button>
+                                        )}
+                                        {attention.missingTracking > 0 && (
+                                            <button onClick={() => setActiveTab("orders")} className="p-3 rounded-xl bg-surface-card border border-amber-500/20 text-left hover:border-amber-500/40">
+                                                <span className="font-bold text-amber-300 text-lg block">{attention.missingTracking}</span>
+                                                <span className="text-muted">Sin guía &gt;7 días</span>
+                                            </button>
+                                        )}
+                                        {attention.draftClaims > 0 && (
+                                            <button onClick={() => setActiveTab("claims")} className="p-3 rounded-xl bg-surface-card border border-amber-500/20 text-left hover:border-amber-500/40">
+                                                <span className="font-bold text-amber-300 text-lg block">{attention.draftClaims}</span>
+                                                <span className="text-muted">Reclamos por revisar</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                    {attention.orders.length > 0 && (
+                                        <div className="space-y-1.5 text-xs">
+                                            {attention.orders.slice(0, 8).map((o) => (
+                                                <button
+                                                    key={o.id}
+                                                    onClick={() => setActiveTab("orders")}
+                                                    className="w-full flex justify-between items-center p-2.5 rounded-xl bg-surface-card/60 border border-white/5 hover:border-white/15 text-left"
+                                                >
+                                                    <span className="font-mono font-bold text-white">#{o.ref}</span>
+                                                    <span className="text-red-300 text-[11px]">{o.issue}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </FadeIn>
+                        )}
 
                     {/* PIPELINE SNAPSHOT — real order funnel, no projections */}
                     <FadeIn delay={0.25}>
@@ -510,6 +613,9 @@ export default function OperatorClient() {
 
             {/* TAB: ORDERS / DROPSHIP DISPATCH */}
             {activeTab === "orders" && <OrdersPanel />}
+
+            {/* TAB: CLAIMS */}
+            {activeTab === "claims" && <ClaimsPanel />}
 
             {/* TAB: ABANDONED CHECKOUTS */}
             {activeTab === "abandoned" && <AbandonedPanel />}

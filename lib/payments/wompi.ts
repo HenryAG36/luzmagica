@@ -57,6 +57,40 @@ export async function createPaymentLink(
     }
 }
 
+// Wompi only supports voiding card transactions that haven't settled —
+// there is no general refund endpoint. Callers must treat a declined void
+// as "refund manually in the Wompi dashboard", never as success.
+export async function voidTransaction(
+    transactionId: string,
+    fetchImpl?: FetchLike
+): Promise<{ ok: true; status: string | null } | { ok: false; error: string }> {
+    const env = getWompiEnv();
+    if (!env) return { ok: false, error: "wompi not configured" };
+    const fetcher = fetchImpl ?? fetch;
+    try {
+        const res = await fetcher(`${env.baseUrl}/transactions/${encodeURIComponent(transactionId)}/void`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${env.privateKey}` },
+        });
+        const body: unknown = await res.json().catch(() => null);
+        if (!res.ok) {
+            const reason =
+                body && typeof body === "object"
+                    ? ((body as { error?: { reason?: unknown } }).error?.reason ??
+                      (body as { error?: { messages?: unknown } }).error?.messages)
+                    : null;
+            return { ok: false, error: `void failed (${String(reason ?? res.status)})` };
+        }
+        const data =
+            body && typeof body === "object"
+                ? ((body as { data?: { status?: unknown } }).data ?? null)
+                : null;
+        return { ok: true, status: typeof data?.status === "string" ? data.status : null };
+    } catch {
+        return { ok: false, error: "wompi request failed" };
+    }
+}
+
 export interface WompiEventBody {
     event?: unknown;
     data?: unknown;

@@ -993,3 +993,96 @@ export async function createDsOrder(
     if (responseError) return { ok: false, error: responseError };
     return { ok: true, data: { orderId: extractDsOrderId(res.data) } };
 }
+
+const DS_ORDER_GET_API = "aliexpress.trade.ds.order.get";
+
+export interface DsOrderStatus {
+    orderStatus: string | null;
+    logisticsStatus: string | null;
+    trackingNo: string | null;
+    logisticsService: string | null;
+}
+
+function getDsOrderGetError(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return "malformed response";
+    const body = raw as Record<string, unknown>;
+    const err = body.error_response;
+    if (typeof err === "object" && err !== null) {
+        const e = err as Record<string, unknown>;
+        const code = typeof e.code === "string" || typeof e.code === "number" ? e.code : "unknown";
+        const msg = typeof e.msg === "string" ? e.msg.slice(0, 160) : "";
+        return `provider error ${String(code)}${msg ? `: ${msg}` : ""}`;
+    }
+    const root = body.aliexpress_trade_ds_order_get_response;
+    if (typeof root !== "object" || root === null) return "malformed response";
+    const resp = root as Record<string, unknown>;
+    if (resp.rsp_code !== undefined && String(resp.rsp_code) !== "200") {
+        return `provider rsp_code ${String(resp.rsp_code)}`;
+    }
+    return null;
+}
+
+// Finds the first object (bounded depth) that carries order/logistics
+// fields — the trade API nests them under varying keys across versions.
+function findOrderNode(node: unknown, depth: number): Record<string, unknown> | null {
+    if (depth > 5 || typeof node !== "object" || node === null) return null;
+    const obj = node as Record<string, unknown>;
+    if ("order_status" in obj || "logistics_info_list" in obj || "logistics_status" in obj) {
+        return obj;
+    }
+    for (const key of Object.keys(obj)) {
+        const found = findOrderNode(obj[key], depth + 1);
+        if (found) return found;
+    }
+    return null;
+}
+
+export function normalizeDsOrderDetail(raw: unknown): DsOrderStatus | null {
+    const node = findOrderNode(raw, 0);
+    if (!node) return null;
+    const str = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 120) : null;
+    let trackingNo: string | null = null;
+    let logisticsService: string | null = null;
+    const lists = [node.logistics_info_list, node.logisticsInfoList];
+    for (const list of lists) {
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+            if (typeof entry !== "object" || entry === null) continue;
+            const e = entry as Record<string, unknown>;
+            trackingNo = trackingNo ?? str(e.logistics_no) ?? str(e.logisticsNo);
+            logisticsService = logisticsService ?? str(e.logistics_service) ?? str(e.logisticsService);
+        }
+    }
+    return {
+        orderStatus: str(node.order_status) ?? str(node.orderStatus),
+        logisticsStatus: str(node.logistics_status) ?? str(node.logisticsStatus),
+        trackingNo,
+        logisticsService,
+    };
+}
+
+// Queries one placed DS order for status + tracking fields.
+export async function fetchDsOrderDetail(
+    accessToken: string,
+    orderId: string,
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<DsOrderStatus>> {
+    const url = buildSignedRequestUrl(
+        DS_ORDER_GET_API,
+        config,
+        { single_order_query: JSON.stringify({ order_id: orderId }) },
+        accessToken
+    );
+    const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getDsOrderGetError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const detail = normalizeDsOrderDetail(res.data);
+    if (!detail) return { ok: false, error: "order detail response malformed" };
+    return { ok: true, data: detail };
+}

@@ -60,6 +60,10 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
         this.op.neqFilters.push({ col, val });
         return this;
     }
+    is(col: string, val: unknown) {
+        this.op.filters.push({ col: `is:${col}`, val });
+        return this;
+    }
     in(col: string, vals: unknown[]) {
         this.op.inFilters.push({ col, vals });
         return this;
@@ -100,6 +104,10 @@ class FakeBuilder implements PromiseLike<{ data: unknown; error: { message: stri
                 if (!(row[f.col.slice(3)] as number > (f.val as number))) return false;
             } else if (f.col.startsWith("lt:")) {
                 if (!(row[f.col.slice(3)] as number < (f.val as number))) return false;
+            } else if (f.col.startsWith("is:")) {
+                if (f.val === null) {
+                    if (row[f.col.slice(3)] !== null && row[f.col.slice(3)] !== undefined) return false;
+                } else if (row[f.col.slice(3)] !== f.val) return false;
             } else if (row[f.col] !== f.val) {
                 return false;
             }

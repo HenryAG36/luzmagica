@@ -8,9 +8,12 @@ import type {
     OrderPricing,
     OrderRow,
     ProductReviewRow,
+    PublicClaim,
     PublicOrder,
     PublicOrderEvent,
     PublicReview,
+    RefundRequestRow,
+    SupplierClaimRow,
 } from "./types.ts";
 import { FULFILLMENT_STATUS_LABELS } from "./types.ts";
 import { normalizePhone } from "./validate.ts";
@@ -28,6 +31,7 @@ async function serviceClient(provided?: SupabaseClientLike) {
 }
 
 const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+export const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
 const FULFILLMENT_SEQUENCE: FulfillmentStatus[] = [
     "payment_confirmed",
     "supplier_processing",
@@ -353,6 +357,15 @@ export async function applyWompiEvent(
         );
         const items = await loadOrderItems(service, order.id);
         await decrementStock(service, items);
+        // Queue supplier placement when the order has provider-backed items;
+        // the webhook caller (or the retry cron) executes it.
+        if (items.some((i) => SUPPLIER_SOURCES.has(i.source))) {
+            await service
+                .from("orders")
+                .update({ supplier_order_status: "queued" })
+                .eq("id", order.id)
+                .is("supplier_order_status", null);
+        }
         await recordMarker(order.id);
         const awarded = await awardPointsForOrder({ ...order, payment_status: "paid" }, service);
         if ("error" in awarded) {
@@ -394,8 +407,10 @@ export function toPublicOrder(
     order: OrderRow,
     items: OrderItemRow[],
     events: OrderEventRow[],
-    reviewedProductIds: Set<string> = new Set()
+    reviewedProductIds: Set<string> = new Set(),
+    claims: SupplierClaimRow[] = []
 ): PublicOrder {
+    const productByItemId = new Map(items.map((i) => [i.id, i.product_id]));
     return {
         ref: order.ref,
         createdAt: order.created_at,
@@ -425,8 +440,32 @@ export function toPublicOrder(
                 description: e.description,
                 timestamp: e.created_at,
             }))
-            .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+            .sort((a, b) => String(a.timestamp ?? "").localeCompare(String(b.timestamp ?? ""))),
+        claims: claims.map(
+            (c): PublicClaim => ({
+                productId: productByItemId.get(c.order_item_id) ?? "",
+                reason: c.reason,
+                status: c.status,
+            })
+        ),
     };
+}
+
+async function loadClaimsFor(
+    service: SupabaseClientLike,
+    orderIds: string[]
+): Promise<Map<string, SupplierClaimRow[]>> {
+    const map = new Map<string, SupplierClaimRow[]>();
+    if (orderIds.length === 0) return map;
+    const { data } = await service
+        .from("supplier_claims")
+        .select("*")
+        .in("order_id", orderIds);
+    for (const row of (data as SupplierClaimRow[] | null) ?? []) {
+        if (!map.has(row.order_id)) map.set(row.order_id, []);
+        map.get(row.order_id)!.push(row);
+    }
+    return map;
 }
 
 async function loadEvents(service: SupabaseClientLike, orderIds: string[]): Promise<OrderEventRow[]> {
@@ -486,12 +525,19 @@ export async function lookupForGuest(
     if (!order) return null;
     if (!orderMatchesContact(order, contact)) return null;
 
-    const [items, events, reviewed] = await Promise.all([
+    const [items, events, reviewed, claims] = await Promise.all([
         loadOrderItems(service, order.id),
         loadEvents(service, [order.id]),
         loadReviewedProductIds(service, [order.id]),
+        loadClaimsFor(service, [order.id]),
     ]);
-    return toPublicOrder(order, items, events, reviewed.get(order.id) ?? new Set());
+    return toPublicOrder(
+        order,
+        items,
+        events,
+        reviewed.get(order.id) ?? new Set(),
+        claims.get(order.id) ?? []
+    );
 }
 
 export async function lookupByToken(
@@ -509,12 +555,19 @@ export async function lookupByToken(
         .maybeSingle();
     const order = (data as OrderRow | null) ?? null;
     if (!order) return null;
-    const [items, events, reviewed] = await Promise.all([
+    const [items, events, reviewed, claims] = await Promise.all([
         loadOrderItems(service, order.id),
         loadEvents(service, [order.id]),
         loadReviewedProductIds(service, [order.id]),
+        loadClaimsFor(service, [order.id]),
     ]);
-    return toPublicOrder(order, items, events, reviewed.get(order.id) ?? new Set());
+    return toPublicOrder(
+        order,
+        items,
+        events,
+        reviewed.get(order.id) ?? new Set(),
+        claims.get(order.id) ?? []
+    );
 }
 
 export async function listOrdersByEmail(
@@ -530,17 +583,19 @@ export async function listOrdersByEmail(
         .order("created_at");
     const orders = ((data as OrderRow[] | null) ?? []).reverse();
     const ids = orders.map((o) => o.id);
-    const [items, events, reviewed] = await Promise.all([
+    const [items, events, reviewed, claims] = await Promise.all([
         loadItemsFor(service, ids),
         loadEvents(service, ids),
         loadReviewedProductIds(service, ids),
+        loadClaimsFor(service, ids),
     ]);
     return orders.map((o) =>
         toPublicOrder(
             o,
             items.filter((i) => i.order_id === o.id),
             events.filter((e) => e.order_id === o.id),
-            reviewed.get(o.id) ?? new Set()
+            reviewed.get(o.id) ?? new Set(),
+            claims.get(o.id) ?? []
         )
     );
 }
@@ -652,6 +707,18 @@ export function canTransitionFulfillment(from: FulfillmentStatus, to: Fulfillmen
     const fromIdx = FULFILLMENT_SEQUENCE.indexOf(from);
     const toIdx = FULFILLMENT_SEQUENCE.indexOf(to);
     return fromIdx >= 0 && toIdx > fromIdx;
+}
+
+export async function getOrderRow(
+    id: string,
+    provided?: SupabaseClientLike
+): Promise<{ order: OrderRow } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+    const { data } = await service.from("orders").select("*").eq("id", id).maybeSingle();
+    const order = (data as OrderRow | null) ?? null;
+    if (!order) return { error: "order not found" };
+    return { order };
 }
 
 export type AdminOrderAction = "update" | "cancel" | "refund";
@@ -943,4 +1010,138 @@ export async function moderateReview(
         return { error: "review not found or already moderated" };
     }
     return { ok: true };
+}
+
+// ---------- attention queue ----------
+
+const STALE_SUBMITTING_MS = 30 * 60 * 1000;
+const MISSING_TRACKING_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface AttentionQueue {
+    paymentReview: number;
+    supplierFailed: number;
+    supplierStale: number;
+    missingTracking: number;
+    draftClaims: number;
+    orders: { id: string; ref: string; issue: string }[];
+}
+
+// Surfaces only what a human must look at: payment mismatches, failed or
+// stuck supplier placements, submitted orders that never got a tracking
+// number, and customer claims awaiting review.
+export async function getAttentionQueue(
+    provided?: SupabaseClientLike
+): Promise<AttentionQueue | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+
+    const { data, error } = await service
+        .from("orders")
+        .select("id,ref,payment_status,fulfillment_status,supplier_order_status,supplier_order_id,tracking_number,supplier_order_placed_at,updated_at,auto_fulfill_attempts");
+    if (error) return { error: error.message };
+
+    const orders = (data as Partial<OrderRow>[] | null) ?? [];
+    const now = Date.now();
+    const queue: AttentionQueue = {
+        paymentReview: 0,
+        supplierFailed: 0,
+        supplierStale: 0,
+        missingTracking: 0,
+        draftClaims: 0,
+        orders: [],
+    };
+
+    for (const o of orders) {
+        if (o.payment_status === "payment_review") {
+            queue.paymentReview += 1;
+            queue.orders.push({ id: o.id as string, ref: o.ref as string, issue: "Monto de pago no coincide" });
+            continue;
+        }
+        const status = o.supplier_order_status;
+        const updatedAt = o.updated_at ? Date.parse(o.updated_at) : 0;
+        if (status === "failed" || status === "partial") {
+            queue.supplierFailed += 1;
+            queue.orders.push({
+                id: o.id as string,
+                ref: o.ref as string,
+                issue: status === "partial" ? "Proveedor: envío parcial" : "Proveedor: envío falló",
+            });
+        } else if (
+            (status === "queued" || status === "submitting") &&
+            now - updatedAt > STALE_SUBMITTING_MS
+        ) {
+            queue.supplierStale += 1;
+            queue.orders.push({ id: o.id as string, ref: o.ref as string, issue: "Envío a proveedor atascado" });
+        } else if (
+            status === "submitted" &&
+            !o.tracking_number &&
+            o.supplier_order_placed_at &&
+            now - Date.parse(o.supplier_order_placed_at) > MISSING_TRACKING_MS
+        ) {
+            queue.missingTracking += 1;
+            queue.orders.push({ id: o.id as string, ref: o.ref as string, issue: "Sin guía tras 7 días" });
+        }
+    }
+
+    const { data: claimRows } = await service
+        .from("supplier_claims")
+        .select("id")
+        .eq("status", "draft");
+    queue.draftClaims = ((claimRows as { id: string }[] | null) ?? []).length;
+
+    queue.orders = queue.orders.slice(0, 50);
+    return queue;
+}
+
+// ---------- refund requests ----------
+
+export async function createRefundRequest(
+    input: { orderId: string; amountCop: number; reason: string; notes?: string | null },
+    provided?: SupabaseClientLike
+): Promise<{ refund: RefundRequestRow } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+    const now = new Date().toISOString();
+    const row = {
+        id: randomUUID(),
+        order_id: input.orderId,
+        amount_cop: input.amountCop,
+        reason: input.reason.slice(0, 500),
+        status: "requested",
+        notes: input.notes?.slice(0, 500) ?? null,
+        created_at: now,
+        updated_at: now,
+    };
+    const { error } = await service.from("refund_requests").insert(row);
+    if (error) return { error: error.message };
+    return { refund: row as RefundRequestRow };
+}
+
+export async function updateRefundRequest(
+    id: string,
+    patch: Partial<Pick<RefundRequestRow, "status" | "wompi_void_result" | "notes">>,
+    provided?: SupabaseClientLike
+): Promise<{ ok: true } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+    const { error } = await service
+        .from("refund_requests")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", id);
+    if (error) return { error: error.message };
+    return { ok: true };
+}
+
+export async function listRefundRequests(
+    orderId: string,
+    provided?: SupabaseClientLike
+): Promise<RefundRequestRow[]> {
+    const service = await serviceClient(provided);
+    if (!service) return [];
+    const { data } = await service
+        .from("refund_requests")
+        .select("*")
+        .eq("order_id", orderId)
+        .order("created_at");
+    return (data as RefundRequestRow[] | null) ?? [];
 }
