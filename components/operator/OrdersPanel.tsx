@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Truck } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, PackageCheck, RefreshCw, Truck } from "lucide-react";
+import ReviewsPanel from "@/components/operator/ReviewsPanel";
 import { formatCOP } from "@/lib/utils";
 import {
     FULFILLMENT_STATUS_LABELS,
@@ -72,6 +73,7 @@ export default function OrdersPanel() {
     const [editCarrier, setEditCarrier] = useState("Coordinadora");
     const [saving, setSaving] = useState(false);
     const [actionError, setActionError] = useState("");
+    const [fulfilling, setFulfilling] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -131,6 +133,27 @@ export default function OrdersPanel() {
 
     const supplierCostOf = (o: AdminOrder) =>
         o.items.reduce((sum, i) => sum + (i.unit_supplier_cost_cop ?? 0) * i.quantity, 0);
+
+    const hasSupplierItems = (o: AdminOrder) =>
+        o.items.some((i) => i.source === "aliexpress_ds" || i.source === "cjdropshipping");
+
+    const placeSupplierOrder = async (order: AdminOrder) => {
+        setFulfilling(order.id);
+        setActionError("");
+        try {
+            const res = await fetch(`/api/admin/orders/${order.id}/fulfill`, { method: "POST" });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setActionError(body.error || "No se pudo enviar el pedido al proveedor.");
+                return;
+            }
+            await load();
+        } catch {
+            setActionError("Error de red al contactar el proveedor.");
+        } finally {
+            setFulfilling(null);
+        }
+    };
 
     const inputClass =
         "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white";
@@ -393,6 +416,44 @@ export default function OrdersPanel() {
                                                                     </div>
                                                                 )}
 
+                                                            {o.payment_status === "paid" && hasSupplierItems(o) && (
+                                                                <div className="p-4 rounded-xl bg-surface-card border border-white/10 space-y-2">
+                                                                    <h5 className="font-semibold text-white text-xs flex items-center gap-2">
+                                                                        <PackageCheck className="w-4 h-4 text-secondary" />
+                                                                        Pedido a proveedor
+                                                                    </h5>
+                                                                    {o.supplier_order_status === "submitted" && (
+                                                                        <p className="text-[11px] text-green-300">
+                                                                            Enviado{o.supplier_order_id ? `: ${o.supplier_order_id}` : ""}
+                                                                        </p>
+                                                                    )}
+                                                                    {o.supplier_order_status === "partial" && (
+                                                                        <p className="text-[11px] text-amber-300">
+                                                                            Parcial: {o.supplier_order_id ?? "sin ref."}
+                                                                        </p>
+                                                                    )}
+                                                                    {o.supplier_order_error && (
+                                                                        <p className="text-[11px] text-red-300">
+                                                                            {o.supplier_order_error}
+                                                                        </p>
+                                                                    )}
+                                                                    {o.supplier_order_status !== "submitted" && (
+                                                                        <button
+                                                                            onClick={() => void placeSupplierOrder(o)}
+                                                                            disabled={fulfilling === o.id}
+                                                                            className="px-3 py-2 rounded-xl bg-secondary/20 hover:bg-secondary/30 text-secondary text-xs font-semibold border border-secondary/30 disabled:opacity-50"
+                                                                        >
+                                                                            {fulfilling === o.id
+                                                                                ? "Enviando…"
+                                                                                : o.supplier_order_status === "failed" ||
+                                                                                    o.supplier_order_status === "partial"
+                                                                                  ? "Reintentar envío"
+                                                                                  : "Enviar a proveedor"}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
                                                             {o.fulfillment_status === "awaiting_payment" && (
                                                                 <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
                                                                     Sin pago confirmado no se puede avanzar el despacho.
@@ -458,6 +519,8 @@ export default function OrdersPanel() {
                     </table>
                 </div>
             </div>
+
+            <ReviewsPanel />
         </div>
     );
 }

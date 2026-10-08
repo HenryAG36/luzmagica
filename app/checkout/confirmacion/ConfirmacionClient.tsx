@@ -17,14 +17,11 @@ export default function ConfirmacionClient() {
     const token = searchParams.get("t") ?? "";
 
     const [order, setOrder] = useState<PublicOrder | null>(null);
-    const [error, setError] = useState("");
+    const [error, setError] = useState(ref && token ? "" : "Enlace de confirmación inválido.");
     const startRef = useRef(0);
 
     useEffect(() => {
-        if (!ref || !token) {
-            setError("Enlace de confirmación inválido.");
-            return;
-        }
+        if (!ref || !token) return;
         startRef.current = Date.now();
         let cancelled = false;
         let timer: ReturnType<typeof setTimeout> | null = null;

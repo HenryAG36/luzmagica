@@ -867,3 +867,129 @@ export async function fetchDsFeedNames(
     if (!feeds) return { ok: false, error: "feed names response malformed" };
     return { ok: true, data: feeds };
 }
+
+const ORDER_CREATE_API = "aliexpress.ds.order.create";
+
+export interface DsOrderAddress {
+    fullName: string;
+    contactPerson: string;
+    phone: string;
+    phoneCountry: string;
+    address: string;
+    city: string;
+    province: string;
+    zip: string;
+}
+
+export interface DsOrderItemSpec {
+    productId: string;
+    skuAttr: string;
+    count: number;
+    logisticsServiceName?: string | null;
+    memo?: string | null;
+}
+
+export interface DsOrderResult {
+    orderId: string | null;
+}
+
+function getDsOrderCreateError(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return "malformed response";
+    const body = raw as Record<string, unknown>;
+    const err = body.error_response;
+    if (typeof err === "object" && err !== null) {
+        const e = err as Record<string, unknown>;
+        const code = typeof e.code === "string" || typeof e.code === "number" ? e.code : "unknown";
+        const msg = typeof e.msg === "string" ? e.msg.slice(0, 160) : "";
+        return `provider error ${String(code)}${msg ? `: ${msg}` : ""}`;
+    }
+    const root = body.aliexpress_ds_order_create_response;
+    if (typeof root !== "object" || root === null) return "malformed response";
+    const resp = root as Record<string, unknown>;
+    if (String(resp.rsp_code) !== "200") return `provider rsp_code ${String(resp.rsp_code)}`;
+    const result = typeof resp.result === "object" && resp.result !== null
+        ? (resp.result as Record<string, unknown>)
+        : null;
+    if (!result) return "malformed response";
+    if (result.is_success === false || result.isSuccess === false) {
+        const code = result.error_code ?? result.errorCode ?? "";
+        const info = result.error_info ?? result.errorInfo ?? "";
+        return `provider rejected order ${String(code)}${info ? `: ${String(info).slice(0, 160)}` : ""}`;
+    }
+    return null;
+}
+
+function extractDsOrderId(raw: unknown): string | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const resp = (raw as Record<string, unknown>).aliexpress_ds_order_create_response;
+    if (typeof resp !== "object" || resp === null) return null;
+    const result = (resp as Record<string, unknown>).result;
+    if (typeof result !== "object" || result === null) return null;
+    const r = result as Record<string, unknown>;
+    const lists = [r.order_list, r.orderList];
+    for (const list of lists) {
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+            if (typeof entry !== "object" || entry === null) continue;
+            const e = entry as Record<string, unknown>;
+            const id = e.order_id ?? e.orderId ?? e.ae_order_id;
+            if (typeof id === "string" && id !== "") return id;
+            if (typeof id === "number") return String(id);
+        }
+    }
+    const direct = r.order_id ?? r.orderId ?? r.ae_order_id;
+    if (typeof direct === "string" && direct !== "") return direct;
+    if (typeof direct === "number") return String(direct);
+    return null;
+}
+
+// Places a dropship order with the customer's address. The caller records
+// the result; a missing order id with is_success=true is still treated as
+// submitted.
+export async function createDsOrder(
+    accessToken: string,
+    spec: {
+        address: DsOrderAddress;
+        items: DsOrderItemSpec[];
+        outOrderId: string;
+    },
+    config: AliExpressDsConfig,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<ProviderResult<DsOrderResult>> {
+    const payload = {
+        logistics_address: {
+            address: spec.address.address,
+            city: spec.address.city,
+            contact_person: spec.address.contactPerson,
+            country: "CO",
+            full_name: spec.address.fullName,
+            locale: "es_CO",
+            mobile_no: spec.address.phone,
+            phone_country: spec.address.phoneCountry,
+            province: spec.address.province,
+            zip: spec.address.zip,
+        },
+        product_items: spec.items.map((i) => ({
+            logistics_service_name: i.logisticsServiceName ?? undefined,
+            order_memo: i.memo ?? undefined,
+            product_count: i.count,
+            product_id: i.productId,
+            sku_attr: i.skuAttr,
+        })),
+        out_order_id: spec.outOrderId,
+    };
+    const url = buildSignedRequestUrl(
+        ORDER_CREATE_API,
+        config,
+        { param_place_order_request4_open_api_d_t_o: JSON.stringify(payload) },
+        accessToken
+    );
+    const res = await fetchJson<unknown>(url, { method: "POST" }, { fetchImpl, deadlineMs });
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getDsOrderCreateError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    return { ok: true, data: { orderId: extractDsOrderId(res.data) } };
+}

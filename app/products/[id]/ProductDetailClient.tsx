@@ -17,6 +17,7 @@ import { Product } from "@/lib/types";
 import { formatCOP } from "@/lib/utils";
 import { useCartStore } from "@/store/useCartStore";
 import ProductCard from "@/components/products/ProductCard";
+import ProductReviews from "@/components/products/ProductReviews";
 import FadeIn from "@/components/common/FadeIn";
 
 interface ProductDetailClientProps {
@@ -184,6 +185,9 @@ export default function ProductDetailClient({
                                             <span>{formatCOP(product.price + product.shippingEstimateCOP)}</span>
                                         </div>
                                     )}
+                                    <p className="text-[11px] text-amber-300/90 font-medium">
+                                        Envío internacional: entrega estimada 15–30 días hábiles tras el despacho del proveedor.
+                                    </p>
                                     <p className="text-[10px] text-muted">
                                         Proveedor internacional: la cotización de envío es indicativa por unidad
                                         {product.shippingEstimateCity ? ` para ${product.shippingEstimateCity}` : ""}
@@ -298,6 +302,11 @@ export default function ProductDetailClient({
                             </div>
                         </div>
                     </div>
+                </FadeIn>
+
+                {/* Verified purchase reviews */}
+                <FadeIn>
+                    <ProductReviews productId={product.id} />
                 </FadeIn>
 
                 {/* Related */}

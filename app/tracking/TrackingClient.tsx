@@ -17,6 +17,7 @@ import { useCartStore } from "@/store/useCartStore";
 import { buildSupportWhatsAppUrl } from "@/lib/contact";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
+import ReviewForm from "@/components/tracking/ReviewForm";
 import type { Product } from "@/lib/types";
 import type { FulfillmentStatus, PaymentStatus, PublicOrder } from "@/lib/orders/types";
 
@@ -331,6 +332,11 @@ export default function TrackingClient() {
                                     </div>
                                 </div>
                             </div>
+                        </FadeIn>
+
+                        {/* Post-delivery review form */}
+                        <FadeIn delay={0.35}>
+                            <ReviewForm order={order} contact={contactInput.trim()} />
                         </FadeIn>
                     </div>
                 ) : (

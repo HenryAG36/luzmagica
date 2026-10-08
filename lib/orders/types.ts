@@ -97,6 +97,10 @@ export interface OrderRow {
     wompi_transaction_id: string | null;
     tracking_number: string | null;
     carrier: string | null;
+    supplier_order_id: string | null;
+    supplier_order_status: string | null;
+    supplier_order_error: string | null;
+    supplier_order_placed_at: string | null;
     review: { rating: number; comment: string; date: string } | null;
     consent_at: string | null;
     paid_at: string | null;
@@ -156,4 +160,24 @@ export interface PublicOrder {
     trackingNumber: string | null;
     carrier: string | null;
     events: PublicOrderEvent[];
+    reviewedProductIds: string[];
+}
+
+export interface ProductReviewRow {
+    id: string;
+    product_id: string;
+    order_id: string;
+    rating: number;
+    comment: string;
+    reviewer_name: string | null;
+    status: "pending" | "approved" | "rejected";
+    created_at: string;
+    updated_at: string;
+}
+
+export interface PublicReview {
+    rating: number;
+    comment: string;
+    reviewerName: string;
+    createdAt: string;
 }

@@ -5,6 +5,9 @@ import { attachPaymentLink, createPendingOrder } from "@/lib/orders/repository";
 import { createPaymentLink } from "@/lib/payments/wompi";
 import { getWompiEnv } from "@/lib/env";
 import { publicSiteOrigin } from "@/lib/contact";
+import { getVerifiedUser } from "@/lib/auth/server";
+import { getLoyaltyBalance, POINT_VALUE_COP } from "@/lib/loyalty/service";
+import { isPlainObject } from "@/lib/catalog/validate";
 
 const LINK_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -34,10 +37,41 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: priced.error }, { status: 400 });
     }
 
+    // LuzPoints redemption requires a verified session and a real balance —
+    // browser-side points are never trusted. The points are debited inside
+    // createPendingOrder so a failed order never consumes them.
+    let loyalty: { userId: string; points: number } | null = null;
+    if (isPlainObject(body) && typeof body.pointsToRedeem === "number" && body.pointsToRedeem > 0) {
+        const points = Math.floor(body.pointsToRedeem);
+        const user = await getVerifiedUser();
+        if (!user) {
+            return NextResponse.json(
+                { error: "Inicia sesión para canjear puntos." },
+                { status: 401 }
+            );
+        }
+        const balance = await getLoyaltyBalance(user.id);
+        if ("error" in balance) {
+            return NextResponse.json({ error: "No se pudo verificar el saldo de puntos." }, { status: 500 });
+        }
+        if (points > balance.points) {
+            return NextResponse.json({ error: "Puntos insuficientes." }, { status: 400 });
+        }
+        const maxRedeemable = Math.floor(priced.pricing.subtotalCop / POINT_VALUE_COP);
+        if (points > maxRedeemable) {
+            return NextResponse.json(
+                { error: `Máximo canjeable en este pedido: ${maxRedeemable} pts.` },
+                { status: 400 }
+            );
+        }
+        loyalty = { userId: user.id, points };
+    }
+
     const created = await createPendingOrder(
         parsed.input.customer,
         priced.pricing,
-        new Date().toISOString()
+        new Date().toISOString(),
+        loyalty
     );
     if ("error" in created) {
         return NextResponse.json({ error: created.error }, { status: 502 });

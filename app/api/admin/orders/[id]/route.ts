@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
 import { updateOrderAdmin } from "@/lib/orders/repository";
-import type { FulfillmentStatus } from "@/lib/orders/types";
+import { sendOrderStatusEmail } from "@/lib/email/resend";
+import { FULFILLMENT_STATUS_LABELS, type FulfillmentStatus } from "@/lib/orders/types";
 import { isPlainObject } from "@/lib/catalog/validate";
 
 interface RouteContext {
@@ -97,5 +98,46 @@ export async function PATCH(request: Request, context: RouteContext) {
         const status = result.error.includes("changed") ? 409 : result.error === "order not found" ? 404 : 400;
         return NextResponse.json(result, { status });
     }
+
+    // Customer lifecycle email — best-effort, never blocks or rolls back the
+    // update. Only fires on real transitions: status change, tracking added,
+    // cancel, or refund.
+    const order = result.order;
+    let email: { subject: string; title: string; detail: string } | null = null;
+    if (action === "cancel") {
+        email = {
+            subject: `LuzMágica — Pedido ${order.ref} cancelado`,
+            title: "Tu pedido fue cancelado",
+            detail: "No se realizó ningún cargo confirmado. Si tienes dudas, contáctanos con tu referencia.",
+        };
+    } else if (action === "refund") {
+        email = {
+            subject: `LuzMágica — Pedido ${order.ref} reembolsado`,
+            title: "Reembolso registrado",
+            detail: "Tu pago fue procesado para reembolso. La acreditación depende de tu banco o medio de pago.",
+        };
+    } else if (fulfillmentStatus) {
+        const label = FULFILLMENT_STATUS_LABELS[fulfillmentStatus];
+        email = {
+            subject: `LuzMágica — Pedido ${order.ref}: ${label}`,
+            title: `Tu pedido avanzó a: ${label}`,
+            detail: order.tracking_number
+                ? `Transportadora: ${order.carrier ?? "por definir"} • Guía: ${order.tracking_number}`
+                : "Puedes seguir el estado en la página de rastreo.",
+        };
+    } else if (trackingNumber) {
+        email = {
+            subject: `LuzMágica — Pedido ${order.ref}: guía registrada`,
+            title: "Tu pedido ya tiene guía de despacho",
+            detail: `Transportadora: ${order.carrier ?? "por definir"} • Guía: ${order.tracking_number}`,
+        };
+    }
+    if (email) {
+        const sent = await sendOrderStatusEmail(order, email.subject, email.title, email.detail);
+        if (!sent.ok) {
+            console.error(`order status email failed (${order.ref}): ${sent.error}`);
+        }
+    }
+
     return NextResponse.json({ ok: true });
 }

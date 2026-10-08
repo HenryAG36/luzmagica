@@ -19,6 +19,11 @@ const footerLinks = {
         { label: "Seguimiento y Soporte", href: "/tracking" },
         { label: "Portal del Operador (Admin)", href: "/operator" },
     ],
+    legal: [
+        { label: "Términos y Condiciones", href: "/legal/terminos" },
+        { label: "Devoluciones y Retracto", href: "/legal/devoluciones" },
+        { label: "Política de Privacidad", href: "/legal/privacidad" },
+    ],
 };
 
 export default function Footer() {
@@ -153,9 +158,16 @@ export default function Footer() {
                 {/* Bottom Copyright */}
                 <div className="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between text-[11px] text-muted gap-2">
                     <p>© 2026 LuzMágica Colombia. Arquitectura de Comercio & Retención de Audiencia.</p>
-                    <Link href="/operator" className="text-primary hover:underline">
-                        Acceso Operador
-                    </Link>
+                    <div className="flex items-center gap-4">
+                        {footerLinks.legal.map((link) => (
+                            <Link key={link.href} href={link.href} className="hover:text-white transition-colors">
+                                {link.label}
+                            </Link>
+                        ))}
+                        <Link href="/operator" className="text-primary hover:underline">
+                            Acceso Operador
+                        </Link>
+                    </div>
                 </div>
             </div>
         </footer>

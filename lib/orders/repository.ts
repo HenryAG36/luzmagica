@@ -7,11 +7,19 @@ import type {
     OrderItemRow,
     OrderPricing,
     OrderRow,
+    ProductReviewRow,
     PublicOrder,
     PublicOrderEvent,
+    PublicReview,
 } from "./types.ts";
 import { FULFILLMENT_STATUS_LABELS } from "./types.ts";
 import { normalizePhone } from "./validate.ts";
+import {
+    awardPointsForOrder,
+    redeemPointsForOrder,
+    restorePointsForOrder,
+    POINT_VALUE_COP,
+} from "../loyalty/service.ts";
 
 async function serviceClient(provided?: SupabaseClientLike) {
     if (provided) return provided;
@@ -51,6 +59,7 @@ export async function createPendingOrder(
     customer: OrderCustomer,
     pricing: OrderPricing,
     consentAt: string,
+    loyalty?: { userId: string; points: number } | null,
     provided?: SupabaseClientLike
 ): Promise<CreateOrderResult | { error: string }> {
     const service = await serviceClient(provided);
@@ -66,7 +75,11 @@ export async function createPendingOrder(
         .eq("payment_status", "pending_payment")
         .gt("created_at", windowStart);
     const existing = ((dupes as OrderRow[] | null) ?? [])[0];
-    if (existing) return { ok: true, order: existing, reused: true };
+    // Reuse only when the recomputed totals still match — a different
+    // discount/points request must produce a new order.
+    if (existing && existing.total_cop === pricing.totalCop && existing.subtotal_cop === pricing.subtotalCop) {
+        return { ok: true, order: existing, reused: true };
+    }
 
     const lookupToken = randomBytes(32).toString("hex");
     const now = new Date().toISOString();
@@ -87,9 +100,12 @@ export async function createPendingOrder(
             department: customer.department,
             notes: customer.notes,
             subtotal_cop: pricing.subtotalCop,
-            discount_cop: pricing.discountCop,
+            discount_cop: pricing.discountCop + (loyalty ? loyalty.points * POINT_VALUE_COP : 0),
             shipping_cop: pricing.shippingCop,
-            total_cop: pricing.totalCop,
+            total_cop: Math.max(
+                0,
+                pricing.totalCop - (loyalty ? loyalty.points * POINT_VALUE_COP : 0)
+            ),
             coupon_code: pricing.couponCode,
             payment_status: "pending_payment",
             fulfillment_status: "awaiting_payment",
@@ -128,6 +144,29 @@ export async function createPendingOrder(
         "Pedido creado",
         "Pedido registrado; esperando confirmación del pago."
     );
+
+    if (loyalty && loyalty.points > 0) {
+        const redeemed = await redeemPointsForOrder(loyalty.userId, order.id, loyalty.points, service);
+        if ("error" in redeemed) {
+            await service
+                .from("orders")
+                .update({
+                    payment_status: "cancelled",
+                    fulfillment_status: "cancelled",
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", order.id);
+            return { error: redeemed.error === "insufficient points" ? "Puntos insuficientes." : "No se pudieron canjear los puntos; intenta de nuevo." };
+        }
+        await insertOrderEvent(
+            service,
+            order.id,
+            "payment",
+            "pending_payment",
+            "Puntos canjeados",
+            `${loyalty.points} LuzPoints aplicados como descuento.`
+        );
+    }
 
     return { ok: true, order, reused: false };
 }
@@ -315,6 +354,10 @@ export async function applyWompiEvent(
         const items = await loadOrderItems(service, order.id);
         await decrementStock(service, items);
         await recordMarker(order.id);
+        const awarded = await awardPointsForOrder({ ...order, payment_status: "paid" }, service);
+        if ("error" in awarded) {
+            console.error(`loyalty award failed (${order.ref}): ${awarded.error}`);
+        }
         return { ok: true, outcome: "paid", paidOrder: { order, items } };
     }
 
@@ -334,6 +377,10 @@ export async function applyWompiEvent(
             "La transacción fue rechazada o expiró."
         );
         await recordMarker(order.id);
+        const restored = await restorePointsForOrder(order.id, service);
+        if ("error" in restored) {
+            console.error(`loyalty restore failed (${order.ref}): ${restored.error}`);
+        }
         return { ok: true, outcome: "failed" };
     }
 
@@ -346,7 +393,8 @@ export async function applyWompiEvent(
 export function toPublicOrder(
     order: OrderRow,
     items: OrderItemRow[],
-    events: OrderEventRow[]
+    events: OrderEventRow[],
+    reviewedProductIds: Set<string> = new Set()
 ): PublicOrder {
     return {
         ref: order.ref,
@@ -354,6 +402,9 @@ export function toPublicOrder(
         city: order.city,
         paymentStatus: order.payment_status,
         fulfillmentStatus: order.fulfillment_status,
+        reviewedProductIds: items
+            .map((i) => i.product_id)
+            .filter((pid) => reviewedProductIds.has(pid)),
         items: items.map((i) => ({
             productId: i.product_id,
             name: i.name,
@@ -390,6 +441,37 @@ async function loadItemsFor(service: SupabaseClientLike, orderIds: string[]): Pr
     return (data as OrderItemRow[] | null) ?? [];
 }
 
+// Customers may enter +57/country-code variants — compare the last
+// 10 digits (Colombian mobile length) when both sides have them.
+export function orderMatchesContact(order: OrderRow, contact: string): boolean {
+    if (contact.includes("@")) {
+        return order.customer_email.toLowerCase() === contact.trim().toLowerCase();
+    }
+    const stored = normalizePhone(order.customer_phone);
+    const entered = normalizePhone(contact);
+    return (
+        stored === entered ||
+        (stored.length >= 10 && entered.length >= 10 && stored.slice(-10) === entered.slice(-10))
+    );
+}
+
+async function loadReviewedProductIds(
+    service: SupabaseClientLike,
+    orderIds: string[]
+): Promise<Map<string, Set<string>>> {
+    const map = new Map<string, Set<string>>();
+    if (orderIds.length === 0) return map;
+    const { data } = await service
+        .from("product_reviews")
+        .select("order_id,product_id")
+        .in("order_id", orderIds);
+    for (const row of (data as Pick<ProductReviewRow, "order_id" | "product_id">[] | null) ?? []) {
+        if (!map.has(row.order_id)) map.set(row.order_id, new Set());
+        map.get(row.order_id)!.add(row.product_id);
+    }
+    return map;
+}
+
 // Non-enumerating: wrong ref and wrong contact produce the same null result.
 export async function lookupForGuest(
     ref: string,
@@ -402,27 +484,14 @@ export async function lookupForGuest(
     const { data } = await service.from("orders").select("*").eq("ref", ref).maybeSingle();
     const order = (data as OrderRow | null) ?? null;
     if (!order) return null;
+    if (!orderMatchesContact(order, contact)) return null;
 
-    const isEmail = contact.includes("@");
-    let matches: boolean;
-    if (isEmail) {
-        matches = order.customer_email.toLowerCase() === contact.trim().toLowerCase();
-    } else {
-        // Customers may enter +57/country-code variants — compare the last
-        // 10 digits (Colombian mobile length) when both sides have them.
-        const stored = normalizePhone(order.customer_phone);
-        const entered = normalizePhone(contact);
-        matches =
-            stored === entered ||
-            (stored.length >= 10 && entered.length >= 10 && stored.slice(-10) === entered.slice(-10));
-    }
-    if (!matches) return null;
-
-    const [items, events] = await Promise.all([
+    const [items, events, reviewed] = await Promise.all([
         loadOrderItems(service, order.id),
         loadEvents(service, [order.id]),
+        loadReviewedProductIds(service, [order.id]),
     ]);
-    return toPublicOrder(order, items, events);
+    return toPublicOrder(order, items, events, reviewed.get(order.id) ?? new Set());
 }
 
 export async function lookupByToken(
@@ -440,11 +509,12 @@ export async function lookupByToken(
         .maybeSingle();
     const order = (data as OrderRow | null) ?? null;
     if (!order) return null;
-    const [items, events] = await Promise.all([
+    const [items, events, reviewed] = await Promise.all([
         loadOrderItems(service, order.id),
         loadEvents(service, [order.id]),
+        loadReviewedProductIds(service, [order.id]),
     ]);
-    return toPublicOrder(order, items, events);
+    return toPublicOrder(order, items, events, reviewed.get(order.id) ?? new Set());
 }
 
 export async function listOrdersByEmail(
@@ -460,15 +530,17 @@ export async function listOrdersByEmail(
         .order("created_at");
     const orders = ((data as OrderRow[] | null) ?? []).reverse();
     const ids = orders.map((o) => o.id);
-    const [items, events] = await Promise.all([
+    const [items, events, reviewed] = await Promise.all([
         loadItemsFor(service, ids),
         loadEvents(service, ids),
+        loadReviewedProductIds(service, ids),
     ]);
     return orders.map((o) =>
         toPublicOrder(
             o,
             items.filter((i) => i.order_id === o.id),
-            events.filter((e) => e.order_id === o.id)
+            events.filter((e) => e.order_id === o.id),
+            reviewed.get(o.id) ?? new Set()
         )
     );
 }
@@ -594,7 +666,7 @@ export async function updateOrderAdmin(
         expectedUpdatedAt?: string;
     },
     provided?: SupabaseClientLike
-): Promise<{ ok: true } | { error: string }> {
+): Promise<{ ok: true; order: OrderRow } | { error: string }> {
     const service = await serviceClient(provided);
     if (!service) return { error: "service unavailable" };
 
@@ -623,7 +695,11 @@ export async function updateOrderAdmin(
             return { error: "order changed during edit; reload and retry" };
         }
         await insertOrderEvent(service, id, "payment", "cancelled", "Pedido cancelado", "El pedido fue cancelado por el operador.");
-        return { ok: true };
+        const restored = await restorePointsForOrder(id, service);
+        if ("error" in restored) {
+            console.error(`loyalty restore failed (${order.ref}): ${restored.error}`);
+        }
+        return { ok: true, order: { ...order, payment_status: "cancelled", fulfillment_status: "cancelled" } };
     }
 
     if (action === "refund") {
@@ -646,7 +722,11 @@ export async function updateOrderAdmin(
             "Pago reembolsado",
             "El reembolso fue registrado por el operador tras procesarlo en la pasarela."
         );
-        return { ok: true };
+        const restored = await restorePointsForOrder(id, service);
+        if ("error" in restored) {
+            console.error(`loyalty restore failed (${order.ref}): ${restored.error}`);
+        }
+        return { ok: true, order: { ...order, payment_status: "refunded", fulfillment_status: "cancelled" } };
     }
 
     if (order.payment_status === "cancelled" || order.payment_status === "refunded") {
@@ -665,7 +745,7 @@ export async function updateOrderAdmin(
     }
     if (input.trackingNumber !== undefined) fields.tracking_number = input.trackingNumber;
     if (input.carrier !== undefined) fields.carrier = input.carrier;
-    if (Object.keys(fields).length === 0) return { ok: true };
+    if (Object.keys(fields).length === 0) return { ok: true, order };
 
     const { data: updated, error } = await service
         .from("orders")
@@ -698,6 +778,169 @@ export async function updateOrderAdmin(
             "Guía registrada",
             `${input.carrier ?? "Transportadora"}: ${input.trackingNumber}`
         );
+    }
+    return { ok: true, order: { ...order, ...fields } as OrderRow };
+}
+
+// ---------- reviews ----------
+
+function maskReviewerName(fullName: string): string {
+    const first = fullName.trim().split(/\s+/)[0] ?? "";
+    if (first.length <= 2) return `${first.charAt(0)}.`;
+    return `${first.slice(0, 3)}***`;
+}
+
+// Review submission is verified against the order itself: either the
+// unguessable lookup token (checkout confirmation) or ref + contact (same
+// gate as guest tracking). Only delivered orders can be reviewed, and the
+// unique (order_id, product_id) constraint blocks duplicates.
+export async function submitOrderReview(
+    input: {
+        ref: string;
+        token?: string | null;
+        contact?: string | null;
+        productId: string;
+        rating: number;
+        comment: string;
+    },
+    provided?: SupabaseClientLike
+): Promise<{ ok: true } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+
+    if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
+        return { error: "invalid rating" };
+    }
+    const comment = input.comment.trim();
+    if (comment.length === 0 || comment.length > 1000) {
+        return { error: "invalid comment" };
+    }
+
+    const { data } = await service
+        .from("orders")
+        .select("*")
+        .eq("ref", input.ref.trim().toUpperCase())
+        .maybeSingle();
+    const order = (data as OrderRow | null) ?? null;
+    if (!order) return { error: "order not found" };
+
+    const tokenOk =
+        typeof input.token === "string" &&
+        input.token.length === order.lookup_token.length &&
+        input.token === order.lookup_token;
+    const contactOk =
+        typeof input.contact === "string" && orderMatchesContact(order, input.contact);
+    if (!tokenOk && !contactOk) return { error: "order not found" };
+
+    if (order.fulfillment_status !== "delivered") {
+        return { error: "only delivered orders can be reviewed" };
+    }
+
+    const items = await loadOrderItems(service, order.id);
+    if (!items.some((i) => i.product_id === input.productId)) {
+        return { error: "product not in this order" };
+    }
+
+    const { error } = await service.from("product_reviews").insert({
+        product_id: input.productId,
+        order_id: order.id,
+        rating: input.rating,
+        comment,
+        reviewer_name: order.customer_name,
+        status: "pending",
+    });
+    if (error) {
+        if (error.code === "23505" || /duplicate|unique/i.test(error.message)) {
+            return { error: "already reviewed" };
+        }
+        return { error: error.message };
+    }
+    return { ok: true };
+}
+
+export async function listApprovedReviewsForProduct(
+    productId: string,
+    provided?: SupabaseClientLike
+): Promise<PublicReview[]> {
+    const service = await serviceClient(provided);
+    if (!service) return [];
+    const { data } = await service
+        .from("product_reviews")
+        .select("rating,comment,reviewer_name,created_at")
+        .eq("product_id", productId)
+        .eq("status", "approved")
+        .order("created_at");
+    const rows = (data as Pick<ProductReviewRow, "rating" | "comment" | "reviewer_name" | "created_at">[] | null) ?? [];
+    return rows
+        .slice()
+        .reverse()
+        .map((r) => ({
+            rating: r.rating,
+            comment: r.comment,
+            reviewerName: maskReviewerName(r.reviewer_name ?? ""),
+            createdAt: r.created_at,
+        }));
+}
+
+export interface AdminReviewRow extends ProductReviewRow {
+    product_name: string | null;
+    order_ref: string | null;
+}
+
+export async function listReviewsForAdmin(
+    status: "pending" | "approved" | "rejected" | undefined,
+    provided?: SupabaseClientLike
+): Promise<{ reviews: AdminReviewRow[] } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+
+    let query = service.from("product_reviews").select("*").order("created_at").limit(100);
+    if (status) query = query.eq("status", status);
+    const { data, error } = await query;
+    if (error) return { error: error.message };
+    const reviews = ((data as ProductReviewRow[] | null) ?? []).reverse();
+
+    const productIds = [...new Set(reviews.map((r) => r.product_id))];
+    const orderIds = [...new Set(reviews.map((r) => r.order_id))];
+    const [{ data: products }, { data: orderRows }] = await Promise.all([
+        productIds.length
+            ? service.from("catalog_products").select("id,name").in("id", productIds)
+            : Promise.resolve({ data: [] }),
+        orderIds.length
+            ? service.from("orders").select("id,ref").in("id", orderIds)
+            : Promise.resolve({ data: [] }),
+    ]);
+    const productById = new Map(
+        ((products as { id: string; name: string }[] | null) ?? []).map((p) => [p.id, p.name])
+    );
+    const refById = new Map(
+        ((orderRows as { id: string; ref: string }[] | null) ?? []).map((o) => [o.id, o.ref])
+    );
+    return {
+        reviews: reviews.map((r) => ({
+            ...r,
+            product_name: productById.get(r.product_id) ?? null,
+            order_ref: refById.get(r.order_id) ?? null,
+        })),
+    };
+}
+
+export async function moderateReview(
+    id: string,
+    status: "approved" | "rejected",
+    provided?: SupabaseClientLike
+): Promise<{ ok: true } | { error: string }> {
+    const service = await serviceClient(provided);
+    if (!service) return { error: "service unavailable" };
+    const { data, error } = await service
+        .from("product_reviews")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("id");
+    if (error) return { error: error.message };
+    if (((data as { id: string }[] | null) ?? []).length === 0) {
+        return { error: "review not found or already moderated" };
     }
     return { ok: true };
 }

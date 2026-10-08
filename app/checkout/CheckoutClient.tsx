@@ -33,8 +33,6 @@ export default function CheckoutClient() {
         discountPercent,
         applyCoupon,
         removeCoupon,
-        pointsRedeemed,
-        setPointsRedeemed,
         getSubtotal,
         getCouponDiscountCOP,
         getShippingBreakdown,
@@ -48,6 +46,10 @@ export default function CheckoutClient() {
     const [consent, setConsent] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
+    // Server-verified LuzPoints: balance comes from /api/loyalty/balance and
+    // the server re-validates + debits on order creation.
+    const [pointsBalance, setPointsBalance] = useState<number | null>(null);
+    const [pointsToUse, setPointsToUse] = useState(0);
 
     const recoverParam = searchParams.get("recover");
 
@@ -57,12 +59,19 @@ export default function CheckoutClient() {
         }
     }, [recoverParam, couponCode, applyCoupon]);
 
-    // LuzPoints balances live in browser state and cannot be verified
-    // server-side, so they never apply to a paid order. Reset any leftover
-    // selection so the displayed total matches what Wompi will charge.
     useEffect(() => {
-        if (pointsRedeemed > 0) setPointsRedeemed(0);
-    }, [pointsRedeemed, setPointsRedeemed]);
+        if (!currentUser) return;
+        let cancelled = false;
+        fetch("/api/loyalty/balance")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((body: { balance?: { points: number } } | null) => {
+                if (!cancelled) setPointsBalance(body?.balance?.points ?? null);
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser]);
 
     if (!mounted) {
         return (
@@ -99,11 +108,20 @@ export default function CheckoutClient() {
     const subtotal = getSubtotal();
     const couponDiscount = getCouponDiscountCOP();
     const breakdown = getShippingBreakdown();
-    const total = breakdown.total;
     const shippingProgress = getFreeShippingProgress();
     const dsPending = breakdown.dsPending;
     const dsPresent = breakdown.dsItemCount > 0;
     const cityIsBogota = /^\s*bogot/i.test(customerProfile.city || "");
+
+    // Display-side estimate only — the server re-caps against subtotal and
+    // the verified balance at order creation.
+    const maxRedeemable =
+        currentUser && pointsBalance !== null
+            ? Math.min(pointsBalance, Math.floor(subtotal / 10))
+            : 0;
+    const redeemablePoints = Math.min(pointsToUse, maxRedeemable);
+    const pointsDiscountCop = redeemablePoints * 10;
+    const total = breakdown.total === null ? null : Math.max(0, breakdown.total - pointsDiscountCop);
 
     const handleApplyCoupon = (e: React.FormEvent) => {
         e.preventDefault();
@@ -144,6 +162,7 @@ export default function CheckoutClient() {
                     },
                     couponCode,
                     consent: true,
+                    pointsToRedeem: redeemablePoints > 0 ? redeemablePoints : undefined,
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -211,8 +230,9 @@ export default function CheckoutClient() {
                             <Truck className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
                             <span>
                                 Este pedido incluye productos de proveedor internacional: el envío se cobra por unidad
-                                según la cotización estimada a Bogotá y no participa del envío gratis. Pedido estimado:
-                                no hay fulfillment automático ni verificación de destino{cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
+                                según la cotización estimada a Bogotá y no participa del envío gratis. Entrega estimada
+                                de 15–30 días hábiles tras el despacho del proveedor
+                                {cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
                             </span>
                         </div>
                     )}
@@ -464,6 +484,50 @@ export default function CheckoutClient() {
                                         )}
                                     </div>
 
+                                    {/* LuzPoints redemption (server-verified balance) */}
+                                    {currentUser && pointsBalance !== null && pointsBalance > 0 && (
+                                        <div className="mb-5 p-3 rounded-xl bg-surface border border-white/10">
+                                            <div className="flex items-center justify-between text-xs mb-2">
+                                                <span className="text-white font-semibold">LuzPoints</span>
+                                                <span className="text-muted">
+                                                    Saldo verificado: <span className="text-accent font-bold">{pointsBalance} pts</span>
+                                                </span>
+                                            </div>
+                                            {maxRedeemable === 0 ? (
+                                                <p className="text-[11px] text-muted">
+                                                    Este pedido no permite canje (subtotal insuficiente).
+                                                </p>
+                                            ) : (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        max={maxRedeemable}
+                                                        step={10}
+                                                        value={pointsToUse}
+                                                        onChange={(e) =>
+                                                            setPointsToUse(
+                                                                Math.max(
+                                                                    0,
+                                                                    Math.min(maxRedeemable, Math.floor(Number(e.target.value) || 0))
+                                                                )
+                                                            )
+                                                        }
+                                                        className="w-24 px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-xs text-white focus:outline-none focus:border-primary"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPointsToUse(maxRedeemable)}
+                                                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors"
+                                                    >
+                                                        Usar {maxRedeemable}
+                                                    </button>
+                                                    <span className="text-[11px] text-muted">= {formatCOP(pointsDiscountCop)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Financial Breakdown */}
                                     <div className="space-y-2.5 border-t border-white/10 pt-4 mb-5 text-xs">
                                         <div className="flex justify-between text-muted">
@@ -475,6 +539,13 @@ export default function CheckoutClient() {
                                             <div className="flex justify-between text-green-400">
                                                 <span>Descuento cupón ({couponCode})</span>
                                                 <span>-{formatCOP(couponDiscount)}</span>
+                                            </div>
+                                        )}
+
+                                        {pointsDiscountCop > 0 && (
+                                            <div className="flex justify-between text-green-400">
+                                                <span>LuzPoints ({redeemablePoints} pts)</span>
+                                                <span>-{formatCOP(pointsDiscountCop)}</span>
                                             </div>
                                         )}
 

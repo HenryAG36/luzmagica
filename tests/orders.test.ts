@@ -90,7 +90,7 @@ function pricingFor(overrides: Partial<OrderPricing> = {}): OrderPricing {
 }
 
 async function seedOrder(db: FakeDb, overrides: Partial<OrderRow> = {}): Promise<OrderRow> {
-    const created = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:00:00Z", db.asClient());
+    const created = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:00:00Z", null, db.asClient());
     assert.ok("ok" in created);
     const row = db.table("orders")[0] as unknown as OrderRow;
     Object.assign(row, overrides);
@@ -234,7 +234,7 @@ test("priceOrder rejects unpublished, out-of-stock, and unshipped international 
 
 test("createPendingOrder persists order, items, and creation event; dedupes retries", async () => {
     const db = new FakeDb();
-    const first = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:00:00Z", db.asClient());
+    const first = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:00:00Z", null, db.asClient());
     assert.ok("ok" in first && first.ok);
     if ("ok" in first) {
         assert.match(first.order.ref, /^LM-\d{6}$/);
@@ -248,7 +248,7 @@ test("createPendingOrder persists order, items, and creation event; dedupes retr
     assert.equal(item.unit_supplier_cost_cop, 30000);
     assert.equal(item.unit_price_cop, 50000);
 
-    const second = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:01:00Z", db.asClient());
+    const second = await createPendingOrder(CUSTOMER, pricingFor(), "2026-10-07T00:01:00Z", null, db.asClient());
     assert.ok("ok" in second && second.reused);
     assert.equal(db.table("orders").length, 1);
 });

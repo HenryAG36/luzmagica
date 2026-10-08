@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import {
     TrendingUp,
     RotateCcw,
-    MessageCircle,
     AlertCircle,
     Truck,
     DollarSign,
@@ -26,6 +25,7 @@ import FadeIn from "@/components/common/FadeIn";
 import TrendPanel from "@/components/operator/TrendPanel";
 import ProductsPanel from "@/components/operator/ProductsPanel";
 import OrdersPanel from "@/components/operator/OrdersPanel";
+import AbandonedPanel from "@/components/operator/AbandonedPanel";
 
 const emptySubscribe = () => () => {};
 
@@ -34,14 +34,10 @@ export default function OperatorClient() {
     const { currentUser, isAuthenticated, authReady, logout } = useAuthStore();
 
     const {
-        abandonedCarts,
         tasks,
         launchChecklist,
         toggleTask,
         toggleChecklistItem,
-        markCartRecovered,
-        markCartContacted,
-        generateWhatsAppRecoveryUrl,
     } = useOperatorStore();
     const { account } = useLoyaltyStore();
 
@@ -242,7 +238,7 @@ export default function OperatorClient() {
                             : "text-muted hover:text-white hover:bg-white/5"
                     }`}
                 >
-                    <span>Carritos Abandonados ({abandonedCarts.filter((c) => c.status === "pending").length})</span>
+                    <span>Checkouts Abandonados</span>
                 </button>
                 <button
                     onClick={() => setActiveTab("checklist")}
@@ -484,15 +480,7 @@ export default function OperatorClient() {
 
                                             {task.type === "whatsapp_recovery" && (
                                                 <button
-                                                    onClick={() => {
-                                                        const cart = abandonedCarts[0];
-                                                        if (cart) {
-                                                            const url = generateWhatsAppRecoveryUrl(cart);
-                                                            if (url) window.open(url, "_blank");
-                                                            markCartContacted(cart.id);
-                                                            toggleTask(task.id);
-                                                        }
-                                                    }}
+                                                    onClick={() => setActiveTab("abandoned")}
                                                     className="px-3 py-1.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
                                                 >
                                                     <Send className="w-3 h-3" />
@@ -523,93 +511,8 @@ export default function OperatorClient() {
             {/* TAB: ORDERS / DROPSHIP DISPATCH */}
             {activeTab === "orders" && <OrdersPanel />}
 
-            {/* TAB: ABANDONED CARTS */}
-            {activeTab === "abandoned" && (
-                <div className="space-y-6">
-                    <div>
-                        <h3 className="font-heading text-xl font-bold text-white">
-                            Recuperación de Carritos Exit-Intent (Marketing Engine 2)
-                        </h3>
-                        <p className="text-xs text-muted">
-                            Visitantes que agregaron productos al carrito y salieron. Recupera ventas al instante por WhatsApp con 1 clic.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {abandonedCarts.map((cart) => (
-                            <div
-                                key={cart.id}
-                                className="p-5 rounded-2xl bg-surface-card border border-white/10 flex flex-col justify-between"
-                            >
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-bold text-white text-sm">
-                                            {cart.customerName || "Cliente Potencial"}
-                                        </span>
-                                        <span
-                                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                                                cart.status === "recovered"
-                                                    ? "bg-green-500/20 text-green-300"
-                                                    : "bg-amber-500/20 text-amber-300"
-                                            }`}
-                                        >
-                                            {cart.status === "recovered" ? "Recuperado" : "Pendiente"}
-                                        </span>
-                                    </div>
-
-                                    <div className="text-xs text-muted mb-3">
-                                        {cart.customerPhone && <span>📱 {cart.customerPhone} • </span>}
-                                        <span>{cart.createdAt}</span>
-                                    </div>
-
-                                    <div className="p-3 rounded-xl bg-surface border border-white/5 space-y-1 mb-4 text-xs">
-                                        {cart.items.map((i) => (
-                                            <div key={i.product.id} className="flex justify-between text-muted">
-                                                <span>{i.product.name} (x{i.quantity})</span>
-                                                <span className="text-white font-medium">{formatCOP(i.product.price * i.quantity)}</span>
-                                            </div>
-                                        ))}
-                                        <div className="pt-2 border-t border-white/10 flex justify-between font-bold text-white text-xs">
-                                            <span>Valor Total:</span>
-                                            <span className="text-accent">{formatCOP(cart.total)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    {cart.status !== "recovered" && (
-                                        <button
-                                            onClick={() => {
-                                                const url = generateWhatsAppRecoveryUrl(cart);
-                                                if (url) window.open(url, "_blank");
-                                                markCartContacted(cart.id);
-                                            }}
-                                            className="w-full py-2.5 px-4 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                                        >
-                                            <MessageCircle className="w-4 h-4" />
-                                            <span>Recuperar por WhatsApp con Cupón {cart.recoveryCode}</span>
-                                        </button>
-                                    )}
-
-                                    <div className="flex items-center justify-between text-[11px] text-muted pt-2 border-t border-white/5">
-                                        <span>
-                                            {cart.lastContactedAt ? `Contactado: ${cart.lastContactedAt}` : "Sin contactar"}
-                                        </span>
-                                        {cart.status !== "recovered" && (
-                                            <button
-                                                onClick={() => markCartRecovered(cart.id)}
-                                                className="text-primary hover:underline"
-                                            >
-                                                Marcar como recuperado
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            {/* TAB: ABANDONED CHECKOUTS */}
+            {activeTab === "abandoned" && <AbandonedPanel />}
 
             {/* TAB: CHECKLIST */}
             {activeTab === "checklist" && (

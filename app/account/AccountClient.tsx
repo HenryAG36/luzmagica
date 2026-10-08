@@ -23,8 +23,9 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useCartStore } from "@/store/useCartStore";
 import { formatCOP } from "@/lib/utils";
+import { TIER_THRESHOLDS } from "@/lib/loyalty";
 import FadeIn from "@/components/common/FadeIn";
-import type { Product } from "@/lib/types";
+import type { LoyaltyTier, Product } from "@/lib/types";
 import { FULFILLMENT_STATUS_LABELS, type PublicOrder } from "@/lib/orders/types";
 
 const emptySubscribe = () => () => {};
@@ -49,10 +50,22 @@ export default function AccountClient() {
     const [reorderSuccessId, setReorderSuccessId] = useState<string | null>(null);
     const [customerOrders, setCustomerOrders] = useState<PublicOrder[] | null>(null);
     const [ordersError, setOrdersError] = useState(false);
+    const [serverBalance, setServerBalance] = useState<{
+        points: number;
+        lifetimePoints: number;
+        tier: LoyaltyTier;
+    } | null>(null);
 
     useEffect(() => {
         if (!currentUser) return;
         let cancelled = false;
+        fetch("/api/loyalty/balance")
+            .then(async (res) => {
+                if (!res.ok) return;
+                const body = await res.json();
+                if (!cancelled && body.balance) setServerBalance(body.balance);
+            })
+            .catch(() => {});
         fetch("/api/orders/mine")
             .then(async (res) => {
                 if (!res.ok) throw new Error("fetch failed");
@@ -101,7 +114,22 @@ export default function AccountClient() {
         );
     }
 
-    const { currentTier, progressPercent } = getTierProgress();
+    const browserProgress = getTierProgress();
+    // Server balance (earned through verified payments) takes precedence;
+    // the browser store is only a fallback for display.
+    const lifetimePoints = serverBalance?.lifetimePoints ?? account.lifetimePoints;
+    const currentTier = serverBalance?.tier ?? browserProgress.currentTier;
+    const displayPoints = serverBalance?.points ?? account.points;
+    const progressPercent =
+        serverBalance !== null
+            ? lifetimePoints >= TIER_THRESHOLDS.galactico
+                ? 100
+                : lifetimePoints >= TIER_THRESHOLDS.oro
+                  ? Math.min(100, Math.round(((lifetimePoints - TIER_THRESHOLDS.oro) / (TIER_THRESHOLDS.galactico - TIER_THRESHOLDS.oro)) * 100))
+                  : lifetimePoints >= TIER_THRESHOLDS.plata
+                    ? Math.min(100, Math.round(((lifetimePoints - TIER_THRESHOLDS.plata) / (TIER_THRESHOLDS.oro - TIER_THRESHOLDS.plata)) * 100))
+                    : Math.min(100, Math.round((lifetimePoints / TIER_THRESHOLDS.plata) * 100))
+            : browserProgress.progressPercent;
 
     const handleStartEdit = () => {
         setEditForm({
@@ -216,10 +244,10 @@ export default function AccountClient() {
 
                             <div className="flex items-baseline justify-between mb-4">
                                 <span className="font-heading text-3xl font-extrabold text-white">
-                                    {account.points.toLocaleString()} <span className="text-sm font-normal text-primary">pts</span>
+                                    {displayPoints.toLocaleString()} <span className="text-sm font-normal text-primary">pts</span>
                                 </span>
                                 <span className="text-sm font-bold text-green-400">
-                                    {formatCOP(account.points * 10)}
+                                    {formatCOP(displayPoints * 10)}
                                 </span>
                             </div>
 

@@ -79,11 +79,16 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
                             )}
                         </div>
                         {product.shippingQuoteRequired && (
-                            <p className="text-[10px] text-muted mt-1">
-                                {product.shippingEstimateCOP != null
-                                    ? `Total est. ${formatCOP(product.price + product.shippingEstimateCOP)} con envío${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""} (por unidad)`
-                                    : "envío internacional pendiente de cotización"}
-                            </p>
+                            <>
+                                <p className="text-[10px] text-muted mt-1">
+                                    {product.shippingEstimateCOP != null
+                                        ? `Total est. ${formatCOP(product.price + product.shippingEstimateCOP)} con envío${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""} (por unidad)`
+                                        : "envío internacional pendiente de cotización"}
+                                </p>
+                                <p className="text-[10px] text-amber-300/90 mt-0.5 font-medium">
+                                    Envío internacional: entrega estimada 15–30 días hábiles
+                                </p>
+                            </>
                         )}
                     </div>
                 </div>

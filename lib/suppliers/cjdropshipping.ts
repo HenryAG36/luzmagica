@@ -220,3 +220,133 @@ export async function getCjAccessToken(
 
     return { token: result.data.accessToken };
 }
+
+const VARIANT_PATH = "/product/variant";
+const CREATE_ORDER_PATH = "/shopping/order/createOrderV2";
+
+export interface CjVariant {
+    vid: string;
+    sku: string | null;
+}
+
+function normalizeCjVariants(raw: unknown): CjVariant[] | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (!Array.isArray(data)) return null;
+    const out: CjVariant[] = [];
+    for (const v of data) {
+        if (typeof v !== "object" || v === null) continue;
+        const vid = (v as Record<string, unknown>).vid;
+        if (typeof vid !== "string" || vid === "") continue;
+        const sku = (v as Record<string, unknown>).variantSku;
+        out.push({ vid, sku: typeof sku === "string" ? sku.slice(0, 120) : null });
+        if (out.length >= 50) break;
+    }
+    return out;
+}
+
+// Resolves the purchasable variant for a CJ product. Only unambiguous
+// single-variant products can be auto-fulfilled; anything else needs the
+// operator to fix the supplier_variant snapshot.
+export async function fetchCjVariants(
+    accessToken: string,
+    productId: string,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjVariant[]>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${VARIANT_PATH}?pid=${encodeURIComponent(productId)}&countryCode=CO`,
+        { method: "GET", headers: { "CJ-Access-Token": accessToken } },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const variants = normalizeCjVariants(res.data);
+    if (!variants) return { ok: false, error: "variant response malformed" };
+    return { ok: true, data: variants };
+}
+
+export interface CjOrderResult {
+    orderId: string | null;
+    orderNumber: string | null;
+}
+
+function normalizeCjOrderCreate(raw: unknown): CjOrderResult | null {
+    if (typeof raw !== "object" || raw === null) return null;
+    const body = raw as Record<string, unknown>;
+    if (Number(body.code) !== 200 || body.result !== true) return null;
+    const data = body.data;
+    if (typeof data !== "object" || data === null) return { orderId: null, orderNumber: null };
+    const d = data as Record<string, unknown>;
+    const orderId = d.orderId;
+    const orderNumber = d.orderNumber;
+    return {
+        orderId: typeof orderId === "string" && orderId !== "" ? orderId : null,
+        orderNumber: typeof orderNumber === "string" && orderNumber !== "" ? orderNumber : null,
+    };
+}
+
+export interface CjOrderSpec {
+    orderNumber: string;
+    customer: {
+        name: string;
+        email: string;
+        phone: string;
+        address: string;
+        city: string;
+        province: string;
+        zip: string;
+    };
+    products: { vid: string; quantity: number }[];
+}
+
+export async function createCjOrder(
+    accessToken: string,
+    spec: CjOrderSpec,
+    fetchImpl?: FetchLike,
+    deadlineMs?: number
+): Promise<CjResult<CjOrderResult>> {
+    const res = await cjFetch<unknown>(
+        `${CJ_API_BASE}${CREATE_ORDER_PATH}`,
+        {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+                orderNumber: spec.orderNumber,
+                shippingName: spec.customer.name,
+                shippingPhone: spec.customer.phone,
+                shippingAddress: spec.customer.address,
+                shippingCountryCode: "CO",
+                shippingCountry: "Colombia",
+                shippingProvince: spec.customer.province,
+                shippingCity: spec.customer.city,
+                shippingZip: spec.customer.zip,
+                email: spec.customer.email,
+                products: spec.products.map((p) => ({
+                    vid: p.vid,
+                    quantity: p.quantity,
+                    storeLineItemId: spec.orderNumber,
+                })),
+            }),
+        },
+        deadlineMs,
+        fetchImpl
+    );
+    if (!res.ok) {
+        return { ok: false, error: res.error || `http ${res.status}`, deferSeconds: res.deferSeconds };
+    }
+    const responseError = getCjResponseError(res.data);
+    if (responseError) return { ok: false, error: responseError };
+    const parsed = normalizeCjOrderCreate(res.data);
+    if (!parsed) return { ok: false, error: "order response malformed" };
+    return { ok: true, data: parsed };
+}
