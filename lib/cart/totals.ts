@@ -3,6 +3,14 @@ import { grantsFreeShipping } from "./coupons.ts";
 
 export const FREE_SHIPPING_THRESHOLD = 150000;
 export const LEGACY_SHIPPING_COST = 15000;
+export const MAX_CART_ITEM_QTY = 20; // server cap for order items
+
+// Per-item quantity ceiling: stock-bound and capped at the server's max.
+// Returns 0 when the product cannot be added at all.
+export function itemQuantityCap(stock: number): number {
+    if (!Number.isFinite(stock)) return 0;
+    return Math.min(Math.max(0, Math.floor(stock)), MAX_CART_ITEM_QTY);
+}
 
 export interface CartTotals {
     subtotal: number;

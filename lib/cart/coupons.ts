@@ -9,10 +9,14 @@ export interface CouponRule {
 }
 
 export const COUPONS: Record<string, CouponRule> = {
+    HONEST10: { percent: 10 },
+    VUELVE10: { percent: 10 },
+    HONESTVIP15: { percent: 15 },
+    ENVIOGRATIS: { percent: 0, freeShipping: true },
+    // Hidden legacy aliases — persisted carts and older links keep the same rates.
     MAGIA10: { percent: 10 },
     RETORNO10: { percent: 10 },
     LUZVIP15: { percent: 15 },
-    ENVIOGRATIS: { percent: 0, freeShipping: true },
 };
 
 export function normalizeCouponCode(code: unknown): string | null {

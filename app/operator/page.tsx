@@ -6,7 +6,7 @@ import { getVerifiedAdmin } from "@/lib/auth/server";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-    title: "Command Center del Operador | LuzMágica",
+    title: "Command Center del Operador | Honesty",
     description: "Panel de control diario, métricas de retención de audiencia, gestión de despachos dropshipping y recuperación de carritos.",
 };
 

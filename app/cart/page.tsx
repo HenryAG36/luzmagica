@@ -1,11 +1,15 @@
 import { Metadata } from "next";
 import CartClient from "./CartClient";
+import { listPublishedProducts } from "@/lib/catalog/repository";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-    title: "Carrito | LuzMágica",
-    description: "Revisa tu carrito de compras en LuzMágica.",
+    title: "Carrito | Honesty",
+    description: "Revisa tu carrito de compras en Honesty.",
 };
 
-export default function CartPage() {
-    return <CartClient />;
+export default async function CartPage() {
+    const products = await listPublishedProducts();
+    return <CartClient catalogProducts={products} />;
 }

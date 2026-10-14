@@ -37,7 +37,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: priced.error }, { status: 400 });
     }
 
-    // LuzPoints redemption requires a verified session and a real balance —
+    // Puntos Honesty redemption requires a verified session and a real balance —
     // browser-side points are never trusted. The points are debited inside
     // createPendingOrder so a failed order never consumes them.
     let loyalty: { userId: string; points: number } | null = null;
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
             .map((i) => `${i.name} x${i.quantity}`)
             .join(", ");
         const link = await createPaymentLink({
-            name: `Pedido ${order.ref} — LuzMágica`,
+            name: `Pedido ${order.ref} — Honesty`,
             description: `Productos: ${itemsSummary}`,
             amountInCents: order.total_cop * 100,
             redirectUrl,

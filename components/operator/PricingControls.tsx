@@ -21,7 +21,7 @@ export interface PricingFieldsState {
 }
 
 const inputClass =
-    "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white placeholder-muted focus:outline-none focus:border-primary";
+    "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
 
 export default function PricingControls({
     value,
@@ -80,8 +80,8 @@ export default function PricingControls({
     };
 
     return (
-        <div className="rounded-xl border border-white/10 p-3 space-y-3">
-            <p className="text-[11px] font-semibold text-white">Costos, envío y precio</p>
+        <div className="rounded-xl border border-black/10 p-3 space-y-3">
+            <p className="text-[11px] font-semibold text-foreground">Costos, envío y precio</p>
 
             {listingPrice != null && (
                 <p className="text-[10px] text-muted">
@@ -92,7 +92,7 @@ export default function PricingControls({
                             <button
                                 type="button"
                                 onClick={() => onChange({ supplierCostCop: String(listingCostCop) })}
-                                className="text-primary hover:underline"
+                                className="text-accent-dark hover:underline"
                             >
                                 Usar precio de lista como costo (confirmado)
                             </button>
@@ -134,7 +134,7 @@ export default function PricingControls({
                         className={inputClass}
                     />
                     {taxesInvalid && (
-                        <p className="text-[10px] text-red-300 mt-1">Valor inválido: no hay sugerencia.</p>
+                        <p className="text-[10px] text-danger mt-1">Valor inválido: no hay sugerencia.</p>
                     )}
                 </div>
                 <div>
@@ -150,7 +150,7 @@ export default function PricingControls({
                         className={inputClass}
                     />
                     {paymentInvalid && (
-                        <p className="text-[10px] text-red-300 mt-1">Valor inválido (0–20): no hay sugerencia.</p>
+                        <p className="text-[10px] text-danger mt-1">Valor inválido (0–20): no hay sugerencia.</p>
                     )}
                 </div>
             </div>
@@ -182,7 +182,7 @@ export default function PricingControls({
                     <button
                         type="button"
                         onClick={applySuggestion}
-                        className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary text-xs font-semibold transition-colors"
+                        className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold transition-colors"
                     >
                         Aplicar sugerencia a precio y envío al cliente
                     </button>
@@ -212,7 +212,7 @@ export default function PricingControls({
                                 shippingCheckedAt: "",
                             })
                         }
-                        className="mt-1 text-[10px] text-primary hover:underline disabled:opacity-40"
+                        className="mt-1 text-[10px] text-accent-dark hover:underline disabled:opacity-40"
                     >
                         Usar el envío del proveedor como envío al cliente (sin recargo)
                     </button>
@@ -239,7 +239,7 @@ export default function PricingControls({
                 <button
                     type="button"
                     onClick={() => onChange({ shippingCheckedAt: new Date().toISOString() })}
-                    className="px-2.5 py-1 rounded-lg border border-white/10 bg-white/5 text-[10px] text-white hover:bg-white/10 transition-colors"
+                    className="px-2.5 py-1 rounded-lg border border-black/10 bg-black/5 text-[10px] text-foreground hover:bg-black/5 transition-colors"
                 >
                     Confirmar verificación ahora
                 </button>
@@ -249,7 +249,7 @@ export default function PricingControls({
             </p>
 
             {actualContribution !== null && (
-                <p className={`text-[10px] font-mono ${actualContribution >= 0 ? "text-green-400" : "text-red-400"}`}>
+                <p className={`text-[10px] font-mono ${actualContribution >= 0 ? "text-success" : "text-danger"}`}>
                     Diferencia producto/costo: {formatCOP(actualContribution)} (no incluye saldo de envío,
                     impuestos ni comisiones).
                 </p>

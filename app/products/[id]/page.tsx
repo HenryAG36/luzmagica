@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: Props) {
     if (!product) return { title: "Producto no encontrado" };
 
     return {
-        title: `${product.name} | LuzMágica`,
+        title: `${product.name} | Honesty`,
         description: product.description,
     };
 }
@@ -25,7 +25,7 @@ export default async function ProductDetailPage({ params }: Props) {
 
     if (!product) notFound();
 
-    const related = await listPublishedRelated(product.room, product.id);
+    const related = await listPublishedRelated(product.category, product.id);
 
     return <ProductDetailClient product={product} related={related} />;
 }

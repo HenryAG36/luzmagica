@@ -18,9 +18,9 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
-    draft: { label: "Borrador", className: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    published: { label: "Publicado", className: "bg-green-500/15 text-green-300 border-green-500/30" },
-    archived: { label: "Retirado", className: "bg-white/10 text-muted border-white/10" },
+    draft: { label: "Borrador", className: "bg-amber-500/15 text-warning border-warning/30" },
+    published: { label: "Publicado", className: "bg-green-500/15 text-success border-success/30" },
+    archived: { label: "Retirado", className: "bg-black/5 text-muted border-black/10" },
 };
 
 const PAGE = 100;
@@ -102,7 +102,7 @@ function listingCostCop(row: CatalogRow, form: ManageForm): number | null {
 }
 
 const inputClass =
-    "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white placeholder-muted focus:outline-none focus:border-primary";
+    "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
 
 export default function ProductsPanel() {
     const [products, setProducts] = useState<CatalogRow[]>([]);
@@ -210,8 +210,8 @@ export default function ProductsPanel() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h3 className="font-heading text-xl font-bold text-white flex items-center gap-2">
-                        <PackageSearch className="w-5 h-5 text-accent" />
+                    <h3 className="font-heading text-xl font-bold text-foreground flex items-center gap-2">
+                        <PackageSearch className="w-5 h-5 text-accent-dark" />
                         Productos del catálogo
                     </h3>
                     <p className="text-xs text-muted mt-1">
@@ -222,13 +222,13 @@ export default function ProductsPanel() {
             </div>
 
             {error && (
-                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-danger/30 text-red-200 text-xs flex items-center gap-2.5">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{error}</span>
                 </div>
             )}
             {notice && (
-                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-green-500/30 text-green-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-success/30 text-green-200 text-xs flex items-center gap-2.5">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{notice}</span>
                 </div>
@@ -247,7 +247,7 @@ export default function ProductsPanel() {
                             type="button"
                             disabled={loading || offset === 0}
                             onClick={() => void load(Math.max(0, offset - PAGE))}
-                            className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs hover:bg-white/10 disabled:opacity-40"
+                            className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-foreground text-xs hover:bg-black/5 disabled:opacity-40"
                         >
                             Anterior
                         </button>
@@ -255,7 +255,7 @@ export default function ProductsPanel() {
                             type="button"
                             disabled={loading || products.length < PAGE}
                             onClick={() => void load(offset + PAGE)}
-                            className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs hover:bg-white/10 disabled:opacity-40"
+                            className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-foreground text-xs hover:bg-black/5 disabled:opacity-40"
                         >
                             Siguiente
                         </button>
@@ -278,12 +278,12 @@ export default function ProductsPanel() {
                             return (
                                 <div
                                     key={row.id}
-                                    className="p-4 rounded-2xl bg-surface-card border border-white/10"
+                                    className="p-4 rounded-2xl bg-surface-card border border-black/10"
                                 >
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm font-semibold text-white truncate">
+                                                <span className="text-sm font-semibold text-foreground truncate">
                                                     {row.name}
                                                 </span>
                                                 <span
@@ -305,7 +305,7 @@ export default function ProductsPanel() {
                                                     href={row.source_url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="text-[11px] text-primary hover:underline flex items-center gap-1 mt-0.5"
+                                                    className="text-[11px] text-accent-dark hover:underline flex items-center gap-1 mt-0.5"
                                                 >
                                                     Ver en origen <ExternalLink className="w-3 h-3" />
                                                 </a>
@@ -319,7 +319,7 @@ export default function ProductsPanel() {
                                                     setEditingId(isEditing ? null : row.id);
                                                     setEditForm(isEditing ? null : seedForm(row));
                                                 }}
-                                                className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary text-xs font-semibold transition-colors"
+                                                className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold transition-colors"
                                             >
                                                 {isEditing ? "Cerrar" : "Editar"}
                                             </button>
@@ -328,7 +328,7 @@ export default function ProductsPanel() {
                                                     type="button"
                                                     onClick={() => setArchiveConfirmId(row.id)}
                                                     disabled={submitting}
-                                                    className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-muted hover:text-amber-300 text-xs transition-colors disabled:opacity-50"
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-warning/10 text-muted hover:text-warning text-xs transition-colors disabled:opacity-50"
                                                 >
                                                     Retirar del catálogo
                                                 </button>
@@ -337,8 +337,8 @@ export default function ProductsPanel() {
                                     </div>
 
                                     {archiveConfirmId === row.id && (
-                                        <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center gap-2">
-                                            <p className="text-[11px] text-amber-200 flex-1">
+                                        <div className="mt-3 p-3 rounded-xl border border-warning/30 bg-warning/10 flex flex-col sm:flex-row sm:items-center gap-2">
+                                            <p className="text-[11px] text-warning flex-1">
                                                 ¿Retirar &quot;{row.name}&quot;? Se oculta de la tienda sin
                                                 borrar el registro; puede republicarse después.
                                             </p>
@@ -354,7 +354,7 @@ export default function ProductsPanel() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setArchiveConfirmId(null)}
-                                                    className="px-3 py-1.5 rounded-xl bg-white/5 text-muted text-xs hover:bg-white/10"
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 text-muted text-xs hover:bg-black/5"
                                                 >
                                                     Cancelar
                                                 </button>
@@ -363,7 +363,7 @@ export default function ProductsPanel() {
                                     )}
 
                                     {isEditing && editForm && (
-                                        <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                                        <div className="mt-4 pt-4 border-t border-black/10 space-y-3">
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div>
                                                     <label className="text-[11px] text-muted block mb-1">Título *</label>
@@ -438,7 +438,7 @@ export default function ProductsPanel() {
                                                     type="button"
                                                     onClick={() => void handleSave(row)}
                                                     disabled={submitting}
-                                                    className="px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                                                    className="px-4 py-2.5 rounded-xl border border-black/10 bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold transition-colors disabled:opacity-50"
                                                 >
                                                     {submitting ? "Guardando..." : "Guardar cambios"}
                                                 </button>
@@ -453,7 +453,7 @@ export default function ProductsPanel() {
                                                     </button>
                                                 )}
                                                 {formError && (
-                                                    <p role="alert" className="text-xs text-red-300">
+                                                    <p role="alert" className="text-xs text-danger">
                                                         {formError}
                                                     </p>
                                                 )}

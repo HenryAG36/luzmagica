@@ -30,7 +30,7 @@ function orderEmailHtml(order: OrderRow, items: OrderItemRow[]): string {
         )
         .join("");
     return `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-    <h2 style="color:#6d28d9">LuzMágica — Pedido ${esc(order.ref)}</h2>
+    <h2 style="color:#765A32">Honesty — Pedido ${esc(order.ref)}</h2>
     <p>Hola ${esc(order.customer_name)}, tu pago fue confirmado. Este es el resumen de tu pedido:</p>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
     <p style="border-top:1px solid #eee;padding-top:8px">
@@ -48,7 +48,7 @@ function orderEmailHtml(order: OrderRow, items: OrderItemRow[]): string {
 
 function statusEmailHtml(order: OrderRow, title: string, detail: string): string {
     return `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-    <h2 style="color:#6d28d9">LuzMágica — Pedido ${esc(order.ref)}</h2>
+    <h2 style="color:#765A32">Honesty — Pedido ${esc(order.ref)}</h2>
     <p>Hola ${esc(order.customer_name)},</p>
     <p><strong>${esc(title)}</strong></p>
     <p>${esc(detail)}</p>
@@ -120,7 +120,7 @@ export async function sendOrderConfirmationEmail(
             body: JSON.stringify({
                 from: env.from,
                 to: [order.customer_email],
-                subject: `LuzMágica — Pedido ${order.ref} confirmado`,
+                subject: `Honesty — Pedido ${order.ref} confirmado`,
                 html: orderEmailHtml(order, items),
             }),
         });

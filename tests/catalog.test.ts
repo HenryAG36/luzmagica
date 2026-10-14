@@ -15,10 +15,12 @@ import { FakeDb } from "./fakeSupabase.ts";
 import type { FakeRow } from "./fakeSupabase.ts";
 import {
     archiveProduct,
+    attachReviewSummaries,
     listCatalogProducts,
     publishCatalogProduct,
     updateProduct,
 } from "../lib/catalog/repository.ts";
+import type { Product } from "../lib/types.ts";
 
 test("draft ids are deterministic per provider item for idempotent import", () => {
     assert.equal(buildDraftId("mercadolibre", "MCO123"), "imp-mercadolibre-MCO123");
@@ -448,4 +450,73 @@ test("publishCatalogProduct compares expectedUpdatedAt before writing", async ()
     );
     assert.deepEqual(ok, { ok: true });
     assert.equal(db.tables.catalog_products[0].status, "published");
+});
+
+function bareProduct(id: string): Product {
+    return { id, name: `P${id}` } as unknown as Product;
+}
+
+test("review summaries aggregate approved, valid ratings only", async () => {
+    const db = new FakeDb();
+    db.tables.product_reviews = [
+        { id: "r1", product_id: "p1", rating: 5, status: "approved" },
+        { id: "r2", product_id: "p1", rating: 3, status: "approved" },
+        { id: "r3", product_id: "p1", rating: 1, status: "pending" },
+        { id: "r4", product_id: "p1", rating: 5, status: "rejected" },
+        { id: "r5", product_id: "p1", rating: 0, status: "approved" },
+        { id: "r6", product_id: "p1", rating: 7, status: "approved" },
+        { id: "r7", product_id: "p1", rating: 2.5, status: "approved" },
+        { id: "r8", product_id: "p1", rating: "4", status: "approved" },
+        { id: "r9", product_id: "p2", rating: 4, status: "approved" },
+    ];
+    const out = await attachReviewSummaries(
+        [bareProduct("p1"), bareProduct("p2"), bareProduct("p3")],
+        db.asClient()
+    );
+    assert.equal(out[0].reviewsCount, 2);
+    assert.equal(out[0].reviewsAvg, 4);
+    assert.equal(out[1].reviewsCount, 1);
+    assert.equal(out[1].reviewsAvg, 4);
+    assert.equal(out[2].reviewsCount, 0);
+    assert.equal(out[2].reviewsAvg, undefined);
+});
+
+test("review summaries paginate beyond the 1000-row window", async () => {
+    const db = new FakeDb();
+    db.tables.product_reviews = Array.from({ length: 1005 }, (_, i) => ({
+        id: `r${i}`,
+        product_id: "p1",
+        rating: i < 5 ? 2 : 4,
+        status: "approved",
+    }));
+    const [out] = await attachReviewSummaries([bareProduct("p1")], db.asClient());
+    assert.equal(out.reviewsCount, 1005);
+    assert.ok(
+        Math.abs((out.reviewsAvg ?? 0) - ((5 * 2 + 1000 * 4) / 1005)) < 1e-9,
+        `unexpected avg ${out.reviewsAvg}`
+    );
+    // two pages: 1000 + 5
+    assert.equal(
+        db.ops.filter((o) => o.table === "product_reviews" && o.kind === "select").length,
+        2
+    );
+});
+
+test("review summaries fail closed on query error", async () => {
+    const db = new FakeDb();
+    db.tables.product_reviews = [
+        { id: "r1", product_id: "p1", rating: 5, status: "approved" },
+    ];
+    db.failSelects.add("product_reviews");
+    const products = [bareProduct("p1")];
+    const out = await attachReviewSummaries(products, db.asClient());
+    assert.equal(out[0].reviewsCount, undefined);
+    assert.equal(out[0].reviewsAvg, undefined);
+});
+
+test("review summaries skip the query entirely for empty catalogs", async () => {
+    const db = new FakeDb();
+    const out = await attachReviewSummaries([], db.asClient());
+    assert.deepEqual(out, []);
+    assert.equal(db.ops.length, 0);
 });

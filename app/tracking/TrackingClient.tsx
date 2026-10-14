@@ -23,23 +23,23 @@ import type { Product } from "@/lib/types";
 import type { FulfillmentStatus, PaymentStatus, PublicOrder } from "@/lib/orders/types";
 
 const PAYMENT_BADGE: Record<PaymentStatus, { label: string; className: string }> = {
-    paid: { label: "Pagado", className: "bg-green-500/20 text-green-400 border-green-500/30" },
-    pending_payment: { label: "Pago pendiente", className: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
-    payment_failed: { label: "Pago no aprobado", className: "bg-red-500/20 text-red-400 border-red-500/30" },
-    payment_review: { label: "Pago en revisión", className: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
-    cancelled: { label: "Cancelado", className: "bg-white/10 text-muted border-white/10" },
-    refunded: { label: "Reembolsado", className: "bg-white/10 text-muted border-white/10" },
+    paid: { label: "Pagado", className: "bg-success/10 text-success border-success/30" },
+    pending_payment: { label: "Pago pendiente", className: "bg-warning/10 text-warning border-warning/30" },
+    payment_failed: { label: "Pago no aprobado", className: "bg-danger/10 text-danger border-danger/30" },
+    payment_review: { label: "Pago en revisión", className: "bg-warning/10 text-warning border-warning/30" },
+    cancelled: { label: "Cancelado", className: "bg-black/5 text-muted border-black/10" },
+    refunded: { label: "Reembolsado", className: "bg-black/5 text-muted border-black/10" },
 };
 
 const FULFILLMENT_BADGE: Record<FulfillmentStatus, { label: string; className: string }> = {
-    delivered: { label: "Entregado", className: "bg-green-500/20 text-green-400 border-green-500/30" },
-    local_delivery: { label: "En Reparto Local", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-    customs_cleared: { label: "Nacionalizado DIAN", className: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
-    international_transit: { label: "Tránsito Internacional", className: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
-    supplier_processing: { label: "Procesando con Proveedor", className: "bg-primary/20 text-primary border-primary/30" },
-    payment_confirmed: { label: "Pago Confirmado", className: "bg-primary/20 text-primary border-primary/30" },
-    awaiting_payment: { label: "Esperando Pago", className: "bg-white/10 text-muted border-white/10" },
-    cancelled: { label: "Cancelado", className: "bg-white/10 text-muted border-white/10" },
+    delivered: { label: "Entregado", className: "bg-success/10 text-success border-success/30" },
+    local_delivery: { label: "En Reparto Local", className: "bg-accent/10 text-accent-dark border-accent/30" },
+    customs_cleared: { label: "Nacionalizado DIAN", className: "bg-accent/10 text-accent-dark border-accent/30" },
+    international_transit: { label: "Tránsito Internacional", className: "bg-warning/10 text-warning border-warning/30" },
+    supplier_processing: { label: "Procesando con Proveedor", className: "bg-primary/20 text-accent-dark border-primary/30" },
+    payment_confirmed: { label: "Pago Confirmado", className: "bg-primary/20 text-accent-dark border-primary/30" },
+    awaiting_payment: { label: "Esperando Pago", className: "bg-black/5 text-muted border-black/10" },
+    cancelled: { label: "Cancelado", className: "bg-black/5 text-muted border-black/10" },
 };
 
 export default function TrackingClient() {
@@ -112,10 +112,10 @@ export default function TrackingClient() {
             <div className="max-w-5xl mx-auto">
                 <FadeIn>
                     <div className="text-center max-w-2xl mx-auto mb-10">
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 inline-block mb-3">
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-accent-dark border border-primary/20 inline-block mb-3">
                             Transparencia en Logística & Despacho
                         </span>
-                        <h1 className="font-heading text-3xl sm:text-4xl font-bold text-white mb-3">
+                        <h1 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-3">
                             Rastreo de <span className="gradient-text">Pedido</span>
                         </h1>
                         <p className="text-xs sm:text-sm text-muted">
@@ -124,21 +124,21 @@ export default function TrackingClient() {
                     </div>
 
                     <form onSubmit={handleSearch} className="max-w-xl mx-auto mb-10">
-                        <div className="p-1.5 rounded-2xl bg-surface border border-white/10 glow-purple space-y-1.5">
+                        <div className="p-1.5 rounded-2xl bg-surface border border-black/10 glow-purple space-y-1.5">
                             <div className="flex gap-2">
                                 <input
                                     type="text"
                                     value={refInput}
                                     onChange={(e) => setRefInput(e.target.value)}
                                     placeholder="Referencia del pedido (ej: LM-482913)"
-                                    className="flex-1 px-4 py-2.5 bg-transparent text-sm text-white placeholder-muted focus:outline-none"
+                                    className="flex-1 px-4 py-2.5 bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
                                 />
                                 <input
                                     type="text"
                                     value={contactInput}
                                     onChange={(e) => setContactInput(e.target.value)}
                                     placeholder="Teléfono o email de compra"
-                                    className="flex-1 px-4 py-2.5 bg-transparent text-sm text-white placeholder-muted focus:outline-none"
+                                    className="flex-1 px-4 py-2.5 bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
                                 />
                             </div>
                             <button
@@ -153,7 +153,7 @@ export default function TrackingClient() {
                     </form>
 
                     {error && (
-                        <p role="alert" className="max-w-xl mx-auto mb-8 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-center">
+                        <p role="alert" className="max-w-xl mx-auto mb-8 text-xs text-warning bg-warning/10 border border-warning/30 rounded-xl px-4 py-3 text-center">
                             {error}
                         </p>
                     )}
@@ -164,10 +164,10 @@ export default function TrackingClient() {
                         {/* Status Card Banner */}
                         <FadeIn delay={0.1}>
                             <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-r from-surface-card via-surface to-primary/10 border border-primary/20 glow-purple">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-black/10">
                                     <div>
                                         <div className="flex items-center gap-3 mb-1 flex-wrap">
-                                            <h2 className="font-heading text-2xl font-bold text-white">
+                                            <h2 className="font-heading text-2xl font-bold text-foreground">
                                                 Orden #{order.ref}
                                             </h2>
                                             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${fulfillment.className}`}>
@@ -189,7 +189,7 @@ export default function TrackingClient() {
                                             className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all disabled:opacity-50 ${
                                                 reorderState === "added"
                                                     ? "bg-green-600 text-white"
-                                                    : "bg-white/10 hover:bg-white/20 text-white"
+                                                    : "bg-black/5 hover:bg-black/10 text-foreground"
                                             }`}
                                         >
                                             {reorderState === "added" ? <Check className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
@@ -206,16 +206,16 @@ export default function TrackingClient() {
 
                                         {(() => {
                                             const supportUrl = buildSupportWhatsAppUrl(
-                                                `Hola LuzMágica, requiero información sobre el estado de mi orden #${order.ref}`,
+                                                `Hola Honesty, requiero información sobre el estado de mi orden #${order.ref}`,
                                             );
                                             return supportUrl ? (
                                                 <a
                                                     href={supportUrl}
                                                     target="_blank"
                                                     rel="noreferrer"
-                                                    className="px-4 py-2.5 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/30 text-xs font-semibold flex items-center gap-2 transition-colors"
+                                                    className="px-4 py-2.5 rounded-xl bg-success/10 hover:bg-success/15 text-success border border-success/30 text-xs font-semibold flex items-center gap-2 transition-colors"
                                                 >
-                                                    <MessageCircle className="w-3.5 h-3.5 text-green-400" />
+                                                    <MessageCircle className="w-3.5 h-3.5 text-success" />
                                                     <span>Soporte WhatsApp</span>
                                                 </a>
                                             ) : null;
@@ -227,27 +227,27 @@ export default function TrackingClient() {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 text-xs">
                                     <div>
                                         <span className="text-muted block mb-1">Transportadora</span>
-                                        <span className="font-semibold text-white flex items-center gap-1.5">
-                                            <Truck className="w-3.5 h-3.5 text-primary" />
+                                        <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                            <Truck className="w-3.5 h-3.5 text-accent-dark" />
                                             {order.carrier ?? "Por asignar"}
                                         </span>
                                     </div>
                                     <div>
                                         <span className="text-muted block mb-1">Número de Guía</span>
-                                        <span className="font-mono font-bold text-accent">
+                                        <span className="font-mono font-bold text-accent-dark">
                                             {order.trackingNumber ?? "Pendiente"}
                                         </span>
                                     </div>
                                     <div>
                                         <span className="text-muted block mb-1">Destino</span>
-                                        <span className="font-semibold text-white flex items-center gap-1.5">
-                                            <MapPin className="w-3.5 h-3.5 text-secondary" />
+                                        <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                            <MapPin className="w-3.5 h-3.5 text-accent-dark" />
                                             {order.city}
                                         </span>
                                     </div>
                                     <div>
                                         <span className="text-muted block mb-1">Total</span>
-                                        <span className="font-bold text-white">{formatCOP(order.totalCop)}</span>
+                                        <span className="font-bold text-foreground">{formatCOP(order.totalCop)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -256,23 +256,23 @@ export default function TrackingClient() {
                         {/* Timeline */}
                         <FadeIn delay={0.2}>
                             <div className="glass rounded-3xl p-6 md:p-8">
-                                <h3 className="font-heading text-lg font-bold text-white mb-6 flex items-center gap-2">
-                                    <Clock className="w-5 h-5 text-primary" />
+                                <h3 className="font-heading text-lg font-bold text-foreground mb-6 flex items-center gap-2">
+                                    <Clock className="w-5 h-5 text-accent-dark" />
                                     <span>Línea de Tiempo del Despacho</span>
                                 </h3>
 
                                 {order.events.length === 0 ? (
                                     <p className="text-xs text-muted">Aún no hay eventos registrados para este pedido.</p>
                                 ) : (
-                                    <div className="relative pl-6 md:pl-8 space-y-8 before:absolute before:left-3 md:before:left-4 before:top-3 before:bottom-3 before:w-0.5 before:bg-white/10">
+                                    <div className="relative pl-6 md:pl-8 space-y-8 before:absolute before:left-3 md:before:left-4 before:top-3 before:bottom-3 before:w-0.5 before:bg-black/5">
                                         {order.events.map((evt, idx) => (
                                             <div key={idx} className="relative group">
-                                                <div className="absolute -left-6 md:-left-8 top-1 w-6 h-6 rounded-full flex items-center justify-center text-xs bg-green-500 text-black shadow-lg shadow-green-500/20">
+                                                <div className="absolute -left-6 md:-left-8 top-1 w-6 h-6 rounded-full flex items-center justify-center text-xs bg-green-500 text-white shadow-lg shadow-black/10">
                                                     <CheckCircle2 className="w-4 h-4" />
                                                 </div>
-                                                <div className="p-4 rounded-2xl bg-surface-card/60 border border-white/5">
+                                                <div className="p-4 rounded-2xl bg-surface-card/60 border border-black/10">
                                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
-                                                        <h4 className="text-sm font-semibold text-white">{evt.label}</h4>
+                                                        <h4 className="text-sm font-semibold text-foreground">{evt.label}</h4>
                                                         <span className="text-[11px] font-mono text-muted">
                                                             {new Date(evt.timestamp).toLocaleString("es-CO")}
                                                         </span>
@@ -289,8 +289,8 @@ export default function TrackingClient() {
                         {/* Items */}
                         <FadeIn delay={0.3}>
                             <div className="glass rounded-3xl p-6 md:p-8">
-                                <h3 className="font-heading text-lg font-bold text-white mb-6 flex items-center gap-2">
-                                    <PackageCheck className="w-5 h-5 text-secondary" />
+                                <h3 className="font-heading text-lg font-bold text-foreground mb-6 flex items-center gap-2">
+                                    <PackageCheck className="w-5 h-5 text-accent-dark" />
                                     <span>Artículos del Pedido</span>
                                 </h3>
 
@@ -298,35 +298,35 @@ export default function TrackingClient() {
                                     {order.items.map((item) => (
                                         <div
                                             key={item.productId}
-                                            className="flex items-center justify-between p-4 rounded-2xl bg-surface-card border border-white/5"
+                                            className="flex items-center justify-between p-4 rounded-2xl bg-surface-card border border-black/10"
                                         >
                                             <div>
-                                                <h4 className="text-sm font-semibold text-white">{item.name}</h4>
+                                                <h4 className="text-sm font-semibold text-foreground">{item.name}</h4>
                                                 <p className="text-xs text-muted">
                                                     Cantidad: {item.quantity} • {formatCOP(item.unitPriceCop)} c/u
                                                 </p>
                                             </div>
-                                            <span className="text-sm font-bold text-white">
+                                            <span className="text-sm font-bold text-foreground">
                                                 {formatCOP(item.unitPriceCop * item.quantity)}
                                             </span>
                                         </div>
                                     ))}
-                                    <div className="pt-3 border-t border-white/10 space-y-1.5 text-xs">
+                                    <div className="pt-3 border-t border-black/10 space-y-1.5 text-xs">
                                         <div className="flex justify-between text-muted">
                                             <span>Subtotal</span>
-                                            <span className="text-white">{formatCOP(order.subtotalCop)}</span>
+                                            <span className="text-foreground">{formatCOP(order.subtotalCop)}</span>
                                         </div>
                                         {order.discountCop > 0 && (
-                                            <div className="flex justify-between text-green-400">
+                                            <div className="flex justify-between text-success">
                                                 <span>Descuento</span>
                                                 <span>-{formatCOP(order.discountCop)}</span>
                                             </div>
                                         )}
                                         <div className="flex justify-between text-muted">
                                             <span>Envío</span>
-                                            <span className="text-white">{formatCOP(order.shippingCop)}</span>
+                                            <span className="text-foreground">{formatCOP(order.shippingCop)}</span>
                                         </div>
-                                        <div className="flex justify-between font-bold text-white text-sm pt-1">
+                                        <div className="flex justify-between font-bold text-foreground text-sm pt-1">
                                             <span>Total</span>
                                             <span>{formatCOP(order.totalCop)}</span>
                                         </div>

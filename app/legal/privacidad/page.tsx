@@ -1,32 +1,32 @@
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-    title: "Política de Tratamiento de Datos | LuzMágica",
-    description: "Cómo LuzMágica recolecta, usa y protege tus datos personales conforme a la Ley 1581 de 2012.",
+    title: "Política de Tratamiento de Datos | Honesty",
+    description: "Cómo Honesty recolecta, usa y protege tus datos personales conforme a la Ley 1581 de 2012.",
 };
 
 export default function PrivacidadPage() {
     return (
         <div className="pt-28 pb-16 px-4">
             <div className="max-w-3xl mx-auto prose-invert">
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 inline-block mb-4">
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-accent-dark border border-primary/20 inline-block mb-4">
                     Ley 1581 de 2012 • Colombia
                 </span>
-                <h1 className="font-heading text-3xl sm:text-4xl font-bold text-white mb-8">
+                <h1 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-8">
                     Política de Tratamiento de <span className="gradient-text">Datos Personales</span>
                 </h1>
 
                 <div className="space-y-6 text-sm text-muted leading-relaxed">
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">1. Responsable</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">1. Responsable</h2>
                         <p>
-                            LuzMágica, en adelante &ldquo;la Tienda&rdquo;, es responsable del tratamiento de los datos
+                            Honesty, en adelante &ldquo;la Tienda&rdquo;, es responsable del tratamiento de los datos
                             personales que suministres al realizar un pedido o usar este sitio.
                         </p>
                     </section>
 
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">2. Datos que recolectamos</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">2. Datos que recolectamos</h2>
                         <ul className="list-disc list-inside space-y-1">
                             <li>Nombre completo y documento de identidad (cédula).</li>
                             <li>Teléfono de contacto y correo electrónico.</li>
@@ -40,7 +40,7 @@ export default function PrivacidadPage() {
                     </section>
 
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">3. Finalidad</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">3. Finalidad</h2>
                         <ul className="list-disc list-inside space-y-1">
                             <li>Procesar, despachar y entregar tu pedido.</li>
                             <li>Contactarte sobre el estado de tu pedido o incidencias de entrega.</li>
@@ -50,7 +50,7 @@ export default function PrivacidadPage() {
                     </section>
 
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">4. Compartición con terceros</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">4. Compartición con terceros</h2>
                         <p>
                             Para entregar tu pedido compartimos los datos estrictamente necesarios (nombre,
                             dirección, teléfono y documento cuando la transportadora lo exija) con:
@@ -63,7 +63,7 @@ export default function PrivacidadPage() {
                     </section>
 
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">5. Tus derechos</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">5. Tus derechos</h2>
                         <p>
                             Como titular puedes conocer, actualizar, rectificar y suprimir tus datos, así como
                             revocar el consentimiento, mediante una solicitud a los canales de contacto publicados
@@ -72,7 +72,7 @@ export default function PrivacidadPage() {
                     </section>
 
                     <section className="glass rounded-2xl p-6">
-                        <h2 className="font-heading text-lg font-bold text-white mb-3">6. Vigencia y cambios</h2>
+                        <h2 className="font-heading text-lg font-bold text-foreground mb-3">6. Vigencia y cambios</h2>
                         <p>
                             Esta política aplica desde su publicación. Cualquier cambio será informado en esta
                             misma página antes de entrar en vigor.

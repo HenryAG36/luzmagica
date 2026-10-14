@@ -106,20 +106,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     let email: { subject: string; title: string; detail: string } | null = null;
     if (action === "cancel") {
         email = {
-            subject: `LuzMágica — Pedido ${order.ref} cancelado`,
+            subject: `Honesty — Pedido ${order.ref} cancelado`,
             title: "Tu pedido fue cancelado",
             detail: "No se realizó ningún cargo confirmado. Si tienes dudas, contáctanos con tu referencia.",
         };
     } else if (action === "refund") {
         email = {
-            subject: `LuzMágica — Pedido ${order.ref} reembolsado`,
+            subject: `Honesty — Pedido ${order.ref} reembolsado`,
             title: "Reembolso registrado",
             detail: "Tu pago fue procesado para reembolso. La acreditación depende de tu banco o medio de pago.",
         };
     } else if (fulfillmentStatus) {
         const label = FULFILLMENT_STATUS_LABELS[fulfillmentStatus];
         email = {
-            subject: `LuzMágica — Pedido ${order.ref}: ${label}`,
+            subject: `Honesty — Pedido ${order.ref}: ${label}`,
             title: `Tu pedido avanzó a: ${label}`,
             detail: order.tracking_number
                 ? `Transportadora: ${order.carrier ?? "por definir"} • Guía: ${order.tracking_number}`
@@ -127,7 +127,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         };
     } else if (trackingNumber) {
         email = {
-            subject: `LuzMágica — Pedido ${order.ref}: guía registrada`,
+            subject: `Honesty — Pedido ${order.ref}: guía registrada`,
             title: "Tu pedido ya tiene guía de despacho",
             detail: `Transportadora: ${order.carrier ?? "por definir"} • Guía: ${order.tracking_number}`,
         };

@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import LoginClient from "./LoginClient";
 
 export const metadata = {
-    title: "Iniciar Sesión | LuzMágica",
-    description: "Inicia sesión en tu cuenta de cliente LuzClub VIP o accede al portal administrativo de LuzMágica.",
+    title: "Iniciar Sesión | Honesty",
+    description: "Inicia sesión en tu cuenta de cliente Club Honesty o accede al portal administrativo.",
 };
 
 export default function LoginPage() {

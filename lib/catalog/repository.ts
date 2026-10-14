@@ -19,6 +19,25 @@ async function serviceClient(provided?: SupabaseClientLike) {
     return mod.getServiceRoleClient();
 }
 
+export async function attachReviewSummaries(products: Product[], supabase: SupabaseClientLike): Promise<Product[]> {
+  if (!products.length) return products;
+  const totals = new Map<string, {sum:number;count:number}>();
+  const ids = products.map(p => p.id);
+  const pageSize = 1000;
+  for (let offset=0;;offset+=pageSize) {
+    const {data,error} = await supabase.from('product_reviews').select('id,product_id,rating').eq('status','approved').in('product_id',ids).order('id').range(offset,offset+pageSize-1);
+    if (error || !data) return products;
+    const rows = data as {id:string;product_id:string;rating:number}[];
+    for (const row of rows) {
+      if (!Number.isInteger(row.rating) || row.rating<1 || row.rating>5) continue;
+      const total=totals.get(row.product_id) ?? {sum:0,count:0};
+      total.sum+=row.rating;total.count+=1;totals.set(row.product_id,total);
+    }
+    if (rows.length<pageSize) break;
+  }
+  return products.map(p=>{const total=totals.get(p.id);return {...p,reviewsCount:total?.count ?? 0,reviewsAvg:total ? total.sum/total.count : undefined};});
+}
+
 export async function listPublishedProducts(client?: SupabaseClientLike): Promise<Product[]> {
     const supabase = await anonClient(client);
     if (!supabase) return [];
@@ -27,7 +46,8 @@ export async function listPublishedProducts(client?: SupabaseClientLike): Promis
         .select("*")
         .order("name");
     if (error || !data) return [];
-    return (data as PublicProductRow[]).map(toPublicProduct);
+    const mapped = (data as PublicProductRow[]).map(toPublicProduct);
+    return attachReviewSummaries(mapped, supabase);
 }
 
 export async function getPublishedProduct(id: string, client?: SupabaseClientLike): Promise<Product | null> {
@@ -38,11 +58,13 @@ export async function getPublishedProduct(id: string, client?: SupabaseClientLik
         .select("*")
         .eq("id", id)
         .maybeSingle();
-    return data ? toPublicProduct(data as PublicProductRow) : null;
+    if (!data) return null;
+    const [product] = await attachReviewSummaries([toPublicProduct(data as PublicProductRow)], supabase);
+    return product ?? null;
 }
 
 export async function listPublishedRelated(
-    room: string,
+    category: string,
     excludeId: string,
     client?: SupabaseClientLike
 ): Promise<Product[]> {
@@ -51,10 +73,11 @@ export async function listPublishedRelated(
     const { data } = await supabase
         .from("published_products")
         .select("*")
-        .eq("room", room)
+        .eq("category", category)
         .neq("id", excludeId)
         .limit(4);
-    return ((data as PublicProductRow[] | null) ?? []).map(toPublicProduct);
+    const mapped = ((data as PublicProductRow[] | null) ?? []).map(toPublicProduct);
+    return attachReviewSummaries(mapped, supabase);
 }
 
 export async function listDrafts(client?: SupabaseClientLike): Promise<CatalogRow[]> {

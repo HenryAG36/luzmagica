@@ -65,10 +65,10 @@ export default function ReviewsPanel() {
     };
 
     return (
-        <div className="glass rounded-3xl p-6 border border-white/10">
+        <div className="glass rounded-3xl p-6 border border-black/10">
             <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                 <div>
-                    <h4 className="font-heading text-base font-bold text-white">Reseñas de clientes</h4>
+                    <h4 className="font-heading text-base font-bold text-foreground">Reseñas de clientes</h4>
                     <p className="text-[11px] text-muted">
                         Solo las reseñas aprobadas aparecen en la página del producto.
                     </p>
@@ -77,7 +77,7 @@ export default function ReviewsPanel() {
                     <select
                         value={filter}
                         onChange={(e) => setFilter(e.target.value)}
-                        className="px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white"
+                        className="px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground"
                     >
                         <option value="pending">Pendientes</option>
                         <option value="approved">Aprobadas</option>
@@ -85,7 +85,7 @@ export default function ReviewsPanel() {
                     </select>
                     <button
                         onClick={() => void load()}
-                        className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs border border-white/10"
+                        className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/5 text-foreground text-xs border border-black/10"
                     >
                         <RefreshCw className="w-3.5 h-3.5" />
                     </button>
@@ -93,7 +93,7 @@ export default function ReviewsPanel() {
             </div>
 
             {error && (
-                <p role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5 mb-3">
+                <p role="alert" className="text-xs text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-2.5 mb-3">
                     {error}
                 </p>
             )}
@@ -107,18 +107,18 @@ export default function ReviewsPanel() {
             ) : (
                 <div className="space-y-3">
                     {reviews.map((r) => (
-                        <div key={r.id} className="p-4 rounded-2xl bg-surface-card border border-white/5">
+                        <div key={r.id} className="p-4 rounded-2xl bg-surface-card border border-black/10">
                             <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                                 <div className="flex items-center gap-2 text-xs">
                                     <span className="flex items-center gap-0.5">
                                         {[1, 2, 3, 4, 5].map((n) => (
                                             <Star
                                                 key={n}
-                                                className={`w-3.5 h-3.5 ${n <= r.rating ? "text-amber-400 fill-amber-400" : "text-white/20"}`}
+                                                className={`w-3.5 h-3.5 ${n <= r.rating ? "fill-accent text-accent-dark" : "text-black/20"}`}
                                             />
                                         ))}
                                     </span>
-                                    <span className="font-semibold text-white">
+                                    <span className="font-semibold text-foreground">
                                         {r.product_name ?? "Producto eliminado"}
                                     </span>
                                     {r.order_ref && <span className="font-mono text-muted">#{r.order_ref}</span>}
@@ -133,7 +133,7 @@ export default function ReviewsPanel() {
                                     <button
                                         onClick={() => void moderate(r.id, "approved")}
                                         disabled={busyId === r.id}
-                                        className="px-3 py-1.5 rounded-xl bg-green-500/10 hover:bg-green-500/20 text-green-300 text-xs font-semibold border border-green-500/20 flex items-center gap-1 disabled:opacity-50"
+                                        className="px-3 py-1.5 rounded-xl bg-success/10 hover:bg-success/10 text-success text-xs font-semibold border border-green-500/20 flex items-center gap-1 disabled:opacity-50"
                                     >
                                         <CheckCircle2 className="w-3.5 h-3.5" />
                                         Aprobar
@@ -141,7 +141,7 @@ export default function ReviewsPanel() {
                                     <button
                                         onClick={() => void moderate(r.id, "rejected")}
                                         disabled={busyId === r.id}
-                                        className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 flex items-center gap-1 disabled:opacity-50"
+                                        className="px-3 py-1.5 rounded-xl bg-danger/10 hover:bg-danger/10 text-danger text-xs font-semibold border border-red-500/20 flex items-center gap-1 disabled:opacity-50"
                                     >
                                         <XCircle className="w-3.5 h-3.5" />
                                         Rechazar

@@ -32,10 +32,10 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-    ok: { label: "Activa", className: "bg-green-500/15 text-green-300 border-green-500/30" },
-    disabled: { label: "Sin configurar", className: "bg-white/10 text-muted border-white/10" },
-    error: { label: "Error", className: "bg-red-500/15 text-red-300 border-red-500/30" },
-    stale: { label: "Datos antiguos", className: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
+    ok: { label: "Activa", className: "bg-green-500/15 text-success border-success/30" },
+    disabled: { label: "Sin configurar", className: "bg-black/5 text-muted border-black/10" },
+    error: { label: "Error", className: "bg-red-500/15 text-danger border-danger/30" },
+    stale: { label: "Datos antiguos", className: "bg-amber-500/15 text-warning border-warning/30" },
 };
 
 interface ReviewForm {
@@ -648,14 +648,14 @@ export default function TrendPanel() {
         : null;
 
     const inputClass =
-        "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white placeholder-muted focus:outline-none focus:border-primary";
+        "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
 
     return (
         <div className="space-y-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h3 className="font-heading text-xl font-bold text-white flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5 text-accent" />
+                    <h3 className="font-heading text-xl font-bold text-foreground flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-accent-dark" />
                         Tendencias & Abastecimiento
                     </h3>
                     <p className="text-xs text-muted mt-1">
@@ -694,7 +694,7 @@ export default function TrendPanel() {
                 })}
                 <a
                     href="/api/admin/providers/meli/authorize"
-                    className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors"
+                    className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-accent-dark text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors"
                 >
                     <PlugZap className="w-3.5 h-3.5" />
                     Conectar Mercado Libre
@@ -702,13 +702,13 @@ export default function TrendPanel() {
             </div>
 
             {error && (
-                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-danger/30 text-red-200 text-xs flex items-center gap-2.5">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{error}</span>
                 </div>
             )}
             {notice && (
-                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-green-500/30 text-green-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-success/30 text-green-200 text-xs flex items-center gap-2.5">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{notice}</span>
                 </div>
@@ -721,7 +721,7 @@ export default function TrendPanel() {
             ) : (
                 <>
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-4">
+                        <h4 className="font-heading text-base font-bold text-foreground mb-4">
                             Tendencias de búsqueda · Mercado Libre Colombia
                         </h4>
                         {(data?.keywords.length ?? 0) === 0 ? (
@@ -736,7 +736,7 @@ export default function TrendPanel() {
                                         href={k.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="px-3 py-1.5 rounded-full bg-white/5 hover:bg-primary/20 border border-white/10 hover:border-primary/40 text-xs text-white transition-all flex items-center gap-1.5"
+                                        className="px-3 py-1.5 rounded-full bg-black/5 hover:bg-primary/20 border border-black/10 hover:border-black/25 text-xs text-foreground transition-all flex items-center gap-1.5"
                                     >
                                         {k.keyword}
                                         <ExternalLink className="w-3 h-3 text-muted" />
@@ -747,7 +747,7 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                        <h4 className="font-heading text-base font-bold text-foreground mb-1">
                             Más vendidos · Mercado Libre Colombia
                         </h4>
                         <p className="text-[11px] text-muted mb-4">
@@ -765,7 +765,7 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                        <h4 className="font-heading text-base font-bold text-foreground mb-1">
                             Productos calientes · AliExpress (candidatos de proveedor)
                         </h4>
                         <p className="text-[11px] text-muted mb-4">
@@ -785,7 +785,7 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                        <h4 className="font-heading text-base font-bold text-foreground mb-1">
                             Feed de productos · AliExpress DS (proveedor)
                         </h4>
                         <p className="text-[11px] text-muted mb-4">
@@ -805,7 +805,7 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-1">
+                        <h4 className="font-heading text-base font-bold text-foreground mb-1">
                             Productos en tendencia · CJ Dropshipping (proveedor)
                         </h4>
                         <p className="text-[11px] text-muted mb-4">
@@ -826,13 +826,13 @@ export default function TrendPanel() {
 
                     <div className="glass rounded-3xl p-6 md:p-8">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
-                            <h4 className="font-heading text-base font-bold text-white">
+                            <h4 className="font-heading text-base font-bold text-foreground">
                                 Proveedor · AliExpress Dropshipping
                             </h4>
                             <div className="flex flex-col sm:flex-row gap-2 self-start">
                                 <a
                                     href="/api/admin/providers/aliexpress-ds/authorize"
-                                    className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors"
+                                    className="px-3 py-2 rounded-xl border border-primary/30 bg-primary/10 text-accent-dark text-xs flex items-center gap-2 hover:bg-primary/20 transition-colors"
                                 >
                                     <PlugZap className="w-3.5 h-3.5" />
                                     Conectar AliExpress DS
@@ -841,7 +841,7 @@ export default function TrendPanel() {
                                     type="button"
                                     onClick={() => void runDsDiagnostics()}
                                     disabled={dsDiagBusy}
-                                    className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs flex items-center gap-2 hover:bg-white/10 transition-colors disabled:opacity-50"
+                                    className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-foreground text-xs flex items-center gap-2 hover:bg-black/5 transition-colors disabled:opacity-50"
                                 >
                                     {dsDiagBusy ? "Diagnosticando (2 llamadas en vivo)..." : "Diagnosticar AliExpress DS"}
                                 </button>
@@ -851,12 +851,12 @@ export default function TrendPanel() {
                             Busca un producto por su ID de AliExpress. Las ventas mostradas son reportadas por el proveedor, no una tendencia. Requiere la app DS conectada por OAuth.
                         </p>
                         {dsResultMessage && (
-                            <p className={`text-xs mb-3 ${dsResultMessage[1] ? "text-green-300" : "text-red-300"}`}>
+                            <p className={`text-xs mb-3 ${dsResultMessage[1] ? "text-success" : "text-danger"}`}>
                                 {dsResultMessage[0]}
                             </p>
                         )}
                         {dsDiag && (
-                            <div className="mb-3 rounded-xl border border-white/10 bg-black/30 p-3">
+                            <div className="mb-3 rounded-xl border border-black/10 bg-surface-light p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <p className="text-[10px] text-muted">
                                         Diagnóstico sanitizado (2 llamadas de solo lectura; sin pedidos). Comparte este JSON si necesitas ayuda.
@@ -869,7 +869,7 @@ export default function TrendPanel() {
                                                 .then(() => setDsDiagCopied(true))
                                                 .catch(() => setDsDiagCopied(false));
                                         }}
-                                        className="text-[10px] text-primary hover:underline shrink-0"
+                                        className="text-[10px] text-accent-dark hover:underline shrink-0"
                                     >
                                         {dsDiagCopied ? "Copiado" : "Copiar resultado"}
                                     </button>
@@ -879,12 +879,12 @@ export default function TrendPanel() {
                                 </pre>
                             </div>
                         )}
-                        <div className="mb-4 rounded-xl border border-white/10 p-3 space-y-2">
-                            <p className="text-[11px] font-semibold text-white">
+                        <div className="mb-4 rounded-xl border border-black/10 p-3 space-y-2">
+                            <p className="text-[11px] font-semibold text-foreground">
                                 Feed de descubrimiento{dsStatus?.feedName ? `: ${dsStatus.feedName}` : ""}
                             </p>
                             {!dsStatus?.feedName && (
-                                <p className="text-[10px] text-amber-300">
+                                <p className="text-[10px] text-warning">
                                     Ningún feed seleccionado. Carga la lista del proveedor y elige uno para activar esta fuente.
                                 </p>
                             )}
@@ -893,7 +893,7 @@ export default function TrendPanel() {
                                     type="button"
                                     onClick={() => void loadDsFeeds()}
                                     disabled={dsFeedsBusy}
-                                    className="px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-xs hover:bg-white/10 transition-colors disabled:opacity-50 shrink-0"
+                                    className="px-3 py-2 rounded-xl border border-black/10 bg-black/5 text-foreground text-xs hover:bg-black/5 transition-colors disabled:opacity-50 shrink-0"
                                 >
                                     {dsFeedsBusy ? "Cargando..." : "Cargar feeds"}
                                 </button>
@@ -943,7 +943,7 @@ export default function TrendPanel() {
                             </button>
                         </div>
                         {dsProduct && (
-                            <div className="mt-4 rounded-2xl border border-white/10 p-4 space-y-3">
+                            <div className="mt-4 rounded-2xl border border-black/10 p-4 space-y-3">
                                 <div className="flex gap-3 items-start">
                                     {dsProduct.images[0] && isHttpUrl(dsProduct.images[0]) && (
                                         <Image
@@ -956,7 +956,7 @@ export default function TrendPanel() {
                                         />
                                     )}
                                     <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-white truncate">{dsProduct.title}</p>
+                                        <p className="text-sm font-semibold text-foreground truncate">{dsProduct.title}</p>
                                         <p className="text-[11px] text-muted">
                                             ID {dsProduct.productId}
                                             {dsProduct.currency ? ` · ${dsProduct.currency}` : ""}
@@ -1003,25 +1003,25 @@ export default function TrendPanel() {
                                 ) : null}
 
                                 {dsSelectedSku && (
-                                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
-                                        <p className="text-[11px] font-semibold text-white">
+                                    <div className="rounded-xl border border-black/10 p-3 space-y-2">
+                                        <p className="text-[11px] font-semibold text-foreground">
                                             Flete al cliente · cotización indicativa por unidad a {dsCurrentQuote?.destination ?? "Bogotá"}
                                         </p>
                                         {dsFreightLoading ? (
                                             <p className="text-[11px] text-muted animate-pulse">Consultando opciones de envío...</p>
                                         ) : dsFreightError ? (
                                             <div className="flex items-center gap-2">
-                                                <p role="alert" className="text-[11px] text-red-300">{dsFreightError}</p>
+                                                <p role="alert" className="text-[11px] text-danger">{dsFreightError}</p>
                                                 <button
                                                     type="button"
                                                     onClick={() => void loadDsFreight(dsProduct.productId, dsSelectedSku.skuId)}
-                                                    className="text-[11px] text-primary hover:underline shrink-0"
+                                                    className="text-[11px] text-accent-dark hover:underline shrink-0"
                                                 >
                                                     Reintentar
                                                 </button>
                                             </div>
                                         ) : dsCurrentQuote && dsCurrentQuote.options.length === 0 ? (
-                                            <p className="text-[11px] text-amber-300">
+                                            <p className="text-[11px] text-warning">
                                                 El proveedor no devolvió opciones de envío. El envío quedará pendiente en el borrador.
                                             </p>
                                         ) : dsCurrentQuote ? (
@@ -1034,7 +1034,7 @@ export default function TrendPanel() {
                                                             className={`flex items-start gap-2 p-2 rounded-lg border text-[11px] transition-colors ${
                                                                 dsFreightIdx === idx
                                                                     ? "border-primary/50 bg-primary/10"
-                                                                    : "border-white/10 hover:border-white/20"
+                                                                    : "border-black/10 hover:border-black/20"
                                                             } ${optionOutOfStock ? "opacity-50" : "cursor-pointer"}`}
                                                         >
                                                             <input
@@ -1046,7 +1046,7 @@ export default function TrendPanel() {
                                                                 className="mt-0.5 accent-primary"
                                                             />
                                                             <span className="min-w-0">
-                                                                <span className="text-white font-medium block">
+                                                                <span className="text-foreground font-medium block">
                                                                     {option.company || option.code || "Opción de envío"}
                                                                 </span>
                                                                 <span className="text-muted">
@@ -1072,8 +1072,8 @@ export default function TrendPanel() {
                                 )}
 
                                 {dsSelectedSku && (
-                                    <div className="rounded-xl border border-white/10 p-3 space-y-2">
-                                        <p className="text-[11px] font-semibold text-white">Costos y precio</p>
+                                    <div className="rounded-xl border border-black/10 p-3 space-y-2">
+                                        <p className="text-[11px] font-semibold text-foreground">Costos y precio</p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                             <div>
                                                 <label className="text-[10px] text-muted block mb-1">Tasa USD→COP *</label>
@@ -1098,7 +1098,7 @@ export default function TrendPanel() {
                                             </div>
                                         </div>
                                         {!dsFxReady && (
-                                            <p className="text-[10px] text-amber-300">
+                                            <p className="text-[10px] text-warning">
                                                 Ingresa una tasa USD→COP manual y su fecha para calcular costos en pesos. No hay proveedor de tasa automático.
                                             </p>
                                         )}
@@ -1158,7 +1158,7 @@ export default function TrendPanel() {
                                             </p>
                                         )}
                                         {dsActualContribution !== null && (
-                                            <p className={`text-[10px] font-mono ${dsActualContribution >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                            <p className={`text-[10px] font-mono ${dsActualContribution >= 0 ? "text-success" : "text-danger"}`}>
                                                 Contribución estimada al precio ingresado: {formatCOP(dsActualContribution)} (producto − costo proveedor; envío se cobra aparte; sin impuestos ni comisiones; no garantiza utilidad).
                                             </p>
                                         )}
@@ -1173,7 +1173,7 @@ export default function TrendPanel() {
                                     {dsBusy ? "Importando..." : "Importar como borrador"}
                                 </button>
                                 {dsSelectedSku && dsShipCop === null && (
-                                    <p className="text-[10px] text-amber-300">
+                                    <p className="text-[10px] text-warning">
                                         Sin tarifa de flete válida el producto se importará con envío pendiente, no gratis.
                                     </p>
                                 )}
@@ -1182,8 +1182,8 @@ export default function TrendPanel() {
                     </div>
 
                     <div className="glass rounded-3xl p-6 md:p-8">
-                        <h4 className="font-heading text-base font-bold text-white mb-4 flex items-center gap-2">
-                            <PackageCheck className="w-4 h-4 text-primary" />
+                        <h4 className="font-heading text-base font-bold text-foreground mb-4 flex items-center gap-2">
+                            <PackageCheck className="w-4 h-4 text-accent-dark" />
                             Borradores de catálogo ({drafts.length})
                         </h4>
                         {drafts.length === 0 ? (
@@ -1197,11 +1197,11 @@ export default function TrendPanel() {
                                     return (
                                         <div
                                             key={draft.id}
-                                            className="p-4 rounded-2xl bg-surface-card border border-white/10"
+                                            className="p-4 rounded-2xl bg-surface-card border border-black/10"
                                         >
                                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="text-sm font-semibold text-white truncate">{draft.name}</div>
+                                                    <div className="text-sm font-semibold text-foreground truncate">{draft.name}</div>
                                                     <div className="text-[11px] text-muted mt-0.5">
                                                         {SOURCE_LABELS[draft.source] || draft.source} · {draft.provider_item_id}
                                                         {draft.listing_price != null && (
@@ -1213,7 +1213,7 @@ export default function TrendPanel() {
                                                             href={draft.source_url}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[11px] text-primary hover:underline flex items-center gap-1 mt-0.5"
+                                                            className="text-[11px] text-accent-dark hover:underline flex items-center gap-1 mt-0.5"
                                                         >
                                                             Ver en origen <ExternalLink className="w-3 h-3" />
                                                         </a>
@@ -1226,14 +1226,14 @@ export default function TrendPanel() {
                                                             setReviewingId(isReviewing ? null : draft.id);
                                                             setReviewForm(isReviewing ? null : emptyReview(draft));
                                                         }}
-                                                        className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary text-xs font-semibold transition-colors"
+                                                        className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold transition-colors"
                                                     >
                                                         {isReviewing ? "Cerrar" : "Revisar"}
                                                     </button>
                                                     <button
                                                         onClick={() => handleDiscard(draft)}
                                                         disabled={submitting}
-                                                        className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-muted hover:text-red-400 text-xs transition-colors disabled:opacity-50"
+                                                        className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-danger/10 text-muted hover:text-danger text-xs transition-colors disabled:opacity-50"
                                                     >
                                                         Descartar
                                                     </button>
@@ -1241,7 +1241,7 @@ export default function TrendPanel() {
                                             </div>
 
                                             {isReviewing && reviewForm && (
-                                                <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                                                <div className="mt-4 pt-4 border-t border-black/10 space-y-3">
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                         <div>
                                                             <label className="text-[11px] text-muted block mb-1">Título *</label>
@@ -1315,7 +1315,7 @@ export default function TrendPanel() {
                                                         <button
                                                             onClick={() => handleSaveDraft(draft)}
                                                             disabled={submitting}
-                                                            className="px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                                                            className="px-4 py-2.5 rounded-xl border border-black/10 bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold transition-colors disabled:opacity-50"
                                                         >
                                                             {submitting ? "Guardando..." : "Guardar borrador"}
                                                         </button>
@@ -1327,7 +1327,7 @@ export default function TrendPanel() {
                                                             {submitting ? "Publicando..." : "Publicar al catálogo"}
                                                         </button>
                                                         {publishError && (
-                                                            <p role="alert" className="text-xs text-red-300">
+                                                            <p role="alert" className="text-xs text-danger">
                                                                 {publishError}
                                                             </p>
                                                         )}
@@ -1362,9 +1362,9 @@ function TrendCard({
     const safeUrl = item.url && isHttpUrl(item.url) ? item.url : null;
 
     return (
-        <div className="p-4 rounded-2xl bg-surface-card border border-white/10 flex flex-col gap-3">
+        <div className="p-4 rounded-2xl bg-surface-card border border-black/10 flex flex-col gap-3">
             <div className="flex gap-3">
-                <div className="w-14 h-14 rounded-xl bg-surface border border-white/5 overflow-hidden shrink-0 flex items-center justify-center relative">
+                <div className="w-14 h-14 rounded-xl bg-surface border border-black/10 overflow-hidden shrink-0 flex items-center justify-center relative">
                     {safeImage && !imageError ? (
                         <Image
                             src={safeImage}
@@ -1380,11 +1380,11 @@ function TrendCard({
                     )}
                 </div>
                 <div className="min-w-0">
-                    <div className="text-xs font-semibold text-white line-clamp-2">{item.title}</div>
+                    <div className="text-xs font-semibold text-foreground line-clamp-2">{item.title}</div>
                     <div className="text-[11px] text-muted mt-1 space-x-2">
                         {item.rank !== null && <span>Rank #{item.rank}</span>}
                         {item.price !== null && (
-                            <span className="font-mono text-white">
+                            <span className="font-mono text-foreground">
                                 {item.price} {item.currency}
                             </span>
                         )}
@@ -1403,7 +1403,7 @@ function TrendCard({
                         href={safeUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] text-primary hover:underline flex items-center gap-1"
+                        className="text-[11px] text-accent-dark hover:underline flex items-center gap-1"
                     >
                         Ver origen <ExternalLink className="w-3 h-3" />
                     </a>
@@ -1413,7 +1413,7 @@ function TrendCard({
                 <button
                     onClick={() => onImport(item)}
                     disabled={importing}
-                    className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
                 >
                     <PackagePlus className="w-3.5 h-3.5" />
                     {importing ? "Procesando..." : actionLabel}

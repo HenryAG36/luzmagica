@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import ConfirmacionClient from "./ConfirmacionClient";
 
 export const metadata: Metadata = {
-    title: "Confirmación de Pago | LuzMágica",
-    description: "Estado de tu pago y pedido en LuzMágica.",
+    title: "Confirmación de Pago | Honesty",
+    description: "Estado de tu pago y pedido en Honesty.",
 };
 
 export default function ConfirmacionPage() {

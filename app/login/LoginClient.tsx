@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
     Sparkles,
     Lock,
@@ -122,7 +123,7 @@ export default function LoginClient() {
     };
 
     const inputClass =
-        "w-full pl-10 pr-4 py-3 rounded-2xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary transition-colors text-xs sm:text-sm";
+        "w-full pl-10 pr-4 py-3 rounded-2xl bg-surface border border-black/10 text-foreground placeholder:text-muted focus:outline-none focus:border-primary transition-colors text-xs sm:text-sm";
 
     return (
         <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
@@ -130,25 +131,30 @@ export default function LoginClient() {
                 <FadeIn>
                     {/* Header */}
                     <div className="text-center mb-8">
-                        <Link href="/" className="inline-flex items-center gap-2 mb-4 group">
-                            <Sparkles className="w-7 h-7 text-primary transition-transform group-hover:rotate-12" />
-                            <span className="font-heading text-2xl font-bold tracking-tight">
-                                <span className="text-white">Luz</span>
-                                <span className="gradient-text">Mágica</span>
+                        <Link href="/" className="mb-4 inline-flex items-center gap-2.5">
+                            <Image
+                                src="/honesty-logo.jpg"
+                                alt="Honesty"
+                                width={44}
+                                height={36}
+                                className="h-9 w-auto object-contain"
+                            />
+                            <span className="font-heading text-xl font-semibold uppercase tracking-[0.18em]">
+                                Honesty
                             </span>
                         </Link>
-                        <h1 className="font-heading text-3xl font-bold text-white mb-2">
+                        <h1 className="font-heading text-3xl font-bold text-foreground mb-2">
                             {mode === "login" ? "Iniciar Sesión" : "Crear Cuenta de Cliente"}
                         </h1>
                         <p className="text-xs sm:text-sm text-muted">
                             {mode === "login"
                                 ? "Ingresa con tu correo y contraseña. El sistema detectará automáticamente si eres Cliente o Administrador."
-                                : "Regístrate en LuzClub VIP para acumular puntos, recibir descuentos y generar enlaces de referidos."}
+                                : "Crea tu cuenta Club Honesty para acumular puntos y canjearlos como descuento al pagar."}
                         </p>
                     </div>
 
                     {/* Mode Toggle (Iniciar Sesión vs Crear Cuenta) */}
-                    <div className="flex rounded-2xl bg-surface-card p-1.5 border border-white/10 mb-6">
+                    <div className="flex rounded-2xl bg-surface-card p-1.5 border border-black/10 mb-6">
                         <button
                             type="button"
                             onClick={() => {
@@ -158,7 +164,7 @@ export default function LoginClient() {
                             className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                                 mode === "login"
                                     ? "bg-primary text-white shadow-lg glow-purple"
-                                    : "text-muted hover:text-white"
+                                    : "text-muted hover:text-foreground"
                             }`}
                         >
                             Iniciar Sesión
@@ -172,15 +178,15 @@ export default function LoginClient() {
                             className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                                 mode === "register"
                                     ? "bg-primary text-white shadow-lg glow-purple"
-                                    : "text-muted hover:text-white"
+                                    : "text-muted hover:text-foreground"
                             }`}
                         >
-                            Crear Cuenta (Cliente VIP)
+                            Crear Cuenta
                         </button>
                     </div>
 
                     {/* Main Form Container */}
-                    <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl">
+                    <div className="glass rounded-3xl p-6 sm:p-8 border border-black/10 shadow-2xl">
                         {mode === "login" ? (
                             /* UNIFIED LOGIN FORM: Strictly Email & Password */
                             <form onSubmit={handleLoginSubmit} className="space-y-4">
@@ -193,7 +199,7 @@ export default function LoginClient() {
                                             required
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="tu@correo.com o admin@luzmagica.co"
+                                            placeholder="tu@correo.com"
                                             className={inputClass}
                                         />
                                     </div>
@@ -214,7 +220,7 @@ export default function LoginClient() {
                                         <button
                                             type="button"
                                             onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-3.5 top-3.5 text-muted hover:text-white"
+                                            className="absolute right-3.5 top-3.5 text-muted hover:text-foreground"
                                             aria-label="Ver contraseña"
                                         >
                                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -226,14 +232,14 @@ export default function LoginClient() {
                                     <div
                                         className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
                                             statusMessage.error
-                                                ? "bg-red-500/15 border border-red-500/30 text-red-200"
-                                                : "bg-green-500/15 border border-green-500/30 text-green-200"
+                                                ? "bg-danger/10 border border-danger/30 text-danger"
+                                                : "bg-success/10 border border-success/30 text-success"
                                         }`}
                                     >
                                         {statusMessage.error ? (
-                                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                            <AlertCircle className="w-4 h-4 text-danger shrink-0" />
                                         ) : (
-                                            <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                                            <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
                                         )}
                                         <span>{statusMessage.text}</span>
                                     </div>
@@ -260,7 +266,7 @@ export default function LoginClient() {
                                 <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs text-primary/90 flex items-center gap-2 mb-2">
                                     <Sparkles className="w-4 h-4 shrink-0" />
                                     <span>
-                                        Al registrarte ganas <strong>150 Puntos LuzClub</strong> de bienvenida y tu enlace de referidos.
+                                        Acumula puntos con tus compras pagadas y consulta tu saldo en Mi Cuenta.
                                     </span>
                                 </div>
 
@@ -367,7 +373,7 @@ export default function LoginClient() {
                                             value={city}
                                             onChange={(e) => setCity(e.target.value)}
                                             placeholder="Bogotá, Medellín..."
-                                            className="w-full px-4 py-3 rounded-2xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary text-xs sm:text-sm"
+                                            className="w-full px-4 py-3 rounded-2xl bg-surface border border-black/10 text-foreground placeholder:text-muted focus:outline-none focus:border-primary text-xs sm:text-sm"
                                         />
                                     </div>
                                 </div>
@@ -377,7 +383,7 @@ export default function LoginClient() {
                                         Código de Referido (Opcional - Recibe $20.000 COP)
                                     </label>
                                     <div className="relative">
-                                        <Gift className="w-4 h-4 text-accent absolute left-3.5 top-3.5" />
+                                        <Gift className="w-4 h-4 text-accent-dark absolute left-3.5 top-3.5" />
                                         <input
                                             type="text"
                                             value={referralCode}
@@ -392,14 +398,14 @@ export default function LoginClient() {
                                     <div
                                         className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
                                             statusMessage.error
-                                                ? "bg-red-500/15 border border-red-500/30 text-red-200"
-                                                : "bg-green-500/15 border border-green-500/30 text-green-200"
+                                                ? "bg-danger/10 border border-danger/30 text-danger"
+                                                : "bg-success/10 border border-success/30 text-success"
                                         }`}
                                     >
                                         {statusMessage.error ? (
-                                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                                            <AlertCircle className="w-4 h-4 text-danger shrink-0" />
                                         ) : (
-                                            <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                                            <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
                                         )}
                                         <span>{statusMessage.text}</span>
                                     </div>

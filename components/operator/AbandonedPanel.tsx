@@ -39,16 +39,16 @@ export default function AbandonedPanel() {
         <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <h3 className="font-heading text-xl font-bold text-white">
+                    <h3 className="font-heading text-xl font-bold text-foreground">
                         Checkouts Abandonados (Pago Pendiente)
                     </h3>
                     <p className="text-xs text-muted">
-                        Pedidos reales que quedaron en &ldquo;pago pendiente&rdquo;. Recupéralos por WhatsApp con el cupón RETORNO10.
+                        Pedidos reales que quedaron en &ldquo;pago pendiente&rdquo;. Recupéralos por WhatsApp con el cupón VUELVE10.
                     </p>
                 </div>
                 <button
                     onClick={() => void load()}
-                    className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white flex items-center gap-1.5"
+                    className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/5 border border-black/10 text-xs text-foreground flex items-center gap-1.5"
                 >
                     <RefreshCw className="w-3.5 h-3.5" />
                     Actualizar
@@ -56,7 +56,7 @@ export default function AbandonedPanel() {
             </div>
 
             {error && (
-                <p role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                <p role="alert" className="text-xs text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-3">
                     {error}
                 </p>
             )}
@@ -72,17 +72,17 @@ export default function AbandonedPanel() {
                     {orders?.map((order) => {
                         const url = waUrl(
                             order.customer_phone,
-                            `Hola ${order.customer_name.split(" ")[0]}, vimos que tu pedido ${order.ref} en LuzMágica quedó pendiente de pago. Si quieres completarlo, te compartimos el cupón RETORNO10 con 10% de descuento.`,
+                            `Hola ${order.customer_name.split(" ")[0]}, vimos que tu pedido ${order.ref} en Honesty quedó pendiente de pago. Si quieres completarlo, te compartimos el cupón VUELVE10 con 10% de descuento.`,
                         );
                         return (
                             <FadeIn key={order.id}>
-                                <div className="p-5 rounded-2xl bg-surface-card border border-white/10 flex flex-col justify-between h-full">
+                                <div className="p-5 rounded-2xl bg-surface-card border border-black/10 flex flex-col justify-between h-full">
                                     <div>
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="font-bold text-white text-sm">
+                                            <span className="font-bold text-foreground text-sm">
                                                 {order.customer_name}
                                             </span>
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-amber-500/20 text-amber-300">
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-warning/10 text-warning">
                                                 Pago pendiente
                                             </span>
                                         </div>
@@ -90,20 +90,20 @@ export default function AbandonedPanel() {
                                             #{order.ref} • 📱 {order.customer_phone} •{" "}
                                             {new Date(order.created_at).toLocaleString("es-CO")}
                                         </div>
-                                        <div className="p-3 rounded-xl bg-surface border border-white/5 space-y-1 mb-4 text-xs">
+                                        <div className="p-3 rounded-xl bg-surface border border-black/10 space-y-1 mb-4 text-xs">
                                             {order.items.map((i) => (
                                                 <div key={i.id} className="flex justify-between text-muted">
                                                     <span className="line-clamp-1 mr-2">
                                                         {i.name} (x{i.quantity})
                                                     </span>
-                                                    <span className="text-white font-medium shrink-0">
+                                                    <span className="text-foreground font-medium shrink-0">
                                                         {formatCOP(i.unit_price_cop * i.quantity)}
                                                     </span>
                                                 </div>
                                             ))}
-                                            <div className="pt-2 border-t border-white/10 flex justify-between font-bold text-white text-xs">
+                                            <div className="pt-2 border-t border-black/10 flex justify-between font-bold text-foreground text-xs">
                                                 <span>Valor Total:</span>
-                                                <span className="text-accent">{formatCOP(order.total_cop)}</span>
+                                                <span className="text-accent-dark">{formatCOP(order.total_cop)}</span>
                                             </div>
                                         </div>
                                     </div>

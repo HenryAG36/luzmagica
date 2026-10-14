@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import CheckoutClient from "./CheckoutClient";
 
 export const metadata: Metadata = {
-    title: "Checkout Seguro | LuzMágica",
-    description: "Completa tu pedido de forma segura en LuzMágica con envío protegido.",
+    title: "Checkout | Honesty",
+    description: "Completa tu pedido en Honesty con pago procesado por Wompi.",
 };
 
 export default function CheckoutPage() {

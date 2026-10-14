@@ -5,8 +5,8 @@ import { listPublishedProducts } from "@/lib/catalog/repository";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-    title: "Productos | LuzMágica",
-    description: "Explora nuestra colección completa de iluminación LED decorativa. Filtra por habitación, tipo y precio.",
+    title: "Catálogo | Honesty",
+    description: "Explora el catálogo completo. Filtra por categoría, tipo y precio.",
 };
 
 export default async function ProductsPage() {

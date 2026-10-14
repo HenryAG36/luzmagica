@@ -96,7 +96,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const sent = await sendOrderStatusEmail(
         refunded.order,
-        `LuzMágica — Pedido ${refunded.order.ref} reembolsado`,
+        `Honesty — Pedido ${refunded.order.ref} reembolsado`,
         "Reembolso registrado",
         `Se registró un reembolso por ${amountCop.toLocaleString("es-CO")} COP. La acreditación depende de tu banco o medio de pago.`
     );

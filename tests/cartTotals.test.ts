@@ -179,3 +179,36 @@ test("cj dropshipping items are quote-required and never get legacy shipping", (
     assert.equal(t2.total, 30000 - 3000 + 8000);
     assert.equal(t2.legacyShippingCop, 0);
 });
+
+import { resolveCoupon, grantsFreeShipping } from "../lib/cart/coupons.ts";
+import { itemQuantityCap, MAX_CART_ITEM_QTY } from "../lib/cart/totals.ts";
+
+test("visible Honesty coupons and hidden legacy aliases share the same rates", () => {
+    for (const [visible, legacy] of [
+        ["HONEST10", "MAGIA10"],
+        ["VUELVE10", "RETORNO10"],
+        ["HONESTVIP15", "LUZVIP15"],
+    ]) {
+        const a = resolveCoupon(visible);
+        const b = resolveCoupon(legacy);
+        assert.ok(a && b, `${visible}/${legacy} should resolve`);
+        assert.equal(a.percent, b.percent);
+        assert.equal(a.code, visible);
+        assert.equal(b.code, legacy);
+    }
+    assert.equal(resolveCoupon("MAGIA10")?.percent, 10);
+    assert.equal(resolveCoupon("RETORNO10")?.percent, 10);
+    assert.equal(resolveCoupon("LUZVIP15")?.percent, 15);
+    assert.equal(grantsFreeShipping("ENVIOGRATIS"), true);
+    assert.equal(resolveCoupon("NOEXISTE"), null);
+    assert.equal(resolveCoupon(" honest10 ")?.code, "HONEST10");
+});
+
+test("item quantity cap clamps to stock and the server max", () => {
+    assert.equal(itemQuantityCap(5), 5);
+    assert.equal(itemQuantityCap(500), MAX_CART_ITEM_QTY);
+    assert.equal(itemQuantityCap(0), 0);
+    assert.equal(itemQuantityCap(-3), 0);
+    assert.equal(itemQuantityCap(0.5), 0);
+    assert.equal(itemQuantityCap(Number.NaN), 0);
+});

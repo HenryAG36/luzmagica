@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
     ShieldCheck,
-    ArrowLeft,
     ShoppingBag,
     Truck,
     Tag,
@@ -18,12 +17,14 @@ import { useCartStore } from "@/store/useCartStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
+import ProductImage from "@/components/common/ProductImage";
 
 const emptySubscribe = () => () => {};
 
 export default function CheckoutClient() {
     const searchParams = useSearchParams();
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+    const errorRef = useRef<HTMLDivElement>(null);
 
     const {
         items,
@@ -46,8 +47,8 @@ export default function CheckoutClient() {
     const [consent, setConsent] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
-    // Server-verified LuzPoints: balance comes from /api/loyalty/balance and
-    // the server re-validates + debits on order creation.
+    // Server-verified Puntos Honesty: balance comes from /api/loyalty/balance
+    // and the server re-validates + debits on order creation.
     const [pointsBalance, setPointsBalance] = useState<number | null>(null);
     const [pointsToUse, setPointsToUse] = useState(0);
 
@@ -55,7 +56,7 @@ export default function CheckoutClient() {
 
     useEffect(() => {
         if (recoverParam && !couponCode) {
-            applyCoupon("RETORNO10");
+            applyCoupon("VUELVE10");
         }
     }, [recoverParam, couponCode, applyCoupon]);
 
@@ -73,31 +74,38 @@ export default function CheckoutClient() {
         };
     }, [currentUser]);
 
+    useEffect(() => {
+        if (submitError && errorRef.current) {
+            errorRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+            errorRef.current.focus();
+        }
+    }, [submitError]);
+
     if (!mounted) {
         return (
-            <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
-                <div className="animate-pulse text-muted">Cargando checkout seguro...</div>
+            <div className="flex min-h-screen items-center justify-center px-4 py-16">
+                <div className="animate-pulse text-muted">Cargando checkout...</div>
             </div>
         );
     }
 
     if (items.length === 0) {
         return (
-            <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
+            <div className="flex min-h-screen items-center justify-center px-4 py-16">
                 <FadeIn>
-                    <div className="text-center max-w-md mx-auto">
-                        <ShoppingBag className="w-16 h-16 text-muted mx-auto mb-6" />
-                        <h1 className="font-heading text-3xl font-bold text-white mb-3">
-                            No hay items en el carrito
+                    <div className="mx-auto max-w-md text-center">
+                        <ShoppingBag className="mx-auto mb-6 h-16 w-16 text-muted" aria-hidden />
+                        <h1 className="mb-3 font-heading text-3xl font-semibold">
+                            Tu carrito está vacío
                         </h1>
-                        <p className="text-muted text-sm mb-6">
-                            Agrega productos mágicos de iluminación LED para continuar.
+                        <p className="mb-6 text-sm text-muted">
+                            Agrega productos del catálogo para continuar.
                         </p>
                         <Link
                             href="/products"
-                            className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all"
+                            className="inline-flex items-center gap-2 rounded-full bg-foreground px-8 py-4 font-semibold text-white transition-colors hover:bg-primary-light"
                         >
-                            Explorar Iluminación
+                            Ver catálogo
                         </Link>
                     </div>
                 </FadeIn>
@@ -179,295 +187,371 @@ export default function CheckoutClient() {
     };
 
     const inputClass =
-        "w-full px-4 py-3 rounded-xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary transition-colors text-sm";
+        "w-full rounded-xl border border-black/15 bg-surface px-4 py-3 text-sm text-foreground placeholder:text-muted transition-colors focus:outline-none focus:border-accent/60";
+    const labelClass = "mb-1 block text-xs font-medium text-muted";
+
+    const orderLines = (
+        <div className="mb-5 max-h-52 space-y-3 overflow-y-auto pr-1">
+            {items.map((item) => (
+                <div key={item.product.id} className="flex items-center gap-2.5 text-xs">
+                    <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-black/10 bg-surface-light">
+                        <ProductImage
+                            src={item.product.images[0]}
+                            alt=""
+                            sizes="40px"
+                        />
+                    </span>
+                    <span className="mr-2 flex-1 line-clamp-2 text-muted">
+                        {item.product.name} × {item.quantity}
+                    </span>
+                    <span className="shrink-0 font-medium text-foreground">
+                        {formatCOP(item.product.price * item.quantity)}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+
+    const totalsBlock = (
+        <div className="mb-5 space-y-2.5 border-t border-black/10 pt-4 text-xs">
+            <div className="flex justify-between text-muted">
+                <span>Subtotal</span>
+                <span className="text-foreground">{formatCOP(subtotal)}</span>
+            </div>
+            {couponDiscount > 0 && (
+                <div className="flex justify-between text-success">
+                    <span>Descuento cupón ({couponCode})</span>
+                    <span>-{formatCOP(couponDiscount)}</span>
+                </div>
+            )}
+            {pointsDiscountCop > 0 && (
+                <div className="flex justify-between text-success">
+                    <span>Puntos Honesty ({redeemablePoints} pts)</span>
+                    <span>-{formatCOP(pointsDiscountCop)}</span>
+                </div>
+            )}
+            {breakdown.legacyItemCount > 0 && (
+                <div className="flex justify-between text-muted">
+                    <span>Envío nacional</span>
+                    <span className={breakdown.legacyShippingCop === 0 ? "font-semibold text-success" : "text-foreground"}>
+                        {breakdown.legacyShippingCop === 0 ? "Gratis" : formatCOP(breakdown.legacyShippingCop)}
+                    </span>
+                </div>
+            )}
+            {dsPresent && (
+                <div className="flex justify-between text-muted">
+                    <span>Envío internacional (estimado, por unidad, a Bogotá)</span>
+                    {breakdown.dsShippingCop === null ? (
+                        <span className="text-warning">Pendiente de cotización</span>
+                    ) : (
+                        <span className="text-foreground">{formatCOP(breakdown.dsShippingCop)}</span>
+                    )}
+                </div>
+            )}
+            <div className="flex justify-between border-t border-black/10 pt-2 text-base font-bold">
+                <span>{dsPresent ? "Total estimado" : "Total a pagar"}</span>
+                {total === null ? (
+                    <span className="text-sm font-medium text-warning">Pendiente de cotización</span>
+                ) : (
+                    <span>{formatCOP(total)}</span>
+                )}
+            </div>
+        </div>
+    );
 
     return (
-        <div className="pt-28 pb-16 px-4">
-            <div className="max-w-6xl mx-auto">
-                <FadeIn>
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                        <div>
-                            <Link
-                                href="/cart"
-                                className="inline-flex items-center gap-2 text-xs text-muted hover:text-white transition-colors mb-2"
-                            >
-                                <ArrowLeft className="w-4 h-4" />
-                                Volver al carrito
-                            </Link>
-                            <h1 className="font-heading text-3xl sm:text-4xl font-bold">
-                                <span className="gradient-text">Checkout Seguro</span>
-                            </h1>
+        <div className="px-4 pb-32 pt-8 lg:pb-16">
+            <div className="mx-auto max-w-6xl">
+                {/* Step orientation — the Wompi step happens off-site after submit */}
+                <nav aria-label="Progreso de compra" className="mb-6 flex items-center gap-2 text-xs text-muted">
+                    <Link href="/cart" className="transition-colors hover:text-foreground">Carrito</Link>
+                    <ArrowRight className="h-3 w-3" aria-hidden />
+                    <span className="font-semibold text-foreground" aria-current="step">Datos</span>
+                    <ArrowRight className="h-3 w-3" aria-hidden />
+                    <span>Pago en Wompi</span>
+                </nav>
+
+                <h1 className="mb-8 font-heading text-3xl font-semibold sm:text-4xl">
+                    Finalizar compra
+                </h1>
+
+                {/* Top-level error alert */}
+                {submitError && (
+                    <div
+                        ref={errorRef}
+                        role="alert"
+                        tabIndex={-1}
+                        className="mb-6 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm font-medium text-danger focus:outline-none"
+                    >
+                        {submitError}
+                    </div>
+                )}
+
+                {/* Free shipping bar (national eligible items only) */}
+                {breakdown.legacyItemCount > 0 && (
+                    <div className="mb-6 rounded-2xl border border-black/10 bg-surface p-4">
+                        <div className="mb-2 flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-2 font-medium">
+                                <Truck className="h-4 w-4 text-accent-dark" aria-hidden />
+                                {shippingProgress.isFree
+                                    ? "Envío nacional gratis en productos elegibles"
+                                    : `Agrega ${formatCOP(shippingProgress.remaining)} en productos elegibles para envío nacional gratis`}
+                            </span>
+                            <span className="font-mono text-muted">{shippingProgress.percent}%</span>
                         </div>
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-card border border-white/10 text-xs text-muted">
-                            <Lock className="w-3.5 h-3.5 text-green-400" />
-                            <span>Encriptación SSL 256-bit</span>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-surface-light">
+                            <div
+                                className="motion-progress h-full rounded-full bg-accent"
+                                style={{ width: `${shippingProgress.percent}%` }}
+                            />
                         </div>
                     </div>
+                )}
+                {dsPresent && (
+                    <div className="mb-6 flex items-start gap-2.5 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-xs text-warning">
+                        <Truck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                        <span>
+                            Este pedido incluye productos de proveedor internacional: el envío se cobra
+                            por unidad según la cotización estimada a Bogotá y no participa del envío
+                            gratis. Entrega estimada de 15–30 días hábiles tras el despacho del proveedor
+                            {cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
+                        </span>
+                    </div>
+                )}
 
-                    {/* Free shipping bar (legacy national items only; DS products ship per quoted estimate) */}
-                    {(!dsPresent || breakdown.legacyItemCount > 0) && (
-                        <div className="p-4 rounded-2xl bg-surface-card border border-white/10 mb-8">
-                            <div className="flex items-center justify-between text-xs mb-2">
-                                <span className="flex items-center gap-2 text-white font-medium">
-                                    <Truck className="w-4 h-4 text-primary" />
-                                    {shippingProgress.isFree
-                                        ? "¡Felicidades! Tienes Envío Gratis Nacional"
-                                        : `Agrega ${formatCOP(shippingProgress.remaining)} para obtener Envío Gratis en toda Colombia`}
-                                    {dsPresent && " (solo productos nacionales)"}
-                                </span>
-                                <span className="text-muted font-mono">{shippingProgress.percent}%</span>
-                            </div>
-                            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                                <div
-                                    className="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-500"
-                                    style={{ width: `${shippingProgress.percent}%` }}
-                                />
-                            </div>
-                        </div>
-                    )}
-                    {dsPresent && (
-                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 mb-8 text-xs text-amber-200 flex items-start gap-2.5">
-                            <Truck className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
-                            <span>
-                                Este pedido incluye productos de proveedor internacional: el envío se cobra por unidad
-                                según la cotización estimada a Bogotá y no participa del envío gratis. Entrega estimada
-                                de 15–30 días hábiles tras el despacho del proveedor
-                                {cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
-                            </span>
-                        </div>
-                    )}
-                </FadeIn>
+                {/* Mobile order summary disclosure with total visible */}
+                <details className="mb-6 rounded-2xl border border-black/10 bg-surface p-4 lg:hidden">
+                    <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold">
+                        <span className="flex items-center gap-2">
+                            <ShoppingBag className="h-4 w-4 text-accent-dark" aria-hidden />
+                            Resumen del pedido
+                        </span>
+                        <span className="font-bold">
+                            {total === null ? "Por cotizar" : formatCOP(total)}
+                        </span>
+                    </summary>
+                    <div className="mt-4">
+                        {orderLines}
+                        {totalsBlock}
+                    </div>
+                </details>
 
-                <form onSubmit={handleSubmitOrder}>
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <form id="checkout-form" onSubmit={handleSubmitOrder}>
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
                         {/* Left column: Customer info & payment */}
-                        <div className="lg:col-span-2 space-y-6">
-                            {/* Customer information (Auto-fills and remembers for 1-click repeat) */}
-                            <FadeIn delay={0.1}>
-                                <div className="glass rounded-2xl p-6 sm:p-8">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h2 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                                            <span>1. Datos de Envío & Destinatario</span>
-                                        </h2>
-                                        <span className="text-[11px] text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20">
-                                            Perfil Guardado
-                                        </span>
-                                    </div>
+                        <div className="space-y-6 lg:col-span-2">
+                            {/* Customer information */}
+                            <div className="rounded-2xl border border-black/10 bg-surface p-6 sm:p-8">
+                                <h2 className="mb-4 font-heading text-lg font-semibold">
+                                    1. Datos de envío y destinatario
+                                </h2>
 
-                                    {/* Session status banner */}
-                                    {currentUser ? (
-                                        <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-between text-xs mb-4">
-                                            <div className="flex items-center gap-2">
-                                                <User className="w-4 h-4 text-primary" />
-                                                <span className="text-white">
-                                                    Sesión activa como <strong>{currentUser.name}</strong>
-                                                </span>
-                                            </div>
-                                            <span className="text-[11px] text-accent font-semibold">
-                                                Datos vinculados
+                                {/* Session status banner */}
+                                {currentUser ? (
+                                    <div className="mb-4 flex items-center justify-between rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <User className="h-4 w-4 text-accent-dark" aria-hidden />
+                                            <span>
+                                                Sesión activa como <strong>{currentUser.name}</strong>
                                             </span>
                                         </div>
-                                    ) : (
-                                        <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs mb-4">
-                                            <span className="text-muted">¿Tienes cuenta LuzClub?</span>
+                                    </div>
+                                ) : (
+                                    <div className="mb-4 rounded-xl border border-black/10 bg-surface-light p-3 text-xs">
+                                        <p className="font-medium">
+                                            Compra como invitado, sin crear una cuenta.
+                                        </p>
+                                        <p className="mt-1 text-muted">
+                                            ¿Tienes cuenta Club Honesty?{" "}
                                             <Link
                                                 href="/login?redirect=/checkout"
-                                                className="text-primary hover:underline font-semibold flex items-center gap-1"
+                                                className="font-semibold text-accent-dark hover:underline"
                                             >
-                                                <span>Iniciar Sesión</span>
-                                                <ArrowRight className="w-3 h-3" />
-                                            </Link>
-                                        </div>
-                                    )}
+                                                Inicia sesión
+                                            </Link>{" "}
+                                            para usar tus puntos.
+                                        </p>
+                                    </div>
+                                )}
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="sm:col-span-2">
-                                            <label className="text-xs text-muted mb-1 block">Nombre completo *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={customerProfile.name}
-                                                onChange={(e) => setCustomerProfile({ name: e.target.value })}
-                                                placeholder="Ej: Nombre y apellido"
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="checkout-name" className={labelClass}>Nombre completo *</label>
+                                        <input
+                                            id="checkout-name"
+                                            name="name"
+                                            type="text"
+                                            required
+                                            autoComplete="name"
+                                            value={customerProfile.name}
+                                            onChange={(e) => setCustomerProfile({ name: e.target.value })}
+                                            placeholder="Ej: Nombre y apellido"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Teléfono / WhatsApp *</label>
-                                            <input
-                                                type="tel"
-                                                required
-                                                value={customerProfile.phone}
-                                                onChange={(e) => setCustomerProfile({ phone: e.target.value })}
-                                                placeholder="310 456 7890"
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div>
+                                        <label htmlFor="checkout-phone" className={labelClass}>Teléfono / WhatsApp *</label>
+                                        <input
+                                            id="checkout-phone"
+                                            name="tel"
+                                            type="tel"
+                                            required
+                                            autoComplete="tel"
+                                            value={customerProfile.phone}
+                                            onChange={(e) => setCustomerProfile({ phone: e.target.value })}
+                                            placeholder="310 456 7890"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Cédula / Documento *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={customerProfile.cedula}
-                                                onChange={(e) => setCustomerProfile({ cedula: e.target.value })}
-                                                placeholder="Requerido por transportadora"
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div>
+                                        <label htmlFor="checkout-cedula" className={labelClass}>Cédula / Documento *</label>
+                                        <input
+                                            id="checkout-cedula"
+                                            name="cedula"
+                                            type="text"
+                                            required
+                                            autoComplete="off"
+                                            value={customerProfile.cedula}
+                                            onChange={(e) => setCustomerProfile({ cedula: e.target.value })}
+                                            placeholder="Requerido por transportadora"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div className="sm:col-span-2">
-                                            <label className="text-xs text-muted mb-1 block">Email para confirmación *</label>
-                                            <input
-                                                type="email"
-                                                required
-                                                value={customerProfile.email}
-                                                onChange={(e) => setCustomerProfile({ email: e.target.value })}
-                                                placeholder="tu@correo.com"
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="checkout-email" className={labelClass}>Correo para confirmación *</label>
+                                        <input
+                                            id="checkout-email"
+                                            name="email"
+                                            type="email"
+                                            required
+                                            autoComplete="email"
+                                            value={customerProfile.email}
+                                            onChange={(e) => setCustomerProfile({ email: e.target.value })}
+                                            placeholder="tu@correo.com"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div className="sm:col-span-2">
-                                            <label className="text-xs text-muted mb-1 block">Dirección de entrega *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={customerProfile.address}
-                                                onChange={(e) => setCustomerProfile({ address: e.target.value })}
-                                                placeholder="Calle 127 #15-32 Apto 402"
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="checkout-address" className={labelClass}>Dirección de entrega *</label>
+                                        <input
+                                            id="checkout-address"
+                                            name="street-address"
+                                            type="text"
+                                            required
+                                            autoComplete="street-address"
+                                            value={customerProfile.address}
+                                            onChange={(e) => setCustomerProfile({ address: e.target.value })}
+                                            placeholder="Calle 127 #15-32 Apto 402"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Ciudad *</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={customerProfile.city}
-                                                onChange={(e) => setCustomerProfile({ city: e.target.value })}
-                                                placeholder="Bogotá, Medellín, Cali..."
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div>
+                                        <label htmlFor="checkout-city" className={labelClass}>Ciudad *</label>
+                                        <input
+                                            id="checkout-city"
+                                            name="address-level2"
+                                            type="text"
+                                            required
+                                            autoComplete="address-level2"
+                                            value={customerProfile.city}
+                                            onChange={(e) => setCustomerProfile({ city: e.target.value })}
+                                            placeholder="Bogotá, Medellín, Cali…"
+                                            className={inputClass}
+                                        />
+                                    </div>
 
-                                        <div>
-                                            <label className="text-xs text-muted mb-1 block">Notas de entrega (opcional)</label>
-                                            <input
-                                                type="text"
-                                                value={customerProfile.notes || ""}
-                                                onChange={(e) => setCustomerProfile({ notes: e.target.value })}
-                                                placeholder="Portería, dejar con conserje..."
-                                                className={inputClass}
-                                            />
-                                        </div>
+                                    <div>
+                                        <label htmlFor="checkout-department" className={labelClass}>Departamento</label>
+                                        <input
+                                            id="checkout-department"
+                                            name="address-level1"
+                                            type="text"
+                                            autoComplete="address-level1"
+                                            value={customerProfile.department || ""}
+                                            onChange={(e) => setCustomerProfile({ department: e.target.value })}
+                                            placeholder="Cundinamarca, Antioquia…"
+                                            className={inputClass}
+                                        />
+                                    </div>
+
+                                    <div className="sm:col-span-2">
+                                        <label htmlFor="checkout-notes" className={labelClass}>Notas de entrega (opcional)</label>
+                                        <input
+                                            id="checkout-notes"
+                                            name="notes"
+                                            type="text"
+                                            autoComplete="off"
+                                            value={customerProfile.notes || ""}
+                                            onChange={(e) => setCustomerProfile({ notes: e.target.value })}
+                                            placeholder="Portería, dejar con conserje…"
+                                            className={inputClass}
+                                        />
                                     </div>
                                 </div>
-                            </FadeIn>
+                            </div>
 
                             {/* Payment via Wompi */}
-                            <FadeIn delay={0.2}>
-                                <div className="glass rounded-2xl p-6 sm:p-8">
-                                    <h2 className="font-heading text-lg font-bold text-white mb-4">
-                                        2. Pago & Consentimiento
-                                    </h2>
+                            <div className="rounded-2xl border border-black/10 bg-surface p-6 sm:p-8">
+                                <h2 className="mb-4 font-heading text-lg font-semibold">
+                                    2. Pago y consentimiento
+                                </h2>
 
-                                    <div className="p-4 rounded-2xl bg-surface border border-white/10 mb-5">
-                                        <div className="flex items-center gap-3 mb-3">
-                                            <ShieldCheck className="w-5 h-5 text-secondary shrink-0" />
-                                            <span className="font-bold text-sm text-white">
-                                                Pago procesado por Wompi
-                                            </span>
-                                        </div>
-                                        <p className="text-[11px] text-muted mb-3">
-                                            Al continuar serás redirigido a la página segura de Wompi, donde podrás
-                                            elegir tu método de pago.
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {["Nequi", "PSE", "Tarjetas débito/crédito", "Bancolombia"].map((m) => (
-                                                <span
-                                                    key={m}
-                                                    className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-white"
-                                                >
-                                                    {m}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <label className="flex items-start gap-3 cursor-pointer select-none">
-                                        <input
-                                            type="checkbox"
-                                            checked={consent}
-                                            onChange={(e) => setConsent(e.target.checked)}
-                                            className="mt-0.5 accent-primary w-4 h-4"
-                                        />
-                                        <span className="text-xs text-muted leading-relaxed">
-                                            Acepto la{" "}
-                                            <Link href="/legal/privacidad" className="text-primary hover:underline" target="_blank">
-                                                política de tratamiento de datos personales
-                                            </Link>{" "}
-                                            (Ley 1581 de 2012). Mis datos serán usados para procesar y entregar este pedido.
+                                <div className="mb-5 rounded-2xl border border-black/10 bg-surface-light p-4">
+                                    <div className="mb-2 flex items-center gap-3">
+                                        <ShieldCheck className="h-5 w-5 shrink-0 text-accent-dark" aria-hidden />
+                                        <span className="text-sm font-bold">
+                                            Pago procesado por Wompi
                                         </span>
-                                    </label>
-                                </div>
-                            </FadeIn>
-                        </div>
-
-                        {/* Right column: Summary, Loyalty Points, Coupons */}
-                        <div className="space-y-6">
-                            <FadeIn delay={0.2}>
-                                <div className="glass rounded-2xl p-6 sticky top-28">
-                                    <h2 className="font-heading text-lg font-bold text-white mb-4">
-                                        Resumen del Pedido
-                                    </h2>
-
-                                    {/* Items List */}
-                                    <div className="space-y-3 mb-5 max-h-52 overflow-y-auto pr-1">
-                                        {items.map((item) => (
-                                            <div key={item.product.id} className="flex justify-between text-xs">
-                                                <span className="text-muted line-clamp-1 flex-1 mr-2">
-                                                    {item.product.name} × {item.quantity}
-                                                </span>
-                                                <span className="text-white font-medium shrink-0">
-                                                    {formatCOP(item.product.price * item.quantity)}
-                                                </span>
-                                            </div>
-                                        ))}
                                     </div>
+                                    <p className="mb-3 text-[11px] text-muted">
+                                        Al continuar serás redirigido a la página segura de Wompi,
+                                        donde podrás elegir tu método de pago. Medios disponibles
+                                        según Wompi al pagar.
+                                    </p>
+                                </div>
 
-                                    {/* Coupon input */}
-                                    <div className="mb-5">
+                                {/* Coupon disclosure */}
+                                <details className="mb-5 rounded-xl border border-black/10 bg-surface-light px-4 py-3">
+                                    <summary className="cursor-pointer text-xs font-semibold">
+                                        ¿Tienes un cupón?
+                                    </summary>
+                                    <div className="mt-3">
                                         {couponCode ? (
-                                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-accent/10 border border-accent/30 text-xs">
+                                            <div className="flex items-center justify-between rounded-xl border border-accent/30 bg-accent/10 p-2.5 text-xs">
                                                 <div className="flex items-center gap-2">
-                                                    <Tag className="w-3.5 h-3.5 text-accent" />
-                                                    <span className="font-mono font-bold text-accent">{couponCode}</span>
-                                                    <span className="text-white">(-{discountPercent}%)</span>
+                                                    <Tag className="h-3.5 w-3.5 text-accent-dark" aria-hidden />
+                                                    <span className="font-mono font-bold text-accent-dark">{couponCode}</span>
+                                                    <span>(-{discountPercent}%)</span>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     onClick={removeCoupon}
-                                                    className="text-muted hover:text-white"
+                                                    className="text-muted transition-colors hover:text-foreground"
+                                                    aria-label="Quitar cupón"
                                                 >
-                                                    <X className="w-3.5 h-3.5" />
+                                                    <X className="h-3.5 w-3.5" />
                                                 </button>
                                             </div>
                                         ) : (
                                             <div className="flex gap-2">
+                                                <label htmlFor="coupon-input" className="sr-only">Código de cupón</label>
                                                 <input
+                                                    id="coupon-input"
                                                     type="text"
                                                     value={couponInput}
                                                     onChange={(e) => setCouponInput(e.target.value)}
-                                                    placeholder="Cupón (ej: MAGIA10)"
-                                                    className="flex-1 px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-white uppercase placeholder-muted focus:outline-none focus:border-primary"
+                                                    placeholder="Ej: HONEST10"
+                                                    className="flex-1 rounded-xl border border-black/15 bg-surface px-3 py-2 text-xs uppercase placeholder:text-muted focus:outline-none focus:border-accent/60"
                                                 />
                                                 <button
                                                     type="button"
                                                     onClick={handleApplyCoupon}
-                                                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
+                                                    className="rounded-xl bg-foreground px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-light"
                                                 >
                                                     Aplicar
                                                 </button>
@@ -475,143 +559,140 @@ export default function CheckoutClient() {
                                         )}
                                         {couponMessage && (
                                             <p
-                                                className={`text-[11px] mt-1.5 ${
-                                                    couponMessage.error ? "text-red-400" : "text-green-400"
-                                                }`}
+                                                role={couponMessage.error ? "alert" : "status"}
+                                                className={`mt-1.5 text-[11px] ${couponMessage.error ? "text-danger" : "text-success"}`}
                                             >
                                                 {couponMessage.text}
                                             </p>
                                         )}
                                     </div>
+                                </details>
 
-                                    {/* LuzPoints redemption (server-verified balance) */}
-                                    {currentUser && pointsBalance !== null && pointsBalance > 0 && (
-                                        <div className="mb-5 p-3 rounded-xl bg-surface border border-white/10">
-                                            <div className="flex items-center justify-between text-xs mb-2">
-                                                <span className="text-white font-semibold">LuzPoints</span>
-                                                <span className="text-muted">
-                                                    Saldo verificado: <span className="text-accent font-bold">{pointsBalance} pts</span>
-                                                </span>
-                                            </div>
-                                            {maxRedeemable === 0 ? (
-                                                <p className="text-[11px] text-muted">
-                                                    Este pedido no permite canje (subtotal insuficiente).
-                                                </p>
-                                            ) : (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={maxRedeemable}
-                                                        step={10}
-                                                        value={pointsToUse}
-                                                        onChange={(e) =>
-                                                            setPointsToUse(
-                                                                Math.max(
-                                                                    0,
-                                                                    Math.min(maxRedeemable, Math.floor(Number(e.target.value) || 0))
-                                                                )
-                                                            )
-                                                        }
-                                                        className="w-24 px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-xs text-white focus:outline-none focus:border-primary"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setPointsToUse(maxRedeemable)}
-                                                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors"
-                                                    >
-                                                        Usar {maxRedeemable}
-                                                    </button>
-                                                    <span className="text-[11px] text-muted">= {formatCOP(pointsDiscountCop)}</span>
-                                                </div>
-                                            )}
+                                {/* Puntos Honesty redemption (server-verified balance, shared all widths) */}
+                                {currentUser && pointsBalance !== null && pointsBalance > 0 && (
+                                    <div className="mb-5 rounded-xl border border-black/10 bg-surface-light p-3">
+                                        <div className="mb-2 flex items-center justify-between text-xs">
+                                            <span className="font-semibold">Puntos Honesty</span>
+                                            <span className="text-muted">
+                                                Saldo verificado: <span className="font-bold text-accent-dark">{pointsBalance} pts</span>
+                                            </span>
                                         </div>
-                                    )}
-
-                                    {/* Financial Breakdown */}
-                                    <div className="space-y-2.5 border-t border-white/10 pt-4 mb-5 text-xs">
-                                        <div className="flex justify-between text-muted">
-                                            <span>Subtotal</span>
-                                            <span className="text-white">{formatCOP(subtotal)}</span>
-                                        </div>
-
-                                        {couponDiscount > 0 && (
-                                            <div className="flex justify-between text-green-400">
-                                                <span>Descuento cupón ({couponCode})</span>
-                                                <span>-{formatCOP(couponDiscount)}</span>
+                                        {maxRedeemable === 0 ? (
+                                            <p className="text-[11px] text-muted">
+                                                Este pedido no permite canje (subtotal insuficiente).
+                                            </p>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <label htmlFor="points-input" className="sr-only">Puntos a canjear</label>
+                                                <input
+                                                    id="points-input"
+                                                    type="number"
+                                                    min={0}
+                                                    max={maxRedeemable}
+                                                    step={1}
+                                                    value={pointsToUse}
+                                                    onChange={(e) =>
+                                                        setPointsToUse(
+                                                            Math.max(
+                                                                0,
+                                                                Math.min(maxRedeemable, Math.floor(Number(e.target.value) || 0)),
+                                                            ),
+                                                        )
+                                                    }
+                                                    className="w-24 rounded-xl border border-black/15 bg-surface px-3 py-2 text-xs focus:outline-none focus:border-accent/60"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPointsToUse(maxRedeemable)}
+                                                    className="rounded-xl border border-black/15 px-3 py-2 text-[11px] font-semibold transition-colors hover:bg-black/5"
+                                                >
+                                                    Usar {maxRedeemable}
+                                                </button>
+                                                <span className="text-[11px] text-muted">= {formatCOP(pointsDiscountCop)}</span>
                                             </div>
                                         )}
-
-                                        {pointsDiscountCop > 0 && (
-                                            <div className="flex justify-between text-green-400">
-                                                <span>LuzPoints ({redeemablePoints} pts)</span>
-                                                <span>-{formatCOP(pointsDiscountCop)}</span>
-                                            </div>
-                                        )}
-
-                                        {breakdown.legacyItemCount > 0 && (
-                                            <div className="flex justify-between text-muted">
-                                                <span>Envío Nacional (productos locales)</span>
-                                                <span className={breakdown.legacyShippingCop === 0 ? "text-secondary font-semibold" : "text-white"}>
-                                                    {breakdown.legacyShippingCop === 0 ? "¡Gratis!" : formatCOP(breakdown.legacyShippingCop)}
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        {dsPresent && (
-                                            <div className="flex justify-between text-muted">
-                                                <span>Envío internacional (estimado, por unidad, a Bogotá)</span>
-                                                {breakdown.dsShippingCop === null ? (
-                                                    <span className="text-amber-300">Pendiente de cotización</span>
-                                                ) : (
-                                                    <span className="text-white">{formatCOP(breakdown.dsShippingCop)}</span>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/10">
-                                            <span>Total a Pagar</span>
-                                            {total === null ? (
-                                                <span className="text-amber-300 text-sm">Pendiente de cotización de envío</span>
-                                            ) : (
-                                                <span className="gradient-text">{formatCOP(total)}</span>
-                                            )}
-                                        </div>
                                     </div>
+                                )}
 
-                                    {/* Submit Button */}
-                                    {dsPending && (
-                                        <p role="alert" className="text-[11px] text-amber-300 mb-3">
-                                            No se puede completar el pedido: falta la cotización de envío del proveedor internacional.
-                                        </p>
-                                    )}
-                                    {submitError && (
-                                        <p role="alert" className="text-[11px] text-red-300 mb-3">
-                                            {submitError}
-                                        </p>
-                                    )}
-                                    <button
-                                        type="submit"
-                                        disabled={submitting || dsPending || total === null}
-                                        className="w-full py-4 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold glow-purple transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-                                    >
-                                        <Lock className="w-4 h-4" />
-                                        <span>
-                                            {submitting
-                                                ? "Creando pedido…"
-                                                : total === null
-                                                  ? "Continuar al pago"
-                                                  : `Pagar ${formatCOP(total)} con Wompi`}
-                                        </span>
-                                    </button>
-                                    <p className="text-[10px] text-muted mt-3 text-center">
-                                        Serás redirigido a Wompi para completar el pago de forma segura.
+                                <label htmlFor="checkout-consent" className="flex cursor-pointer items-start gap-3 select-none">
+                                    <input
+                                        id="checkout-consent"
+                                        type="checkbox"
+                                        checked={consent}
+                                        onChange={(e) => setConsent(e.target.checked)}
+                                        className="mt-0.5 h-4 w-4 accent-foreground"
+                                    />
+                                    <span className="text-xs leading-relaxed text-muted">
+                                        Acepto la{" "}
+                                        <Link href="/legal/privacidad" className="text-accent-dark hover:underline" target="_blank">
+                                            política de tratamiento de datos personales
+                                        </Link>{" "}
+                                        (Ley 1581 de 2012). Mis datos serán usados para procesar y
+                                        entregar este pedido.
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Right column: Summary */}
+                        <div className="hidden lg:block">
+                            <div className="sticky top-32 rounded-2xl border border-black/10 bg-surface p-6">
+                                <h2 className="mb-4 font-heading text-lg font-semibold">
+                                    Resumen del pedido
+                                </h2>
+
+                                {orderLines}
+
+                                {totalsBlock}
+
+                                {dsPending && (
+                                    <p role="alert" className="mb-3 text-[11px] font-medium text-warning">
+                                        No se puede completar el pedido: falta la cotización de envío
+                                        del proveedor internacional.
                                     </p>
-                                </div>
-                            </FadeIn>
+                                )}
+                                <button
+                                    type="submit"
+                                    disabled={submitting || dsPending || total === null}
+                                    className="motion-press flex w-full items-center justify-center gap-2 rounded-full bg-foreground py-4 text-sm font-semibold text-white transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:bg-black/30"
+                                >
+                                    <Lock className="h-4 w-4" aria-hidden />
+                                    <span>
+                                        {submitting
+                                            ? "Creando pedido…"
+                                            : total === null
+                                              ? "Continuar a Wompi"
+                                              : `Continuar a Wompi · ${formatCOP(total)}`}
+                                    </span>
+                                </button>
+                                <p className="mt-3 text-center text-[10px] text-muted">
+                                    Serás redirigido a Wompi para elegir tu método de pago.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </form>
+            </div>
+
+            {/* Mobile sticky CTA */}
+            <div className="fixed inset-x-0 bottom-0 z-30 border-t border-black/10 bg-surface/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+                <div className="mx-auto flex max-w-6xl items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted">{dsPresent ? "Total estimado" : "Total a pagar"}</p>
+                        <p className="text-base font-bold">
+                            {total === null ? "Por cotizar" : formatCOP(total)}
+                        </p>
+                    </div>
+                    <button
+                        type="submit"
+                        form="checkout-form"
+                        disabled={submitting || dsPending || total === null}
+                        className="motion-press flex shrink-0 items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:bg-black/30"
+                    >
+                        <ArrowRight className="h-4 w-4" aria-hidden />
+                        {submitting ? "Creando pedido…" : "Continuar a Wompi"}
+                    </button>
+                </div>
             </div>
         </div>
     );

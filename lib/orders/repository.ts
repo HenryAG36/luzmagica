@@ -168,7 +168,7 @@ export async function createPendingOrder(
             "payment",
             "pending_payment",
             "Puntos canjeados",
-            `${loyalty.points} LuzPoints aplicados como descuento.`
+            `${loyalty.points} Puntos Honesty aplicados como descuento.`
         );
     }
 

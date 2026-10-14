@@ -92,12 +92,12 @@ export default function AccountClient() {
         return (
             <div className="pt-28 pb-16 px-4 min-h-screen flex items-center justify-center">
                 <FadeIn>
-                    <div className="text-center max-w-md mx-auto p-8 rounded-3xl bg-surface-card border border-white/10 glow-purple">
-                        <div className="w-16 h-16 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto mb-4 text-primary">
+                    <div className="text-center max-w-md mx-auto p-8 rounded-3xl bg-surface-card border border-black/10 glow-purple">
+                        <div className="w-16 h-16 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto mb-4 text-accent-dark">
                             <User className="w-8 h-8" />
                         </div>
-                        <h1 className="font-heading text-2xl font-bold text-white mb-2">
-                            Inicia Sesión en LuzClub
+                        <h1 className="font-heading text-2xl font-bold text-foreground mb-2">
+                            Inicia sesión en Club Honesty
                         </h1>
                         <p className="text-xs sm:text-sm text-muted mb-6">
                             Para acceder a tu perfil, historial de pedidos y recompensas exclusivas, inicia sesión o crea tu cuenta.
@@ -175,27 +175,27 @@ export default function AccountClient() {
     };
 
     const inputClass =
-        "w-full px-4 py-2.5 rounded-xl bg-surface border border-white/10 text-white placeholder-muted focus:outline-none focus:border-primary text-xs";
+        "w-full px-4 py-2.5 rounded-xl bg-surface border border-black/10 text-foreground placeholder:text-muted focus:outline-none focus:border-primary text-xs";
 
     return (
         <div className="pt-28 pb-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
             <FadeIn>
                 {/* Profile Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-8 mb-8 border-b border-white/10">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-8 mb-8 border-b border-black/10">
                     <div className="flex items-center gap-4">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center font-heading text-2xl font-bold text-white shadow-lg glow-purple">
                             {currentUser.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
                             <div className="flex items-center gap-2 mb-1">
-                                <h1 className="font-heading text-2xl sm:text-3xl font-bold text-white">
+                                <h1 className="font-heading text-2xl sm:text-3xl font-bold text-foreground">
                                     {currentUser.name}
                                 </h1>
                                 <span
                                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                                         currentUser.role === "admin"
-                                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                                            : "bg-primary/20 text-primary border border-primary/30"
+                                            ? "bg-warning/10 text-warning border border-warning/30"
+                                            : "bg-primary/20 text-accent-dark border border-primary/30"
                                     }`}
                                 >
                                     {currentUser.role === "admin" ? "Administrador" : `Socio ${currentTier}`}
@@ -219,7 +219,7 @@ export default function AccountClient() {
 
                         <button
                             onClick={handleLogout}
-                            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-muted hover:text-red-300 text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-colors"
+                            className="px-4 py-2 rounded-xl bg-black/5 hover:bg-danger/10 text-muted hover:text-danger text-xs font-semibold flex items-center gap-1.5 border border-black/10 transition-colors"
                         >
                             <LogOut className="w-3.5 h-3.5" />
                             <span>Cerrar Sesión</span>
@@ -230,28 +230,28 @@ export default function AccountClient() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Left: Loyalty & Profile Info */}
                     <div className="space-y-6">
-                        {/* LuzPoints Summary Card */}
+                        {/* Puntos Honesty Summary Card */}
                         <div className="p-6 rounded-3xl bg-gradient-to-br from-primary/20 via-surface-card to-secondary/15 border border-primary/30 glow-purple">
                             <div className="flex items-center justify-between mb-3">
                                 <span className="text-xs text-muted flex items-center gap-1.5">
-                                    <Sparkles className="w-3.5 h-3.5 text-accent" />
-                                    <span>LuzClub VIP Recompensas</span>
+                                    <Sparkles className="w-3.5 h-3.5 text-accent-dark" />
+                                    <span>Club Honesty Recompensas</span>
                                 </span>
-                                <span className="text-[10px] font-bold uppercase bg-white/10 px-2 py-0.5 rounded text-white">
+                                <span className="text-[10px] font-bold uppercase bg-black/5 px-2 py-0.5 rounded text-foreground">
                                     Nivel {currentTier}
                                 </span>
                             </div>
 
                             <div className="flex items-baseline justify-between mb-4">
-                                <span className="font-heading text-3xl font-extrabold text-white">
-                                    {displayPoints.toLocaleString()} <span className="text-sm font-normal text-primary">pts</span>
+                                <span className="font-heading text-3xl font-extrabold text-foreground">
+                                    {displayPoints.toLocaleString()} <span className="text-sm font-normal text-accent-dark">pts</span>
                                 </span>
-                                <span className="text-sm font-bold text-green-400">
+                                <span className="text-sm font-bold text-success">
                                     {formatCOP(displayPoints * 10)}
                                 </span>
                             </div>
 
-                            <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden mb-4">
+                            <div className="w-full h-1.5 rounded-full bg-black/5 overflow-hidden mb-4">
                                 <div
                                     className="h-full bg-gradient-to-r from-primary to-secondary transition-all"
                                     style={{ width: `${progressPercent}%` }}
@@ -260,24 +260,24 @@ export default function AccountClient() {
 
                             <button
                                 onClick={openModal}
-                                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                                className="w-full py-2.5 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                             >
-                                <Award className="w-4 h-4 text-accent" />
+                                <Award className="w-4 h-4 text-accent-dark" />
                                 <span>Ver Beneficios & Código de Referidos</span>
                             </button>
                         </div>
 
                         {/* Customer Details Card */}
-                        <div className="glass rounded-3xl p-6 border border-white/10">
+                        <div className="glass rounded-3xl p-6 border border-black/10">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-heading text-sm font-bold text-white flex items-center gap-2">
-                                    <User className="w-4 h-4 text-primary" />
+                                <h3 className="font-heading text-sm font-bold text-foreground flex items-center gap-2">
+                                    <User className="w-4 h-4 text-accent-dark" />
                                     <span>Datos de Envío Guardados</span>
                                 </h3>
                                 {!isEditing && (
                                     <button
                                         onClick={handleStartEdit}
-                                        className="text-xs text-primary hover:text-primary-light flex items-center gap-1"
+                                        className="text-xs text-accent-dark hover:text-accent-dark flex items-center gap-1"
                                     >
                                         <Edit3 className="w-3.5 h-3.5" />
                                         <span>Editar</span>
@@ -286,7 +286,7 @@ export default function AccountClient() {
                             </div>
 
                             {savedSuccess && (
-                                <div className="p-2.5 rounded-xl bg-green-500/20 text-green-300 text-xs mb-3 flex items-center gap-2">
+                                <div className="p-2.5 rounded-xl bg-success/10 text-success text-xs mb-3 flex items-center gap-2">
                                     <Check className="w-4 h-4" />
                                     <span>Datos actualizados correctamente.</span>
                                 </div>
@@ -348,7 +348,7 @@ export default function AccountClient() {
                                         <button
                                             type="button"
                                             onClick={() => setIsEditing(false)}
-                                            className="flex-1 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white text-xs"
+                                            className="flex-1 py-2 rounded-xl bg-black/5 hover:bg-black/5 text-muted hover:text-foreground text-xs"
                                         >
                                             Cancelar
                                         </button>
@@ -364,16 +364,16 @@ export default function AccountClient() {
                             ) : (
                                 <div className="space-y-3 text-xs">
                                     <div className="flex items-center gap-2.5 text-muted">
-                                        <Phone className="w-4 h-4 text-primary shrink-0" />
-                                        <span className="text-white">{currentUser.phone}</span>
+                                        <Phone className="w-4 h-4 text-accent-dark shrink-0" />
+                                        <span className="text-foreground">{currentUser.phone}</span>
                                     </div>
                                     <div className="flex items-center gap-2.5 text-muted">
-                                        <FileText className="w-4 h-4 text-primary shrink-0" />
-                                        <span>Cédula: <strong className="text-white">{currentUser.cedula}</strong></span>
+                                        <FileText className="w-4 h-4 text-accent-dark shrink-0" />
+                                        <span>Cédula: <strong className="text-foreground">{currentUser.cedula}</strong></span>
                                     </div>
                                     <div className="flex items-center gap-2.5 text-muted">
-                                        <MapPin className="w-4 h-4 text-secondary shrink-0" />
-                                        <span className="text-white">{currentUser.address}, {currentUser.city}</span>
+                                        <MapPin className="w-4 h-4 text-accent-dark shrink-0" />
+                                        <span className="text-foreground">{currentUser.address}, {currentUser.city}</span>
                                     </div>
                                 </div>
                             )}
@@ -382,15 +382,15 @@ export default function AccountClient() {
 
                     {/* Right: Order History */}
                     <div className="lg:col-span-2 space-y-6">
-                        <div className="glass rounded-3xl p-6 sm:p-8 border border-white/10">
+                        <div className="glass rounded-3xl p-6 sm:p-8 border border-black/10">
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                                    <Package className="w-5 h-5 text-primary" />
+                                <h3 className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
+                                    <Package className="w-5 h-5 text-accent-dark" />
                                     <span>Tus Pedidos & Despachos{customerOrders ? ` (${customerOrders.length})` : ""}</span>
                                 </h3>
                                 <Link
                                     href="/products"
-                                    className="text-xs text-primary hover:text-primary-light"
+                                    className="text-xs text-accent-dark hover:text-accent-dark"
                                 >
                                     Ver Catálogo
                                 </Link>
@@ -399,7 +399,7 @@ export default function AccountClient() {
                             {ordersError ? (
                                 <div className="text-center py-10 text-muted text-xs">
                                     No pudimos cargar tus pedidos. Recarga la página o consulta por referencia en{" "}
-                                    <Link href="/tracking" className="text-primary hover:underline">
+                                    <Link href="/tracking" className="text-accent-dark hover:underline">
                                         Rastreo
                                     </Link>
                                     .
@@ -420,15 +420,15 @@ export default function AccountClient() {
                                         return (
                                             <div
                                                 key={order.ref}
-                                                className="p-4 sm:p-5 rounded-2xl bg-surface-card border border-white/5 hover:border-white/15 transition-all"
+                                                className="p-4 sm:p-5 rounded-2xl bg-surface-card border border-black/10 hover:border-white/15 transition-all"
                                             >
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/10">
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <span className="font-mono font-bold text-white text-sm">
+                                                            <span className="font-mono font-bold text-foreground text-sm">
                                                                 #{order.ref}
                                                             </span>
-                                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-white">
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/5 text-foreground">
                                                                 {FULFILLMENT_STATUS_LABELS[order.fulfillmentStatus]}
                                                             </span>
                                                         </div>
@@ -443,7 +443,7 @@ export default function AccountClient() {
                                                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
                                                                 isReordered
                                                                     ? "bg-green-600 text-white"
-                                                                    : "bg-white/5 hover:bg-white/10 text-white border border-white/10"
+                                                                    : "bg-black/5 hover:bg-black/5 text-foreground border border-black/10"
                                                             }`}
                                                         >
                                                             {isReordered ? <Check className="w-3 h-3" /> : <RotateCcw className="w-3 h-3" />}
@@ -464,7 +464,7 @@ export default function AccountClient() {
                                                 <div className="pt-3 text-xs space-y-2">
                                                     <div className="flex justify-between text-muted">
                                                         <span>Transportadora:</span>
-                                                        <span className="text-white font-medium">
+                                                        <span className="text-foreground font-medium">
                                                             {order.carrier
                                                                 ? `${order.carrier} (Guía: ${order.trackingNumber ?? "pendiente"})`
                                                                 : "Por asignar"}
@@ -472,13 +472,13 @@ export default function AccountClient() {
                                                     </div>
                                                     <div className="flex justify-between text-muted">
                                                         <span>Productos:</span>
-                                                        <span className="text-white truncate max-w-[280px]">
+                                                        <span className="text-foreground truncate max-w-[280px]">
                                                             {order.items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
                                                         </span>
                                                     </div>
-                                                    <div className="flex justify-between font-bold text-white pt-1">
+                                                    <div className="flex justify-between font-bold text-foreground pt-1">
                                                         <span>Total Pagado:</span>
-                                                        <span className="text-accent">{formatCOP(order.totalCop)}</span>
+                                                        <span className="text-accent-dark">{formatCOP(order.totalCop)}</span>
                                                     </div>
                                                 </div>
                                             </div>

@@ -18,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Inter (body) and Cormorant Garamond (headings).
 
 ## Backend setup (Supabase + trend providers)
 
@@ -189,12 +189,36 @@ policies, and only `postgres`/`service_role` hold table privileges.
   cannot be verified since it isn't a domain you own. Email failure never
   changes payment state.
 - Checkout requires the customer to accept the data-processing policy
-  (`/legal/privacidad`, Ley 1581) and records `consent_at`. LuzPoints
-  redemption is disabled at checkout — balances live in browser state and
-  cannot be verified server-side. Contraentrega is not offered.
+  (`/legal/privacidad`, Ley 1581) and records `consent_at`. Puntos Honesty
+  redemption at checkout uses the server-verified balance
+  (`/api/loyalty/balance`) and is re-validated + debited at order creation.
+  Contraentrega is not offered.
 - The browser-local order store was removed; account order history comes from
   `GET /api/orders/mine` (session email match) and reorder flows re-fetch
   current published prices rather than trusting order snapshots.
+
+### Honesty storefront rebrand
+
+- Customer-facing UI, order/status emails, WhatsApp recovery copy, legal
+  pages, and loyalty labels use the **Honesty** / **Club Honesty** /
+  **Puntos Honesty** names. Visual identity is a royal-minimal light theme
+  (white/near-black with restrained gold `#A98B5F`, Cormorant Garamond
+  headings + Inter body, black pill CTAs).
+- Legacy technical identifiers are kept deliberately for compatibility:
+  `luzmagica-*` localStorage keys, `LM-` order references, `luzmagica.co`
+  domain/env values, and real URLs are unchanged.
+- Customer-facing coupons are `HONEST10` (10%), `VUELVE10` (10%), and
+  `HONESTVIP15` (15%). `MAGIA10`, `RETORNO10`, and `LUZVIP15` remain valid
+  as hidden compatibility aliases at identical rates — persisted carts and
+  old links keep working; discount arithmetic is unchanged.
+- Public catalog responses include `reviewsAvg`/`reviewsCount` aggregates
+  computed from approved `product_reviews` rows only (paginated 1000-row
+  windows; any query failure hides the summary). Review comments and
+  reviewer PII are never exposed by the aggregate path.
+- The cart drawer is a native `<dialog>` with focus trap via `showModal`,
+  backdrop/Escape close, focus restoration, and scroll locking; quantity
+  is clamped to `min(stock, 20)` server-side cap via
+  `lib/cart/totals.ts` (`itemQuantityCap`).
 
 ### Local demo data cleanup
 

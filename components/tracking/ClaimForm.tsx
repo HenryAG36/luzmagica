@@ -91,8 +91,8 @@ export default function ClaimForm({ order, contact }: Props) {
                 onClick={() => setOpen(!open)}
                 className="w-full flex items-center justify-between text-left"
             >
-                <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-amber-400" />
+                <h3 className="font-heading text-lg font-bold text-foreground flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-warning" />
                     <span>¿Problema con tu pedido?</span>
                 </h3>
                 <span className="text-xs text-muted">{open ? "Cerrar" : "Reportar"}</span>
@@ -101,9 +101,9 @@ export default function ClaimForm({ order, contact }: Props) {
             {order.claims.length > 0 && (
                 <div className="mt-4 space-y-2">
                     {order.claims.map((c, i) => (
-                        <div key={i} className="flex justify-between text-xs p-3 rounded-xl bg-surface-card border border-white/5">
+                        <div key={i} className="flex justify-between text-xs p-3 rounded-xl bg-surface-card border border-black/10">
                             <span className="text-muted">{CLAIM_REASON_LABELS[c.reason]}</span>
-                            <span className="text-white font-semibold">{CLAIM_STATUS_LABELS[c.status]}</span>
+                            <span className="text-foreground font-semibold">{CLAIM_STATUS_LABELS[c.status]}</span>
                         </div>
                     ))}
                 </div>
@@ -120,7 +120,7 @@ export default function ClaimForm({ order, contact }: Props) {
                             return (
                                 <div
                                     key={item.productId}
-                                    className="p-4 rounded-2xl bg-green-500/10 border border-green-500/30 flex items-center gap-2 text-sm text-green-300"
+                                    className="p-4 rounded-2xl bg-success/10 border border-success/30 flex items-center gap-2 text-sm text-success"
                                 >
                                     <CheckCircle2 className="w-4 h-4" />
                                     Reclamo recibido para «{item.name}» — lo revisamos y te contactamos.
@@ -128,12 +128,12 @@ export default function ClaimForm({ order, contact }: Props) {
                             );
                         }
                         return (
-                            <div key={item.productId} className="p-4 rounded-2xl bg-surface-card border border-white/5 space-y-3">
-                                <h4 className="text-sm font-semibold text-white">{item.name}</h4>
+                            <div key={item.productId} className="p-4 rounded-2xl bg-surface-card border border-black/10 space-y-3">
+                                <h4 className="text-sm font-semibold text-foreground">{item.name}</h4>
                                 <select
                                     value={draft.reason}
                                     onChange={(e) => update(item.productId, { reason: e.target.value as ClaimReason })}
-                                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-sm text-white focus:outline-none focus:border-primary/50"
+                                    className="w-full px-3 py-2 rounded-xl bg-surface-light border border-black/10 text-sm text-foreground focus:outline-none focus:border-primary/50"
                                 >
                                     {Object.entries(CLAIM_REASON_LABELS).map(([value, label]) => (
                                         <option key={value} value={value}>
@@ -146,7 +146,7 @@ export default function ClaimForm({ order, contact }: Props) {
                                     onChange={(e) => update(item.productId, { description: e.target.value.slice(0, 2000) })}
                                     placeholder="Describe el problema (mínimo 10 caracteres)"
                                     rows={3}
-                                    className="w-full px-3 py-2 rounded-xl bg-black/30 border border-white/10 text-sm text-white placeholder-muted focus:outline-none focus:border-primary/50 resize-none"
+                                    className="w-full px-3 py-2 rounded-xl bg-surface-light border border-black/10 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-primary/50 resize-none"
                                 />
                                 <div>
                                     <label className="block text-xs text-muted mb-1.5">
@@ -159,10 +159,10 @@ export default function ClaimForm({ order, contact }: Props) {
                                         onChange={(e) =>
                                             update(item.productId, { files: Array.from(e.target.files ?? []).slice(0, 3) })
                                         }
-                                        className="w-full text-xs text-muted file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-primary/20 file:text-primary file:text-xs file:font-semibold"
+                                        className="w-full text-xs text-muted file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-primary/20 file:text-accent-dark file:text-xs file:font-semibold"
                                     />
                                 </div>
-                                {draft.error && <p className="text-xs text-red-300">{draft.error}</p>}
+                                {draft.error && <p className="text-xs text-danger">{draft.error}</p>}
                                 <button
                                     type="button"
                                     onClick={() => void submit(item.productId)}

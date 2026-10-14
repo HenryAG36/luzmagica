@@ -1,92 +1,105 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Star } from "lucide-react";
 import { Product } from "@/lib/types";
 import { formatCOP } from "@/lib/utils";
 import { useCartStore } from "@/store/useCartStore";
+import ProductImage from "@/components/common/ProductImage";
 
 interface ProductCardProps {
     product: Product;
     index?: number;
 }
 
-export default function ProductCard({ product, index = 0 }: ProductCardProps) {
-    const addItem = useCartStore((s) => s.addItem);
-    const [imageError, setImageError] = useState(false);
-    const externalImage = /^https?:\/\/./.test(product.images[0] || "") ? product.images[0] : null;
+function validDiscount(product: Product): number {
+    const original = product.originalPrice;
+    if (typeof original !== "number" || !Number.isFinite(original)) return 0;
+    if (original <= product.price || product.price <= 0) return 0;
+    return Math.round(((original - product.price) / original) * 100);
+}
 
-    const discount = product.originalPrice
-        ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-        : 0;
+export default function ProductCard({ product }: ProductCardProps) {
+    const addItem = useCartStore((s) => s.addItem);
+    const discount = validDiscount(product);
+    const savings = discount > 0 ? product.originalPrice! - product.price : 0;
+    const soldOut = !Number.isFinite(product.stock) || product.stock <= 0;
+    const hasRating =
+        typeof product.reviewsCount === "number" &&
+        product.reviewsCount > 0 &&
+        typeof product.reviewsAvg === "number" &&
+        Number.isFinite(product.reviewsAvg);
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: index * 0.1 }}
-            className="group relative"
-        >
-            <Link href={`/products/${product.id}`}>
-                <div className="glass rounded-2xl overflow-hidden transition-all duration-500 group-hover:glow-purple group-hover:border-primary/40">
+        <div className="group relative">
+            <Link href={`/products/${product.id}`} className="block">
+                <div className="glass overflow-hidden rounded-2xl transition-shadow hover:shadow-md">
                     {/* Image */}
-                    <div className="relative aspect-square overflow-hidden bg-surface">
-                        <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent z-10" />
-                        {externalImage && !imageError ? (
-                            <Image
-                                src={externalImage}
-                                alt={product.name}
-                                fill
-                                unoptimized
-                                sizes="(max-width: 640px) 100vw, 33vw"
-                                onError={() => setImageError(true)}
-                                className="object-cover transition-transform duration-700 group-hover:scale-110"
-                            />
-                        ) : (
-                            /* Placeholder gradient for product image */
-                            <div className="w-full h-full bg-gradient-to-br from-primary/20 via-surface to-secondary/10 flex items-center justify-center transition-transform duration-700 group-hover:scale-110">
-                                <span className="text-4xl opacity-60">💡</span>
-                            </div>
-                        )}
+                    <div className="relative aspect-square overflow-hidden bg-surface-light">
+                        <ProductImage
+                            src={product.images[0]}
+                            alt={product.name}
+                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                            className="motion-product-image"
+                        />
 
-                        {/* Badge */}
-                        {product.badge && (
-                            <span
-                                className={`absolute top-3 left-3 z-20 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${product.badge === "sale"
-                                        ? "bg-accent text-black"
-                                        : "bg-secondary text-black"
-                                    }`}
-                            >
-                                {product.badge === "sale" ? `-${discount}%` : "Nuevo"}
+                        {soldOut ? (
+                            <span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white">
+                                Agotado
                             </span>
-                        )}
+                        ) : discount > 0 ? (
+                            <span className="absolute left-3 top-3 rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-bold text-accent-dark">
+                                -{discount}%
+                            </span>
+                        ) : product.badge === "new" ? (
+                            <span className="absolute left-3 top-3 rounded-full bg-foreground px-2.5 py-1 text-[11px] font-semibold text-white">
+                                Nuevo
+                            </span>
+                        ) : null}
                     </div>
 
                     {/* Info */}
-                    <div className="p-4">
-                        <h3 className="font-heading font-semibold text-sm text-white mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                    <div className="p-4 pb-2">
+                        <h3 className="mb-1.5 line-clamp-2 min-h-[2.5rem] text-sm font-medium text-foreground transition-colors group-hover:text-accent-dark">
                             {product.name}
                         </h3>
-                        <div className="flex items-center gap-2">
-                            <span className="text-lg font-bold text-white">{formatCOP(product.price)}</span>
-                            {product.originalPrice && (
-                                <span className="text-sm text-muted line-through">
-                                    {formatCOP(product.originalPrice)}
+
+                        {hasRating && (
+                            <p className="mb-1.5 flex items-center gap-1 text-xs text-muted">
+                                <Star className="h-3.5 w-3.5 fill-accent text-accent" aria-hidden />
+                                <span className="font-semibold text-foreground">
+                                    {product.reviewsAvg!.toFixed(1)}
+                                </span>
+                                <span className="sr-only">de 5 estrellas,</span>
+                                <span aria-hidden>·</span>
+                                {product.reviewsCount} {product.reviewsCount === 1 ? "reseña" : "reseñas"}
+                            </p>
+                        )}
+
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="text-base font-bold text-foreground">
+                                {formatCOP(product.price)}
+                            </span>
+                            {savings > 0 && (
+                                <span className="text-xs text-muted line-through">
+                                    {formatCOP(product.originalPrice!)}
                                 </span>
                             )}
                         </div>
+                        {savings > 0 && (
+                            <p className="mt-0.5 text-xs font-medium text-accent-dark">
+                                Ahorras {formatCOP(savings)}
+                            </p>
+                        )}
                         {product.shippingQuoteRequired && (
                             <>
-                                <p className="text-[10px] text-muted mt-1">
+                                <p className="mt-1 text-[10px] text-muted">
                                     {product.shippingEstimateCOP != null
-                                        ? `Total est. ${formatCOP(product.price + product.shippingEstimateCOP)} con envío${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""} (por unidad)`
-                                        : "envío internacional pendiente de cotización"}
+                                        ? `+${formatCOP(product.shippingEstimateCOP)} envío intl. est. por unidad${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""}`
+                                        : "Envío internacional por cotizar"}
                                 </p>
-                                <p className="text-[10px] text-amber-300/90 mt-0.5 font-medium">
-                                    Envío internacional: entrega estimada 15–30 días hábiles
+                                <p className="text-[10px] text-warning">
+                                    Entrega est. 15–30 días hábiles tras el despacho del proveedor
                                 </p>
                             </>
                         )}
@@ -94,18 +107,19 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
                 </div>
             </Link>
 
-            {/* Quick Add */}
-            <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={(e) => {
-                    e.preventDefault();
-                    addItem(product);
-                }}
-                className="absolute bottom-4 right-4 w-10 h-10 rounded-full bg-primary hover:bg-primary-light text-white flex items-center justify-center opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300 z-20"
-            >
-                <ShoppingCart className="w-4 h-4" />
-            </motion.button>
-        </motion.div>
+            {/* Footer add row — outside the Link, normal flow, always visible */}
+            <div className="mt-2">
+                <button
+                    type="button"
+                    disabled={soldOut}
+                    onClick={() => addItem(product)}
+                    aria-label={soldOut ? `${product.name} agotado` : `Agregar ${product.name} al carrito`}
+                    className="motion-press flex h-11 w-full items-center justify-center gap-2 rounded-full bg-foreground text-sm font-semibold text-white transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:bg-black/30"
+                >
+                    <ShoppingCart className="h-4 w-4" aria-hidden />
+                    {soldOut ? "Agotado" : "Agregar"}
+                </button>
+            </div>
+        </div>
     );
 }

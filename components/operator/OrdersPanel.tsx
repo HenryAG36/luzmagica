@@ -38,15 +38,15 @@ function nextStatuses(current: FulfillmentStatus): FulfillmentStatus[] {
 function paymentBadge(status: PaymentStatus) {
     switch (status) {
         case "paid":
-            return "bg-green-500/20 text-green-300 border-green-500/30";
+            return "bg-success/10 text-success border-success/30";
         case "pending_payment":
-            return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+            return "bg-warning/10 text-warning border-warning/30";
         case "payment_review":
-            return "bg-red-500/20 text-red-300 border-red-500/40";
+            return "bg-danger/10 text-danger border-danger/40";
         case "payment_failed":
-            return "bg-red-500/10 text-red-300 border-red-500/20";
+            return "bg-danger/10 text-danger border-red-500/20";
         default:
-            return "bg-white/10 text-muted border-white/10";
+            return "bg-black/5 text-muted border-black/10";
     }
 }
 
@@ -236,13 +236,13 @@ export default function OrdersPanel() {
     };
 
     const inputClass =
-        "w-full px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white";
+        "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground";
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h3 className="font-heading text-xl font-bold text-white">Pedidos & Despacho</h3>
+                    <h3 className="font-heading text-xl font-bold text-foreground">Pedidos & Despacho</h3>
                     <p className="text-xs text-muted">
                         Órdenes reales confirmadas por la pasarela de pagos. Gestiona el despacho y la guía.
                     </p>
@@ -251,7 +251,7 @@ export default function OrdersPanel() {
                     <select
                         value={filter}
                         onChange={(e) => setFilter(e.target.value)}
-                        className="px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white"
+                        className="px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground"
                     >
                         {FILTERS.map((f) => (
                             <option key={f.value} value={f.value}>
@@ -261,7 +261,7 @@ export default function OrdersPanel() {
                     </select>
                     <button
                         onClick={() => void load()}
-                        className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 border border-white/10"
+                        className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold flex items-center gap-1.5 border border-black/10"
                     >
                         <RefreshCw className="w-3.5 h-3.5" />
                         Actualizar
@@ -270,20 +270,20 @@ export default function OrdersPanel() {
             </div>
 
             {actionError && (
-                <p role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5">
+                <p role="alert" className="text-xs text-danger bg-danger/10 border border-danger/30 rounded-xl px-4 py-2.5">
                     {actionError}
                 </p>
             )}
             {error && (
-                <p role="alert" className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
+                <p role="alert" className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
                     {error}
                 </p>
             )}
 
-            <div className="glass rounded-3xl overflow-hidden border border-white/10">
+            <div className="glass rounded-3xl overflow-hidden border border-black/10">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                        <thead className="bg-surface border-b border-white/10 text-muted uppercase tracking-wider text-[10px]">
+                        <thead className="bg-surface border-b border-black/10 text-muted uppercase tracking-wider text-[10px]">
                             <tr>
                                 <th className="py-3.5 px-4">Orden</th>
                                 <th className="py-3.5 px-4">Cliente</th>
@@ -302,15 +302,15 @@ export default function OrdersPanel() {
                                 const profit = o.total_cop - supplierCost;
                                 return (
                                     <Fragment key={o.id}>
-                                        <tr className={expanded ? "bg-primary/10" : "hover:bg-white/5"}>
-                                            <td className="py-3.5 px-4 font-mono font-bold text-white">
+                                        <tr className={expanded ? "bg-primary/10" : "hover:bg-black/5"}>
+                                            <td className="py-3.5 px-4 font-mono font-bold text-foreground">
                                                 #{o.ref}
                                                 <div className="text-[10px] text-muted font-normal mt-0.5">
                                                     {new Date(o.created_at).toLocaleString("es-CO")}
                                                 </div>
                                             </td>
                                             <td className="py-3.5 px-4">
-                                                <div className="font-semibold text-white">{o.customer_name}</div>
+                                                <div className="font-semibold text-foreground">{o.customer_name}</div>
                                                 <div className="text-[11px] text-muted">
                                                     {o.city} • {o.customer_phone}
                                                 </div>
@@ -320,10 +320,10 @@ export default function OrdersPanel() {
                                                     {o.items.map((i) => `${i.name} (x${i.quantity})`).join(", ")}
                                                 </span>
                                             </td>
-                                            <td className="py-3.5 px-4 font-bold text-white">{formatCOP(o.total_cop)}</td>
+                                            <td className="py-3.5 px-4 font-bold text-foreground">{formatCOP(o.total_cop)}</td>
                                             <td className="py-3.5 px-4 font-mono">
                                                 {supplierCost > 0 ? (
-                                                    <span className={profit >= 0 ? "text-green-400" : "text-red-300"}>
+                                                    <span className={profit >= 0 ? "text-success" : "text-danger"}>
                                                         {profit >= 0 ? "+" : ""}
                                                         {formatCOP(profit)}
                                                     </span>
@@ -336,18 +336,18 @@ export default function OrdersPanel() {
                                                     {PAYMENT_STATUS_LABELS[o.payment_status]}
                                                 </span>
                                                 {o.payment_status === "payment_review" && (
-                                                    <div className="flex items-center gap-1 text-[10px] text-red-300 mt-1">
+                                                    <div className="flex items-center gap-1 text-[10px] text-danger mt-1">
                                                         <AlertTriangle className="w-3 h-3" />
                                                         Monto no coincide
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="py-3.5 px-4">
-                                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white/10 text-white">
+                                                <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-black/5 text-foreground">
                                                     {FULFILLMENT_STATUS_LABELS[o.fulfillment_status]}
                                                 </span>
                                                 {o.tracking_number && (
-                                                    <div className="text-[10px] font-mono text-accent mt-1">
+                                                    <div className="text-[10px] font-mono text-accent-dark mt-1">
                                                         {o.carrier ? `${o.carrier} · ` : ""}
                                                         {o.tracking_number}
                                                     </div>
@@ -362,7 +362,7 @@ export default function OrdersPanel() {
                                                         setEditCarrier(o.carrier ?? "Coordinadora");
                                                         setActionError("");
                                                     }}
-                                                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors inline-flex items-center gap-1"
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold transition-colors inline-flex items-center gap-1"
                                                 >
                                                     Gestionar
                                                     {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -375,8 +375,8 @@ export default function OrdersPanel() {
                                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                                         {/* Customer + items */}
                                                         <div className="space-y-3 text-xs">
-                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-white/5">
-                                                                <h5 className="font-semibold text-white mb-2">Destinatario</h5>
+                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-black/10">
+                                                                <h5 className="font-semibold text-foreground mb-2">Destinatario</h5>
                                                                 <p className="text-muted">
                                                                     {o.customer_name} • {o.customer_phone}
                                                                     <br />
@@ -392,48 +392,48 @@ export default function OrdersPanel() {
                                                                     ) : null}
                                                                 </p>
                                                             </div>
-                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-white/5">
-                                                                <h5 className="font-semibold text-white mb-2">Detalle</h5>
+                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-black/10">
+                                                                <h5 className="font-semibold text-foreground mb-2">Detalle</h5>
                                                                 {o.items.map((i) => (
                                                                     <div key={i.id} className="flex justify-between text-muted py-0.5">
                                                                         <span>
                                                                             {i.name} × {i.quantity}
                                                                         </span>
-                                                                        <span className="text-white">
+                                                                        <span className="text-foreground">
                                                                             {formatCOP(i.unit_price_cop * i.quantity)}
                                                                         </span>
                                                                     </div>
                                                                 ))}
-                                                                <div className="pt-2 mt-2 border-t border-white/10 space-y-0.5 text-muted">
+                                                                <div className="pt-2 mt-2 border-t border-black/10 space-y-0.5 text-muted">
                                                                     <div className="flex justify-between">
                                                                         <span>Subtotal</span>
-                                                                        <span className="text-white">{formatCOP(o.subtotal_cop)}</span>
+                                                                        <span className="text-foreground">{formatCOP(o.subtotal_cop)}</span>
                                                                     </div>
                                                                     {o.discount_cop > 0 && (
-                                                                        <div className="flex justify-between text-green-400">
+                                                                        <div className="flex justify-between text-success">
                                                                             <span>Descuento{o.coupon_code ? ` (${o.coupon_code})` : ""}</span>
                                                                             <span>-{formatCOP(o.discount_cop)}</span>
                                                                         </div>
                                                                     )}
                                                                     <div className="flex justify-between">
                                                                         <span>Envío</span>
-                                                                        <span className="text-white">{formatCOP(o.shipping_cop)}</span>
+                                                                        <span className="text-foreground">{formatCOP(o.shipping_cop)}</span>
                                                                     </div>
-                                                                    <div className="flex justify-between font-bold text-white">
+                                                                    <div className="flex justify-between font-bold text-foreground">
                                                                         <span>Total</span>
                                                                         <span>{formatCOP(o.total_cop)}</span>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-white/5">
-                                                                <h5 className="font-semibold text-white mb-2">Historial</h5>
+                                                            <div className="p-3.5 rounded-xl bg-surface-card border border-black/10">
+                                                                <h5 className="font-semibold text-foreground mb-2">Historial</h5>
                                                                 <div className="space-y-1.5">
                                                                     {o.events
                                                                         .slice()
                                                                         .sort((a, b) => b.created_at.localeCompare(a.created_at))
                                                                         .map((e) => (
                                                                             <div key={e.id} className="flex justify-between gap-2 text-[11px]">
-                                                                                <span className="text-white">{e.label}</span>
+                                                                                <span className="text-foreground">{e.label}</span>
                                                                                 <span className="text-muted font-mono shrink-0">
                                                                                     {new Date(e.created_at).toLocaleString("es-CO")}
                                                                                 </span>
@@ -450,8 +450,8 @@ export default function OrdersPanel() {
                                                                 o.payment_status === "pending_payment") &&
                                                                 nextStatuses(o.fulfillment_status).length > 0 && (
                                                                     <div className="p-4 rounded-xl bg-surface-card border border-primary/20 space-y-3">
-                                                                        <h5 className="font-semibold text-white text-xs flex items-center gap-2">
-                                                                            <Truck className="w-4 h-4 text-primary" />
+                                                                        <h5 className="font-semibold text-foreground text-xs flex items-center gap-2">
+                                                                            <Truck className="w-4 h-4 text-accent-dark" />
                                                                             Actualizar despacho
                                                                         </h5>
                                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -497,23 +497,23 @@ export default function OrdersPanel() {
                                                                 )}
 
                                                             {o.payment_status === "paid" && hasSupplierItems(o) && (
-                                                                <div className="p-4 rounded-xl bg-surface-card border border-white/10 space-y-2">
-                                                                    <h5 className="font-semibold text-white text-xs flex items-center gap-2">
-                                                                        <PackageCheck className="w-4 h-4 text-secondary" />
+                                                                <div className="p-4 rounded-xl bg-surface-card border border-black/10 space-y-2">
+                                                                    <h5 className="font-semibold text-foreground text-xs flex items-center gap-2">
+                                                                        <PackageCheck className="w-4 h-4 text-accent-dark" />
                                                                         Pedido a proveedor
                                                                     </h5>
                                                                     {o.supplier_order_status === "submitted" && (
-                                                                        <p className="text-[11px] text-green-300">
+                                                                        <p className="text-[11px] text-success">
                                                                             Enviado{o.supplier_order_id ? `: ${o.supplier_order_id}` : ""}
                                                                         </p>
                                                                     )}
                                                                     {o.supplier_order_status === "partial" && (
-                                                                        <p className="text-[11px] text-amber-300">
+                                                                        <p className="text-[11px] text-warning">
                                                                             Parcial: {o.supplier_order_id ?? "sin ref."}
                                                                         </p>
                                                                     )}
                                                                     {o.supplier_order_status === "queued" && (
-                                                                        <p className="text-[11px] text-amber-300">
+                                                                        <p className="text-[11px] text-warning">
                                                                             En cola — se enviará automáticamente.
                                                                         </p>
                                                                     )}
@@ -521,7 +521,7 @@ export default function OrdersPanel() {
                                                                         <p className="text-[11px] text-muted">Enviando al proveedor…</p>
                                                                     )}
                                                                     {o.supplier_order_error && (
-                                                                        <p className="text-[11px] text-red-300">
+                                                                        <p className="text-[11px] text-danger">
                                                                             {o.supplier_order_error}
                                                                         </p>
                                                                     )}
@@ -530,7 +530,7 @@ export default function OrdersPanel() {
                                                                             <button
                                                                                 onClick={() => void placeSupplierOrder(o)}
                                                                                 disabled={fulfilling === o.id}
-                                                                                className="px-3 py-2 rounded-xl bg-secondary/20 hover:bg-secondary/30 text-secondary text-xs font-semibold border border-secondary/30 disabled:opacity-50"
+                                                                                className="px-3 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent-dark text-xs font-semibold border border-secondary/30 disabled:opacity-50"
                                                                             >
                                                                                 {fulfilling === o.id
                                                                                     ? "Enviando…"
@@ -544,7 +544,7 @@ export default function OrdersPanel() {
                                                                             <button
                                                                                 onClick={() => void syncTracking(o)}
                                                                                 disabled={syncing === o.id}
-                                                                                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/10 disabled:opacity-50 flex items-center gap-1"
+                                                                                className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold border border-black/10 disabled:opacity-50 flex items-center gap-1"
                                                                             >
                                                                                 <RefreshCw className={`w-3 h-3 ${syncing === o.id ? "animate-spin" : ""}`} />
                                                                                 {syncing === o.id ? "Sincronizando…" : "Sincronizar rastreo"}
@@ -560,12 +560,12 @@ export default function OrdersPanel() {
                                                             )}
 
                                                             {o.fulfillment_status === "awaiting_payment" && (
-                                                                <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+                                                                <p className="text-[11px] text-warning bg-warning/10 border border-amber-500/20 rounded-xl px-3 py-2">
                                                                     Sin pago confirmado no se puede avanzar el despacho.
                                                                 </p>
                                                             )}
                                                             {o.payment_status === "payment_review" && (
-                                                                <p className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                                                                <p className="text-[11px] text-danger bg-danger/10 border border-red-500/20 rounded-xl px-3 py-2">
                                                                     La pasarela reportó un monto distinto al del pedido. Verifica la
                                                                     transacción en Wompi antes de gestionar el despacho.
                                                                 </p>
@@ -577,7 +577,7 @@ export default function OrdersPanel() {
                                                                     <button
                                                                         onClick={() => void patch(o.id, { action: "cancel" }, o.updated_at)}
                                                                         disabled={saving}
-                                                                        className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 disabled:opacity-50"
+                                                                        className="px-3 py-2 rounded-xl bg-danger/10 hover:bg-danger/10 text-danger text-xs font-semibold border border-red-500/20 disabled:opacity-50"
                                                                     >
                                                                         Cancelar pedido
                                                                     </button>
@@ -586,7 +586,7 @@ export default function OrdersPanel() {
                                                                     <button
                                                                         onClick={() => openRefund(o)}
                                                                         disabled={saving}
-                                                                        className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 disabled:opacity-50"
+                                                                        className="px-3 py-2 rounded-xl bg-danger/10 hover:bg-danger/10 text-danger text-xs font-semibold border border-red-500/20 disabled:opacity-50"
                                                                     >
                                                                         Reembolsar
                                                                     </button>
@@ -630,8 +630,8 @@ export default function OrdersPanel() {
             {/* Refund modal */}
             {refundFor && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-                    <div className="w-full max-w-md p-6 rounded-3xl bg-surface border border-white/10 space-y-4">
-                        <h4 className="font-heading text-lg font-bold text-white">
+                    <div className="w-full max-w-md p-6 rounded-3xl bg-surface border border-black/10 space-y-4">
+                        <h4 className="font-heading text-lg font-bold text-foreground">
                             Reembolsar pedido #{refundFor.ref}
                         </h4>
                         <div className="space-y-3 text-xs">
@@ -674,14 +674,14 @@ export default function OrdersPanel() {
                             </div>
                         </div>
                         {refundResult && (
-                            <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
+                            <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-xl px-3 py-2.5">
                                 {refundResult}
                             </p>
                         )}
                         <div className="flex gap-2 justify-end">
                             <button
                                 onClick={() => setRefundFor(null)}
-                                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold"
+                                className="px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold"
                             >
                                 Cerrar
                             </button>

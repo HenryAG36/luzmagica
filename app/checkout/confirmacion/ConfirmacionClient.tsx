@@ -62,19 +62,19 @@ export default function ConfirmacionClient() {
     }, [ref, token]);
 
     const heading = () => {
-        if (!order) return { icon: <Clock className="w-10 h-10 text-amber-300" />, title: "Verificando tu pago…" };
+        if (!order) return { icon: <Clock className="w-10 h-10 text-warning" />, title: "Verificando tu pago…" };
         switch (order.paymentStatus) {
             case "paid":
                 return {
-                    icon: <CheckCircle2 className="w-10 h-10 text-green-400" />,
+                    icon: <CheckCircle2 className="w-10 h-10 text-success" />,
                     title: "¡Pago confirmado!",
                 };
             case "pending_payment":
-                return { icon: <Clock className="w-10 h-10 text-amber-300" />, title: "Pago en proceso" };
+                return { icon: <Clock className="w-10 h-10 text-warning" />, title: "Pago en proceso" };
             case "payment_review":
-                return { icon: <Clock className="w-10 h-10 text-amber-300" />, title: "Pago en revisión" };
+                return { icon: <Clock className="w-10 h-10 text-warning" />, title: "Pago en revisión" };
             default:
-                return { icon: <XCircle className="w-10 h-10 text-red-300" />, title: "El pago no se completó" };
+                return { icon: <XCircle className="w-10 h-10 text-danger" />, title: "El pago no se completó" };
         }
     };
 
@@ -85,17 +85,17 @@ export default function ConfirmacionClient() {
             <div className="max-w-lg mx-auto">
                 <FadeIn>
                     <div className="glass rounded-3xl p-8 text-center">
-                        <div className="w-20 h-20 rounded-full bg-surface-card border border-white/10 flex items-center justify-center mx-auto mb-5">
+                        <div className="w-20 h-20 rounded-full bg-surface-card border border-black/10 flex items-center justify-center mx-auto mb-5">
                             {icon}
                         </div>
-                        <h1 className="font-heading text-2xl sm:text-3xl font-bold text-white mb-2">{title}</h1>
+                        <h1 className="font-heading text-2xl sm:text-3xl font-bold text-foreground mb-2">{title}</h1>
                         {ref && <p className="text-xs font-mono text-muted mb-4">Referencia: #{ref}</p>}
 
                         {order?.paymentStatus === "pending_payment" && (
                             <p className="text-xs text-muted mb-4">
                                 La pasarela aún no confirma tu pago. Si elegiste un método con procesamiento
                                 diferido (como PSE), puede tardar unos minutos — puedes seguir el estado en{" "}
-                                <Link href="/tracking" className="text-primary hover:underline">
+                                <Link href="/tracking" className="text-accent-dark hover:underline">
                                     Rastreo de pedido
                                 </Link>
                                 .
@@ -114,29 +114,29 @@ export default function ConfirmacionClient() {
                         )}
 
                         {order && (
-                            <div className="text-left p-4 rounded-2xl bg-surface-card border border-white/5 mb-5 text-xs space-y-1.5">
+                            <div className="text-left p-4 rounded-2xl bg-surface-card border border-black/10 mb-5 text-xs space-y-1.5">
                                 {order.items.map((item) => (
                                     <div key={item.productId} className="flex justify-between text-muted">
                                         <span className="line-clamp-1 mr-2">
                                             {item.name} × {item.quantity}
                                         </span>
-                                        <span className="text-white shrink-0">
+                                        <span className="text-foreground shrink-0">
                                             {formatCOP(item.unitPriceCop * item.quantity)}
                                         </span>
                                     </div>
                                 ))}
-                                <div className="flex justify-between pt-2 border-t border-white/10 text-muted">
+                                <div className="flex justify-between pt-2 border-t border-black/10 text-muted">
                                     <span>Envío</span>
-                                    <span className="text-white">{formatCOP(order.shippingCop)}</span>
+                                    <span className="text-foreground">{formatCOP(order.shippingCop)}</span>
                                 </div>
-                                <div className="flex justify-between font-bold text-white">
+                                <div className="flex justify-between font-bold text-foreground">
                                     <span>Total</span>
                                     <span>{formatCOP(order.totalCop)}</span>
                                 </div>
                             </div>
                         )}
 
-                        {error && <p className="text-xs text-red-300 mb-4">{error}</p>}
+                        {error && <p className="text-xs text-danger mb-4">{error}</p>}
 
                         <div className="flex flex-col gap-2">
                             {order?.paymentStatus === "paid" && (
@@ -150,12 +150,12 @@ export default function ConfirmacionClient() {
                             )}
                             <Link
                                 href="/tracking"
-                                className="w-full py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center justify-center gap-2 border border-white/10"
+                                className="w-full py-3 rounded-2xl bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold flex items-center justify-center gap-2 border border-black/10"
                             >
                                 <Search className="w-4 h-4" />
                                 Consultar con referencia + teléfono
                             </Link>
-                            <Link href="/products" className="text-xs text-muted hover:text-white pt-1">
+                            <Link href="/products" className="text-xs text-muted hover:text-foreground pt-1">
                                 Volver a la tienda
                             </Link>
                         </div>

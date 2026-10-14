@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useSyncExternalStore } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ShoppingCart, Menu, X, Sparkles, LayoutDashboard, User, ShieldCheck, LogOut } from "lucide-react";
+import Image from "next/image";
+import { useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ShoppingCart, Menu, X, Award, LayoutDashboard, User, ShieldCheck, LogOut, Search } from "lucide-react";
 import { useCartStore } from "@/store/useCartStore";
 import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -17,215 +18,256 @@ const navLinks = [
 ];
 
 export default function Navbar() {
-    const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const [query, setQuery] = useState("");
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+    const pathname = usePathname();
+    const router = useRouter();
 
-    const getTotalItems = useCartStore((s) => s.getTotalItems);
-    const { account, openModal } = useLoyaltyStore();
+    const itemCountValue = useCartStore((s) =>
+        s.items.reduce((n, i) => n + i.quantity, 0),
+    );
+    const openCart = useCartStore((s) => s.openCart);
+    const { openModal } = useLoyaltyStore();
     const { currentUser, logout } = useAuthStore();
 
-    useEffect(() => {
-        const handleScroll = () => setIsScrolled(window.scrollY > 20);
-        window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
-    }, []);
+    const itemCount = mounted ? itemCountValue : 0;
+    const isCheckout = pathname?.startsWith("/checkout");
 
-    const itemCount = mounted ? getTotalItems() : 0;
-    const points = mounted ? account.points : 0;
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        const q = query.trim();
+        router.push(q ? `/products?q=${encodeURIComponent(q)}` : "/products");
+        setIsMobileOpen(false);
+    };
+
+    const logo = (
+        <Link href="/" className="flex items-center gap-2.5 group" aria-label="Honesty inicio">
+            <Image
+                src="/honesty-logo.jpg"
+                alt="Honesty"
+                width={44}
+                height={36}
+                className="h-9 w-auto object-contain"
+                priority
+            />
+            <span className="font-heading text-xl font-semibold tracking-[0.18em] uppercase">
+                Honesty
+            </span>
+        </Link>
+    );
+
+    if (isCheckout) {
+        return (
+            <nav className="bg-surface border-b border-black/10">
+                <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+                    {logo}
+                    <Link
+                        href="/cart"
+                        className="flex items-center gap-2 text-sm font-medium text-muted transition-colors hover:text-foreground"
+                    >
+                        <ShoppingCart className="h-4 w-4" />
+                        Volver al carrito
+                    </Link>
+                </div>
+            </nav>
+        );
+    }
 
     return (
-        <motion.nav
-            initial={{ y: -100 }}
-            animate={{ y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className={`fixed top-0 left-0 right-0 z-40 transition-all duration-500 ${
-                isScrolled ? "glass-strong py-3" : "bg-transparent py-5"
-            }`}
-        >
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-                {/* Logo */}
-                <Link href="/" className="flex items-center gap-2 group">
-                    <Sparkles className="w-6 h-6 text-primary transition-all group-hover:text-secondary" />
-                    <span className="font-heading text-xl font-bold tracking-tight">
-                        <span className="text-white">Luz</span>
-                        <span className="gradient-text">Mágica</span>
-                    </span>
-                </Link>
+        <nav className="bg-surface/95 backdrop-blur border-b border-black/10">
+            <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
+                {logo}
 
-                {/* Desktop Nav */}
-                <div className="hidden md:flex items-center gap-6">
+                {/* Desktop nav */}
+                <div className="hidden lg:flex items-center gap-6">
                     {navLinks.map((link) => (
                         <Link
                             key={link.href}
                             href={link.href}
-                            className="text-xs font-medium text-muted hover:text-white transition-colors relative group"
+                            className="text-sm font-medium text-muted transition-colors hover:text-foreground"
                         >
                             {link.label}
-                            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary group-hover:w-full transition-all duration-300" />
                         </Link>
                     ))}
                 </div>
 
-                {/* Actions & Loyalty Pill */}
-                <div className="flex items-center gap-3">
-                    {/* LuzPoints Club Pill */}
+                {/* Search */}
+                <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-md mx-auto" role="search">
+                    <label htmlFor="nav-search" className="sr-only">Buscar productos</label>
+                    <div className="relative w-full">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+                        <input
+                            id="nav-search"
+                            type="search"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Buscar productos…"
+                            className="w-full rounded-full border border-black/10 bg-surface-light py-2 pl-9 pr-4 text-sm text-foreground placeholder:text-muted focus:outline-none focus:border-accent/60"
+                        />
+                    </div>
+                </form>
+
+                {/* Actions */}
+                <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
                     <button
+                        type="button"
                         onClick={openModal}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-card hover:bg-primary/20 border border-primary/30 text-white text-xs font-semibold transition-all glow-purple cursor-pointer"
-                        title="Ver tus puntos y recompensas LuzClub"
+                        className="hidden sm:flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent-dark transition-colors hover:bg-accent/15"
+                        title="Club Honesty"
                     >
-                        <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" />
-                        <span className="hidden sm:inline">LuzClub:</span>
-                        <span className="text-accent font-mono">{points} pts</span>
+                        <Award className="h-3.5 w-3.5" />
+                        Club Honesty
                     </button>
 
-                    {/* Authentication Status & Actions */}
                     {mounted && currentUser ? (
-                        <div className="flex items-center gap-2">
-                            {currentUser.role === "admin" ? (
-                                <Link
-                                    href="/operator"
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold transition-colors"
-                                    title="Command Center del Operador"
-                                >
-                                    <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                                    <span className="hidden sm:inline">Admin</span>
-                                </Link>
-                            ) : (
-                                <Link
-                                    href="/account"
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-semibold transition-colors"
-                                    title="Mi Cuenta"
-                                >
-                                    <User className="w-3.5 h-3.5 text-primary" />
-                                    <span className="hidden sm:inline">{currentUser.name.split(" ")[0]}</span>
-                                </Link>
-                            )}
-                        </div>
+                        currentUser.role === "admin" ? (
+                            <Link
+                                href="/operator"
+                                className="flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-light"
+                                title="Panel del operador"
+                            >
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">Admin</span>
+                            </Link>
+                        ) : (
+                            <Link
+                                href="/account"
+                                className="flex items-center gap-1.5 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5"
+                                title="Mi cuenta"
+                            >
+                                <User className="h-3.5 w-3.5" />
+                                <span className="hidden sm:inline">{currentUser.name.split(" ")[0]}</span>
+                            </Link>
+                        )
                     ) : (
                         <Link
                             href="/login"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-semibold transition-colors"
+                            className="flex items-center gap-1.5 rounded-full border border-black/10 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5"
                         >
-                            <User className="w-3.5 h-3.5 text-muted" />
-                            <span>Ingresar</span>
+                            <User className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Ingresar</span>
                         </Link>
                     )}
 
-                    {/* Cart Icon */}
-                    <Link
-                        href="/cart"
-                        className="relative p-2 rounded-xl text-muted hover:text-white hover:bg-white/5 transition-colors"
-                        aria-label="Carrito de compras"
+                    <button
+                        type="button"
+                        onClick={openCart}
+                        className="motion-press relative rounded-full p-2 text-foreground hover:bg-black/5"
+                        aria-label={`Abrir carrito, ${itemCount} artículos`}
                     >
-                        <ShoppingCart className="w-5 h-5" />
+                        <ShoppingCart className="h-5 w-5" />
                         {itemCount > 0 && (
-                            <motion.span
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                className="absolute top-1 right-1 w-4 h-4 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center"
+                            <span
+                                key={itemCount}
+                                className="motion-count absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-bold text-white"
                             >
                                 {itemCount}
-                            </motion.span>
+                            </span>
                         )}
-                    </Link>
+                    </button>
 
-                    {/* Mobile Menu Toggle */}
                     <button
-                        className="md:hidden text-muted hover:text-white transition-colors p-1"
-                        onClick={() => setIsMobileOpen(!isMobileOpen)}
-                        aria-label="Abrir menú"
+                        type="button"
+                        className="motion-press rounded-full p-2 text-foreground hover:bg-black/5 lg:hidden"
+                        onClick={() => setIsMobileOpen((v) => !v)}
+                        aria-label={isMobileOpen ? "Cerrar menú" : "Abrir menú"}
+                        aria-expanded={isMobileOpen}
                     >
-                        {isMobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                        {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
                     </button>
                 </div>
             </div>
 
-            {/* Mobile Menu */}
-            <AnimatePresence>
-                {isMobileOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="md:hidden glass-strong mt-2 mx-4 rounded-2xl overflow-hidden border border-white/10"
-                    >
-                        <div className="p-5 flex flex-col gap-3 text-sm">
-                            {navLinks.map((link) => (
-                                <Link
-                                    key={link.href}
-                                    href={link.href}
-                                    onClick={() => setIsMobileOpen(false)}
-                                    className="text-muted hover:text-white transition-colors py-1"
-                                >
-                                    {link.label}
-                                </Link>
-                            ))}
-
-                            <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
-                                <button
-                                    onClick={() => {
-                                        setIsMobileOpen(false);
-                                        openModal();
-                                    }}
-                                    className="w-full text-left text-accent py-1.5 flex items-center justify-between"
-                                >
-                                    <span className="flex items-center gap-2">
-                                        <Sparkles className="w-4 h-4" />
-                                        <span>LuzClub VIP Recompensas</span>
-                                    </span>
-                                    <span className="font-mono font-bold">{points} pts</span>
-                                </button>
-
-                                {currentUser ? (
-                                    <>
-                                        <Link
-                                            href="/account"
-                                            onClick={() => setIsMobileOpen(false)}
-                                            className="text-white py-1.5 flex items-center gap-2"
-                                        >
-                                            <User className="w-4 h-4 text-primary" />
-                                            <span>Mi Cuenta ({currentUser.name})</span>
-                                        </Link>
-
-                                        {currentUser.role === "admin" && (
-                                            <Link
-                                                href="/operator"
-                                                onClick={() => setIsMobileOpen(false)}
-                                                className="text-amber-300 py-1.5 flex items-center gap-2 font-semibold"
-                                            >
-                                                <LayoutDashboard className="w-4 h-4" />
-                                                <span>Command Center del Operador</span>
-                                            </Link>
-                                        )}
-
-                                        <button
-                                            onClick={() => {
-                                                void logout();
-                                                setIsMobileOpen(false);
-                                            }}
-                                            className="text-red-400 py-1.5 flex items-center gap-2 text-left"
-                                        >
-                                            <LogOut className="w-4 h-4" />
-                                            <span>Cerrar Sesión</span>
-                                        </button>
-                                    </>
-                                ) : (
-                                    <Link
-                                        href="/login"
-                                        onClick={() => setIsMobileOpen(false)}
-                                        className="text-primary py-1.5 flex items-center gap-2"
-                                    >
-                                        <User className="w-4 h-4" />
-                                        <span>Iniciar Sesión / Registrarme</span>
-                                    </Link>
-                                )}
+            {/* Mobile menu */}
+            {isMobileOpen && (
+                <div className="motion-reveal border-t border-black/10 bg-surface lg:hidden">
+                    <div className="space-y-1 px-4 py-4">
+                        <form onSubmit={handleSearch} role="search" className="mb-3 md:hidden">
+                            <label htmlFor="nav-search-mobile" className="sr-only">Buscar productos</label>
+                            <div className="relative">
+                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+                                <input
+                                    id="nav-search-mobile"
+                                    type="search"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Buscar productos…"
+                                    className="w-full rounded-full border border-black/10 bg-surface-light py-2.5 pl-9 pr-4 text-sm focus:outline-none focus:border-accent/60"
+                                />
                             </div>
+                        </form>
+
+                        {navLinks.map((link) => (
+                            <Link
+                                key={link.href}
+                                href={link.href}
+                                onClick={() => setIsMobileOpen(false)}
+                                className="block rounded-lg px-3 py-2 text-sm font-medium text-foreground hover:bg-black/5"
+                            >
+                                {link.label}
+                            </Link>
+                        ))}
+
+                        <div className="mt-2 border-t border-black/10 pt-3 space-y-1">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsMobileOpen(false);
+                                    openModal();
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-accent-dark hover:bg-accent/10"
+                            >
+                                <Award className="h-4 w-4" />
+                                Club Honesty
+                            </button>
+
+                            {currentUser ? (
+                                <>
+                                    <Link
+                                        href="/account"
+                                        onClick={() => setIsMobileOpen(false)}
+                                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-black/5"
+                                    >
+                                        <User className="h-4 w-4" />
+                                        Mi Cuenta ({currentUser.name})
+                                    </Link>
+                                    {currentUser.role === "admin" && (
+                                        <Link
+                                            href="/operator"
+                                            onClick={() => setIsMobileOpen(false)}
+                                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-black/5"
+                                        >
+                                            <LayoutDashboard className="h-4 w-4" />
+                                            Panel del operador
+                                        </Link>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void logout();
+                                            setIsMobileOpen(false);
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-danger hover:bg-black/5"
+                                    >
+                                        <LogOut className="h-4 w-4" />
+                                        Cerrar Sesión
+                                    </button>
+                                </>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    onClick={() => setIsMobileOpen(false)}
+                                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-black/5"
+                                >
+                                    <User className="h-4 w-4" />
+                                    Iniciar Sesión / Registrarme
+                                </Link>
+                            )}
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </motion.nav>
+                    </div>
+                </div>
+            )}
+        </nav>
     );
 }

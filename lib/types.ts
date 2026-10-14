@@ -15,6 +15,8 @@ export interface Product {
     shippingEstimateCity?: string | null;
     shippingCheckedAt?: string | null;
     shippingQuoteRequired?: boolean;
+    reviewsAvg?: number;
+    reviewsCount?: number;
 }
 
 export interface CartItem {

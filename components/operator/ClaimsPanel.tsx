@@ -29,15 +29,15 @@ const PROVIDER_LABELS: Record<string, string> = {
 function statusBadge(status: ClaimStatus) {
     switch (status) {
         case "draft":
-            return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+            return "bg-warning/10 text-warning border-warning/30";
         case "submitted":
-            return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+            return "bg-accent/10 text-blue-300 border-accent/30";
         case "provider_responded":
-            return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+            return "bg-accent/10 text-purple-300 border-accent/30";
         case "resolved":
-            return "bg-green-500/20 text-green-300 border-green-500/30";
+            return "bg-success/10 text-success border-success/30";
         default:
-            return "bg-white/10 text-muted border-white/10";
+            return "bg-black/5 text-muted border-black/10";
     }
 }
 
@@ -151,8 +151,8 @@ export default function ClaimsPanel() {
         <div className="space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h3 className="font-heading text-xl font-bold text-white flex items-center gap-2">
-                        <ShieldAlert className="w-5 h-5 text-amber-400" />
+                    <h3 className="font-heading text-xl font-bold text-foreground flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-warning" />
                         Reclamos de producto
                     </h3>
                     <p className="text-xs text-muted">
@@ -163,7 +163,7 @@ export default function ClaimsPanel() {
                     <select
                         value={filter}
                         onChange={(e) => setFilter(e.target.value)}
-                        className="px-3 py-2 rounded-xl bg-surface-card border border-white/10 text-xs text-white"
+                        className="px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground"
                     >
                         {STATUS_FILTERS.map((f) => (
                             <option key={f.value} value={f.value}>
@@ -173,7 +173,7 @@ export default function ClaimsPanel() {
                     </select>
                     <button
                         onClick={() => void load()}
-                        className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 border border-white/10"
+                        className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold flex items-center gap-1.5 border border-black/10"
                     >
                         <RefreshCw className="w-3.5 h-3.5" />
                         Actualizar
@@ -182,16 +182,16 @@ export default function ClaimsPanel() {
             </div>
 
             {error && (
-                <p role="alert" className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-2.5">
+                <p role="alert" className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-xl px-4 py-2.5">
                     {error}
                 </p>
             )}
 
             {guide && (
-                <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-xs text-blue-200 space-y-2">
+                <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-xs text-blue-200 space-y-2">
                     <div className="flex justify-between items-center">
                         <h5 className="font-semibold">Guía manual (AliExpress no tiene API de disputas)</h5>
-                        <button onClick={() => setGuide(null)} className="text-blue-300 hover:text-white">
+                        <button onClick={() => setGuide(null)} className="text-blue-300 hover:text-foreground">
                             Cerrar
                         </button>
                     </div>
@@ -203,10 +203,10 @@ export default function ClaimsPanel() {
                 </div>
             )}
 
-            <div className="glass rounded-3xl overflow-hidden border border-white/10">
+            <div className="glass rounded-3xl overflow-hidden border border-black/10">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                        <thead className="bg-surface border-b border-white/10 text-muted uppercase tracking-wider text-[10px]">
+                        <thead className="bg-surface border-b border-black/10 text-muted uppercase tracking-wider text-[10px]">
                             <tr>
                                 <th className="py-3 px-4">Pedido</th>
                                 <th className="py-3 px-4">Producto</th>
@@ -219,15 +219,15 @@ export default function ClaimsPanel() {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {claims.map((c) => (
-                                <tr key={c.id} className="hover:bg-white/5 align-top">
-                                    <td className="py-3 px-4 font-mono font-bold text-white">
+                                <tr key={c.id} className="hover:bg-black/5 align-top">
+                                    <td className="py-3 px-4 font-mono font-bold text-foreground">
                                         #{c.order_ref ?? "—"}
                                         <div className="text-[10px] text-muted font-normal">{c.customer_name ?? ""}</div>
                                     </td>
                                     <td className="py-3 px-4 text-muted max-w-[200px]">
                                         <span className="line-clamp-2">{c.product_name ?? c.order_item_id}</span>
                                     </td>
-                                    <td className="py-3 px-4 text-white">{CLAIM_REASON_LABELS[c.reason]}</td>
+                                    <td className="py-3 px-4 text-foreground">{CLAIM_REASON_LABELS[c.reason]}</td>
                                     <td className="py-3 px-4 text-muted">{PROVIDER_LABELS[c.provider] ?? c.provider}</td>
                                     <td className="py-3 px-4">
                                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${statusBadge(c.status)}`}>
@@ -246,7 +246,7 @@ export default function ClaimsPanel() {
                                                 setExpandedId(expandedId === c.id ? null : c.id);
                                                 if (expandedId !== c.id) void loadEvidence(c);
                                             }}
-                                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold"
+                                            className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold"
                                         >
                                             {expandedId === c.id ? "Cerrar" : "Ver"}
                                         </button>
@@ -276,10 +276,10 @@ export default function ClaimsPanel() {
                 claims
                     .filter((c) => c.id === expandedId)
                     .map((c) => (
-                        <div key={c.id} className="glass rounded-3xl p-6 border border-white/10 space-y-4">
+                        <div key={c.id} className="glass rounded-3xl p-6 border border-black/10 space-y-4">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h4 className="font-semibold text-white text-sm">
+                                    <h4 className="font-semibold text-foreground text-sm">
                                         Reclamo #{c.order_ref} — {CLAIM_REASON_LABELS[c.reason]}
                                     </h4>
                                     <p className="text-[11px] text-muted">
@@ -291,7 +291,7 @@ export default function ClaimsPanel() {
                             <p className="text-xs text-muted whitespace-pre-wrap">{c.description}</p>
 
                             <div>
-                                <h5 className="text-xs font-semibold text-white mb-2">
+                                <h5 className="text-xs font-semibold text-foreground mb-2">
                                     Evidencias ({c.evidence_paths.length})
                                 </h5>
                                 {evidence[c.id]?.length ? (
@@ -302,7 +302,7 @@ export default function ClaimsPanel() {
                                                 href={url}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] border border-white/10"
+                                                className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-[11px] border border-black/10"
                                             >
                                                 Evidencia {i + 1}
                                             </a>
@@ -311,7 +311,7 @@ export default function ClaimsPanel() {
                                 ) : (
                                     <p className="text-[11px] text-muted">Sin evidencias adjuntas.</p>
                                 )}
-                                <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-[11px] font-semibold border border-white/10 cursor-pointer">
+                                <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/5 text-foreground text-[11px] font-semibold border border-black/10 cursor-pointer">
                                     <Upload className="w-3 h-3" />
                                     Adjuntar evidencia
                                     <input
@@ -325,7 +325,7 @@ export default function ClaimsPanel() {
                             </div>
 
                             {actionMsg[c.id] && (
-                                <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+                                <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-xl px-3 py-2">
                                     {actionMsg[c.id]}
                                 </p>
                             )}
@@ -335,7 +335,7 @@ export default function ClaimsPanel() {
                                     <button
                                         onClick={() => void submitClaim(c)}
                                         disabled={busy === c.id}
-                                        className="px-3 py-2 rounded-xl bg-secondary/20 hover:bg-secondary/30 text-secondary text-xs font-semibold border border-secondary/30 disabled:opacity-50"
+                                        className="px-3 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent-dark text-xs font-semibold border border-secondary/30 disabled:opacity-50"
                                     >
                                         {busy === c.id ? "Enviando…" : c.provider === "cjdropshipping" ? "Enviar disputa a CJ" : "Ver guía de disputa"}
                                     </button>
@@ -344,7 +344,7 @@ export default function ClaimsPanel() {
                                     <button
                                         onClick={() => void setStatus(c, "resolved")}
                                         disabled={busy === c.id}
-                                        className="px-3 py-2 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 text-xs font-semibold border border-green-500/30 disabled:opacity-50"
+                                        className="px-3 py-2 rounded-xl bg-success/10 hover:bg-success/15 text-success text-xs font-semibold border border-success/30 disabled:opacity-50"
                                     >
                                         Marcar resuelta
                                     </button>
@@ -353,7 +353,7 @@ export default function ClaimsPanel() {
                                     <button
                                         onClick={() => void setStatus(c, "submitted")}
                                         disabled={busy === c.id}
-                                        className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/10 disabled:opacity-50"
+                                        className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold border border-black/10 disabled:opacity-50"
                                     >
                                         Marcar enviada (manual)
                                     </button>
@@ -363,14 +363,14 @@ export default function ClaimsPanel() {
                                         <button
                                             onClick={() => void setStatus(c, "rejected")}
                                             disabled={busy === c.id}
-                                            className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 disabled:opacity-50"
+                                            className="px-3 py-2 rounded-xl bg-danger/10 hover:bg-danger/10 text-danger text-xs font-semibold border border-red-500/20 disabled:opacity-50"
                                         >
                                             Rechazar
                                         </button>
                                         <button
                                             onClick={() => void setStatus(c, "cancelled")}
                                             disabled={busy === c.id}
-                                            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-muted text-xs font-semibold border border-white/10 disabled:opacity-50"
+                                            className="px-3 py-2 rounded-xl bg-black/5 hover:bg-black/5 text-muted text-xs font-semibold border border-black/10 disabled:opacity-50"
                                         >
                                             Cancelar
                                         </button>

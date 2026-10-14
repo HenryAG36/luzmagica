@@ -2,7 +2,7 @@
 
 import Hero from "@/components/home/Hero";
 import OrderAgainSection from "@/components/retention/OrderAgainSection";
-import RoomGrid from "@/components/home/RoomGrid";
+import CategoryGrid from "@/components/home/CategoryGrid";
 import FeaturedCarousel from "@/components/home/FeaturedCarousel";
 import Benefits from "@/components/home/Benefits";
 import { Product } from "@/lib/types";
@@ -16,7 +16,7 @@ export default function HomeClient({ products }: HomeClientProps) {
         <>
             <Hero />
             <OrderAgainSection />
-            <RoomGrid />
+            <CategoryGrid products={products} />
             <FeaturedCarousel products={products} />
             <Benefits />
         </>

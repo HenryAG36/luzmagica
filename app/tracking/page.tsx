@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import TrackingClient from "./TrackingClient";
 
 export const metadata = {
-    title: "Seguimiento en Vivo de Pedidos | LuzMágica",
-    description: "Rastrea el estado de tu pedido de luces LED en tiempo real desde el despacho hasta la puerta de tu casa.",
+    title: "Seguimiento de Pedidos | Honesty",
+    description: "Consulta el estado registrado de tu pedido con tu referencia y dato de contacto.",
 };
 
 export default function TrackingPage() {

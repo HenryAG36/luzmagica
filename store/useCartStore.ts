@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Product, CartItem, CustomerProfile } from "@/lib/types";
-import { computeCartTotals, legacyFreeShippingProgress, CartTotals } from "@/lib/cart/totals";
+import { computeCartTotals, legacyFreeShippingProgress, itemQuantityCap, CartTotals } from "@/lib/cart/totals";
 import { resolveCoupon } from "@/lib/cart/coupons";
 import {
     BLANK_PROFILE,
@@ -19,8 +19,11 @@ interface CartState {
     pointsRedeemed: number;
     customerProfile: CustomerProfile;
     appliedRecoveryId: string | null;
+    isCartOpen: boolean;
 
     addItem: (product: Product, quantity?: number) => void;
+    openCart: () => void;
+    closeCart: () => void;
     removeItem: (id: string) => void;
     updateQuantity: (id: string, quantity: number) => void;
     clearCart: () => void;
@@ -48,6 +51,8 @@ interface CartState {
 
 const POINT_VALUE_COP = 10; // 1 point = $10 COP
 
+const itemCap = itemQuantityCap;
+
 export const useCartStore = create<CartState>()(
     persist(
         (set, get) => ({
@@ -57,22 +62,34 @@ export const useCartStore = create<CartState>()(
             pointsRedeemed: 0,
             customerProfile: { ...BLANK_PROFILE },
             appliedRecoveryId: null,
+            isCartOpen: false,
+
+            openCart: () => set({ isCartOpen: true }),
+            closeCart: () => set({ isCartOpen: false }),
 
             addItem: (product: Product, quantity = 1) => {
+                if (!Number.isFinite(quantity)) return;
+                const wanted = Math.floor(quantity);
+                if (wanted < 1) return;
+                if (!Number.isFinite(product.stock) || product.stock <= 0) return;
+
+                const cap = itemCap(product.stock);
+                if (cap < 1) return;
                 const items = get().items;
                 const existing = items.find((item) => item.product.id === product.id);
 
-                if (existing) {
-                    set({
-                        items: items.map((item) =>
-                            item.product.id === product.id
-                                ? { ...item, quantity: item.quantity + quantity }
-                                : item
-                        ),
-                    });
-                } else {
-                    set({ items: [...items, { product, quantity }] });
-                }
+                const nextItems = existing
+                    ? items.map((item) =>
+                          item.product.id === product.id
+                              ? {
+                                    product,
+                                    quantity: Math.min(item.quantity + wanted, cap),
+                                }
+                              : item,
+                      )
+                    : [...items, { product, quantity: Math.min(wanted, cap) }];
+
+                set({ items: nextItems, isCartOpen: true });
             },
 
             removeItem: (id: string) => {
@@ -80,13 +97,17 @@ export const useCartStore = create<CartState>()(
             },
 
             updateQuantity: (id: string, quantity: number) => {
-                if (quantity <= 0) {
+                if (!Number.isFinite(quantity)) return;
+                const item = get().items.find((i) => i.product.id === id);
+                if (!item) return;
+                const next = Math.min(Math.floor(quantity), itemCap(item.product.stock));
+                if (next <= 0) {
                     get().removeItem(id);
                     return;
                 }
                 set({
-                    items: get().items.map((item) =>
-                        item.product.id === id ? { ...item, quantity } : item
+                    items: get().items.map((i) =>
+                        i.product.id === id ? { ...i, quantity: next } : i
                     ),
                 });
             },
@@ -98,6 +119,7 @@ export const useCartStore = create<CartState>()(
                     discountPercent: 0,
                     pointsRedeemed: 0,
                     appliedRecoveryId: null,
+                    isCartOpen: false,
                 }),
 
             applyCoupon: (code: string) => {
@@ -209,6 +231,19 @@ export const useCartStore = create<CartState>()(
             name: "luzmagica-cart-v2",
             version: 1,
             migrate: (persisted) => migrateCartPersisted(persisted) as CartState,
+            partialize: (state) => ({
+                items: state.items,
+                couponCode: state.couponCode,
+                discountPercent: state.discountPercent,
+                pointsRedeemed: state.pointsRedeemed,
+                customerProfile: state.customerProfile,
+                appliedRecoveryId: state.appliedRecoveryId,
+            }),
+            merge: (persisted, current) => ({
+                ...current,
+                ...(persisted as Partial<CartState>),
+                isCartOpen: false,
+            }),
         }
     )
 );

@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import AccountClient from "./AccountClient";
 
 export const metadata = {
-    title: "Mi Cuenta | LuzMágica",
-    description: "Gestiona tu perfil, direcciones guardadas, historial de pedidos y puntos LuzClub VIP.",
+    title: "Mi Cuenta | Honesty",
+    description: "Gestiona tu perfil, direcciones guardadas, historial de pedidos y puntos Club Honesty.",
 };
 
 export default function AccountPage() {

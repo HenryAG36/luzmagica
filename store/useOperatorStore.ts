@@ -44,7 +44,7 @@ const LAUNCH_CHECKLIST: LaunchItem[] = [
     },
     {
         id: "chk-3",
-        title: "Revisar programa LuzClub",
+        title: "Revisar programa Club Honesty",
         description: "Definir las reglas de acumulación y canje de puntos antes de activarlo.",
         completed: false,
         category: "marketing",
@@ -89,7 +89,7 @@ export const useOperatorStore = create<OperatorState>()(
                     items,
                     total,
                     createdAt: "Hace unos minutos",
-                    recoveryCode: "RETORNO10",
+                    recoveryCode: "VUELVE10",
                     discountPercent: 10,
                     status: "pending",
                 };
@@ -141,7 +141,7 @@ export const useOperatorStore = create<OperatorState>()(
                     .join("\n");
                 const checkoutUrl = `${publicSiteOrigin()}/checkout?recover=${encodeURIComponent(cart.id)}`;
 
-                const message = `¡Hola ${name}! Notamos que dejaste productos en tu carrito de LuzMágica:\n\n${itemsList}\n\n👉 Puedes retomar tu orden aquí: ${checkoutUrl}`;
+                const message = `¡Hola ${name}! Notamos que dejaste productos en tu carrito de Honesty:\n\n${itemsList}\n\n👉 Puedes retomar tu orden aquí: ${checkoutUrl}`;
 
                 const url = new URL(`https://wa.me/${cleanPhone}`);
                 url.searchParams.set("text", message);
