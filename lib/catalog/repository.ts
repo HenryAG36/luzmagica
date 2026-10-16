@@ -219,6 +219,25 @@ export async function discardDraft(
     return { ok: true };
 }
 
+export async function deleteArchivedProduct(
+    id: string,
+    client?: SupabaseClientLike
+): Promise<{ ok: true } | { error: string }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+    const { data, error } = await service
+        .from("catalog_products")
+        .delete()
+        .eq("id", id)
+        .eq("status", "archived")
+        .select("id");
+    if (error) return { error: error.message };
+    if (!data || (data as unknown[]).length === 0) {
+        return { error: "archived product not found" };
+    }
+    return { ok: true };
+}
+
 const MANAGE_PAGE_MAX = 100;
 
 export async function listCatalogProducts(

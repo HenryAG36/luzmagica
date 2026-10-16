@@ -55,3 +55,16 @@ test("catalog PATCH route sanitizes fields, whitelists actions, and checks origi
     assert.match(src, /updateProduct/);
     assert.match(src, /archiveProduct/);
 });
+
+test("catalog DELETE route removes only drafts or retired products", () => {
+    const src = readFileSync(join(adminDir, "catalog/[id]/route.ts"), "utf8");
+    assert.match(src, /export async function DELETE/);
+    assert.match(src, /authorizeAdmin/);
+    assert.match(src, /checkOrigin/);
+    assert.match(src, /discardDraft/);
+    assert.match(src, /deleteArchivedProduct/);
+    const repo = readFileSync(join(adminDir, "../../../lib/catalog/repository.ts"), "utf8");
+    for (const fn of repo.match(/\.delete\(\)[\s\S]*?\.select\("id"\)/g) ?? []) {
+        assert.match(fn, /\.eq\("status", "(draft|archived)"\)/, "deletes must be status-guarded");
+    }
+});

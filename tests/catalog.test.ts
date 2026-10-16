@@ -16,6 +16,8 @@ import type { FakeRow } from "./fakeSupabase.ts";
 import {
     archiveProduct,
     attachReviewSummaries,
+    deleteArchivedProduct,
+    discardDraft,
     listCatalogProducts,
     publishCatalogProduct,
     updateProduct,
@@ -373,6 +375,42 @@ test("archiveProduct hides without deleting and republish revalidates the guard"
     const row = db.tables.catalog_products.find((r) => r.id === "a1");
     assert.equal(row?.status, "published");
     assert.equal(row?.reviewed_by, "admin-1");
+});
+
+test("deleteArchivedProduct permanently removes only retired rows", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "a1", status: "archived" }),
+        catalogRow({ id: "p1", status: "published" }),
+        catalogRow({ id: "d1", status: "draft" }),
+    ];
+
+    const published = await deleteArchivedProduct("p1", db.asClient());
+    assert.ok("error" in published, "published products must not be deletable");
+    const draft = await deleteArchivedProduct("d1", db.asClient());
+    assert.ok("error" in draft, "drafts are handled by discardDraft instead");
+
+    const ok = await deleteArchivedProduct("a1", db.asClient());
+    assert.deepEqual(ok, { ok: true });
+    assert.equal(db.tables.catalog_products.length, 2);
+    assert.equal(db.tables.catalog_products.find((r) => r.id === "a1"), undefined);
+
+    const gone = await deleteArchivedProduct("a1", db.asClient());
+    assert.deepEqual(gone, { error: "archived product not found" });
+});
+
+test("discardDraft removes drafts but never retired or live products", async () => {
+    const db = new FakeDb();
+    db.tables.catalog_products = [
+        catalogRow({ id: "d1", status: "draft" }),
+        catalogRow({ id: "a1", status: "archived" }),
+        catalogRow({ id: "p1", status: "published" }),
+    ];
+
+    assert.ok("error" in await discardDraft("a1", db.asClient()));
+    assert.ok("error" in await discardDraft("p1", db.asClient()));
+    assert.deepEqual(await discardDraft("d1", db.asClient()), { ok: true });
+    assert.equal(db.tables.catalog_products.length, 2);
 });
 
 test("incomplete drafts save: category/description may be empty, name is required", () => {

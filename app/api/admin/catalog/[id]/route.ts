@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { authorizeAdmin } from "@/lib/auth/server";
 import {
     archiveProduct,
+    deleteArchivedProduct,
     discardDraft,
     publishCatalogProduct,
     updateProduct,
@@ -100,9 +101,17 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (forbidden) return forbidden;
 
     const { id } = await context.params;
-    const result = await discardDraft(id);
-    if ("error" in result) {
-        return NextResponse.json(result, { status: 400 });
+    const draftResult = await discardDraft(id);
+    if (!("error" in draftResult)) {
+        return NextResponse.json({ ok: true });
     }
+    if (draftResult.error !== "draft not found") {
+        return NextResponse.json(draftResult, { status: 400 });
+    }
+    const archivedResult = await deleteArchivedProduct(id);
+    if ("error" in archivedResult) {
+        return NextResponse.json(archivedResult, { status: 400 });
+    }
+    revalidateStorefront(id);
     return NextResponse.json({ ok: true });
 }

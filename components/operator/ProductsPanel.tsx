@@ -116,6 +116,7 @@ export default function ProductsPanel() {
     const [formError, setFormError] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
     const load = useCallback(async (nextOffset: number) => {
         setLoading(true);
@@ -193,6 +194,28 @@ export default function ProductsPanel() {
         if (await patch(row, "archive")) {
             setNotice(`"${row.name}" retirado del catálogo. El registro se conserva.`);
             void load(offset);
+        }
+    };
+
+    const handleDelete = async (row: CatalogRow) => {
+        setDeleteConfirmId(null);
+        setSubmitting(true);
+        setFormError("");
+        setError("");
+        setNotice("");
+        try {
+            const res = await fetch(`/api/admin/catalog/${row.id}`, { method: "DELETE" });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setError(body.error || "No se pudo eliminar el producto.");
+                return;
+            }
+            setNotice(`"${row.name}" eliminado permanentemente.`);
+            void load(offset);
+        } catch {
+            setError("Error de red al eliminar.");
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -326,11 +349,27 @@ export default function ProductsPanel() {
                                             {(row.status === "draft" || row.status === "published") && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setArchiveConfirmId(row.id)}
+                                                    onClick={() => {
+                                                        setDeleteConfirmId(null);
+                                                        setArchiveConfirmId(row.id);
+                                                    }}
                                                     disabled={submitting}
                                                     className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-warning/10 text-muted hover:text-warning text-xs transition-colors disabled:opacity-50"
                                                 >
                                                     Retirar del catálogo
+                                                </button>
+                                            )}
+                                            {row.status === "archived" && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setArchiveConfirmId(null);
+                                                        setDeleteConfirmId(row.id);
+                                                    }}
+                                                    disabled={submitting}
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-danger/10 text-muted hover:text-danger text-xs transition-colors disabled:opacity-50"
+                                                >
+                                                    Eliminar
                                                 </button>
                                             )}
                                         </div>
@@ -354,6 +393,33 @@ export default function ProductsPanel() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setArchiveConfirmId(null)}
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 text-muted text-xs hover:bg-black/5"
+                                                >
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {deleteConfirmId === row.id && (
+                                        <div className="mt-3 p-3 rounded-xl border border-danger/30 bg-danger/10 flex flex-col sm:flex-row sm:items-center gap-2">
+                                            <p className="text-[11px] text-danger flex-1">
+                                                ¿Eliminar &quot;{row.name}&quot; permanentemente? Borra el
+                                                registro y sus reseñas; no se puede deshacer. El historial
+                                                de pedidos no se afecta.
+                                            </p>
+                                            <div className="flex gap-2 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void handleDelete(row)}
+                                                    disabled={submitting}
+                                                    className="px-3 py-1.5 rounded-xl bg-danger hover:bg-danger/90 text-white text-xs font-semibold disabled:opacity-50"
+                                                >
+                                                    Confirmar eliminación
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDeleteConfirmId(null)}
                                                     className="px-3 py-1.5 rounded-xl bg-black/5 text-muted text-xs hover:bg-black/5"
                                                 >
                                                     Cancelar
