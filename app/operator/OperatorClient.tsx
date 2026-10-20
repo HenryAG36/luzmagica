@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     TrendingUp,
     RotateCcw,
     AlertCircle,
     Truck,
     DollarSign,
-    Sparkles,
     ShieldCheck,
     Check,
     Store,
@@ -19,7 +18,6 @@ import {
     ShieldAlert,
 } from "lucide-react";
 import { useOperatorStore } from "@/store/useOperatorStore";
-import { useLoyaltyStore } from "@/store/useLoyaltyStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
 import FadeIn from "@/components/common/FadeIn";
@@ -28,8 +26,18 @@ import ProductsPanel from "@/components/operator/ProductsPanel";
 import OrdersPanel from "@/components/operator/OrdersPanel";
 import AbandonedPanel from "@/components/operator/AbandonedPanel";
 import ClaimsPanel from "@/components/operator/ClaimsPanel";
+import ReviewsPanel from "@/components/operator/ReviewsPanel";
 
 const emptySubscribe = () => () => {};
+
+type OperatorTab =
+    | "overview" | "orders" | "abandoned" | "checklist"
+    | "trends" | "products" | "claims" | "reviews" | "team";
+
+const OPERATOR_TABS = new Set<string>([
+    "overview", "orders", "abandoned", "checklist",
+    "trends", "products", "claims", "reviews", "team",
+]);
 
 export default function OperatorClient() {
     const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
@@ -41,13 +49,22 @@ export default function OperatorClient() {
         toggleTask,
         toggleChecklistItem,
     } = useOperatorStore();
-    const { account } = useLoyaltyStore();
 
-    // Tab state
+    // Tab state driven by the URL so back/forward, refresh and deep-links work.
+    const router = useRouter();
     const searchParams = useSearchParams();
-    const initialTab = searchParams.get("tab");
-    const [activeTab, setActiveTab] = useState<"overview" | "orders" | "abandoned" | "checklist" | "trends" | "products" | "claims" | "team">(
-        initialTab === "trends" || initialTab === "products" || initialTab === "claims" ? initialTab : "overview"
+    const tabParam = searchParams.get("tab");
+    const activeTab: OperatorTab = OPERATOR_TABS.has(tabParam ?? "") ? (tabParam as OperatorTab) : "overview";
+
+    const pathname = usePathname();
+    const setActiveTab = useCallback(
+        (tab: OperatorTab, extra?: Record<string, string>) => {
+            const params = new URLSearchParams();
+            params.set("tab", tab);
+            if (extra) for (const [k, v] of Object.entries(extra)) params.set(k, v);
+            router.push(`${pathname}?${params.toString()}`, { scroll: false });
+        },
+        [router, pathname]
     );
 
     interface AdminRow {
@@ -107,36 +124,50 @@ export default function OperatorClient() {
         orders: { id: string; ref: string; issue: string }[];
     }
     const [attention, setAttention] = useState<AttentionData | null>(null);
+    const [summaryError, setSummaryError] = useState(false);
+    const [summaryRefreshing, setSummaryRefreshing] = useState(false);
 
     const loadAttention = useCallback(async () => {
         try {
             const res = await fetch("/api/admin/orders?attention=1");
-            if (!res.ok) return;
+            if (!res.ok) {
+                setSummaryError(true);
+                return;
+            }
             const body = await res.json();
             setAttention(body.attention ?? null);
         } catch {
-            // informational only
+            setSummaryError(true);
         }
     }, []);
-
-    useEffect(() => {
-        if (isAuthenticated) void loadAttention();
-    }, [isAuthenticated, loadAttention]);
 
     const loadOrderSummary = useCallback(async () => {
         try {
             const res = await fetch("/api/admin/orders?summary=1");
-            if (!res.ok) return;
+            if (!res.ok) {
+                setSummaryError(true);
+                return;
+            }
             const body = await res.json();
             setOrderSummary(body.summary ?? null);
         } catch {
-            // keep last known summary; overview is informational only
+            setSummaryError(true);
         }
     }, []);
 
+    const refreshOverview = useCallback(async () => {
+        setSummaryRefreshing(true);
+        setSummaryError(false);
+        await Promise.all([loadAttention(), loadOrderSummary()]);
+        setSummaryRefreshing(false);
+    }, [loadAttention, loadOrderSummary]);
+
+    // Load on first auth and refresh whenever the operator switches tabs.
+    // Deliberately NOT keyed on response data — a response-derived dependency
+    // would re-trigger the fetch on every successful response.
     useEffect(() => {
-        if (isAuthenticated) void loadOrderSummary();
-    }, [isAuthenticated, loadOrderSummary]);
+        if (isAuthenticated) void refreshOverview();
+    }, [isAuthenticated, activeTab, refreshOverview]);
 
     if (!mounted || !authReady) {
         return (
@@ -311,6 +342,16 @@ export default function OperatorClient() {
                     </span>
                 </button>
                 <button
+                    onClick={() => setActiveTab("reviews")}
+                    className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
+                        activeTab === "reviews"
+                            ? "bg-primary text-white glow-purple"
+                            : "text-muted hover:text-foreground hover:bg-black/5"
+                    }`}
+                >
+                    <span>Reseñas</span>
+                </button>
+                <button
                     onClick={() => setActiveTab("team")}
                     className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${
                         activeTab === "team"
@@ -337,10 +378,10 @@ export default function OperatorClient() {
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-foreground mb-1">
-                                    {formatCOP(orderSummary?.paidRevenueCop ?? 0)}
+                                    {orderSummary ? formatCOP(orderSummary.paidRevenueCop) : "—"}
                                 </div>
                                 <span className="text-[11px] text-success font-medium">
-                                    {orderSummary?.paidCount ?? 0} pedidos pagados
+                                    {orderSummary ? orderSummary.paidCount : "—"} pedidos pagados
                                 </span>
                             </div>
                         </FadeIn>
@@ -375,31 +416,69 @@ export default function OperatorClient() {
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-foreground mb-1">
-                                    {orderSummary?.pendingCount ?? 0}
+                                    {orderSummary ? orderSummary.pendingCount : "—"}
                                 </div>
                                 <span className="text-[11px] text-accent-dark font-medium">
-                                    {formatCOP(orderSummary?.pendingRevenueCop ?? 0)} en checkouts abiertos
+                                    {orderSummary ? formatCOP(orderSummary.pendingRevenueCop) : "—"} en checkouts abiertos
                                 </span>
                             </div>
                         </FadeIn>
 
-                        {/* Loyalty Liability */}
+                        {/* Delivered Orders */}
                         <FadeIn delay={0.2}>
                             <div className="p-5 rounded-2xl bg-surface-card border border-black/10">
                                 <div className="flex items-center justify-between text-xs text-muted mb-2">
-                                    <span>Puntos Honesty activos</span>
+                                    <span>Pedidos entregados</span>
                                     <div className="p-1.5 rounded-lg bg-accent/10 text-accent-dark">
-                                        <Sparkles className="w-4 h-4" />
+                                        <Truck className="w-4 h-4" />
                                     </div>
                                 </div>
                                 <div className="font-heading text-2xl font-bold text-foreground mb-1">
-                                    {account.points} pts
+                                    {orderSummary ? orderSummary.deliveredCount : "—"}
                                 </div>
                                 <span className="text-[11px] text-muted">
-                                    Valor canjeable: {formatCOP(account.points * 10)}
+                                    Ciclo completado
                                 </span>
                             </div>
                         </FadeIn>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => void refreshOverview()}
+                            disabled={summaryRefreshing}
+                            className="px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50"
+                        >
+                            <RotateCcw className={`w-3.5 h-3.5 ${summaryRefreshing ? "animate-spin" : ""}`} />
+                            {summaryRefreshing ? "Actualizando..." : "Actualizar resumen"}
+                        </button>
+                        {summaryError && (
+                            <span role="alert" className="text-[11px] text-danger">
+                                No se pudo cargar el resumen del servidor.
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Quick workflow actions */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {[
+                            { label: "Buscar e importar productos", tab: "trends" as OperatorTab },
+                            { label: "Revisar catálogo", tab: "products" as OperatorTab },
+                            { label: "Pedidos y reembolsos", tab: "orders" as OperatorTab },
+                            { label: "Reclamos y garantías", tab: "claims" as OperatorTab },
+                            { label: "Moderar reseñas", tab: "reviews" as OperatorTab },
+                            { label: "Conexiones de proveedores", tab: "trends" as OperatorTab, extra: { section: "connections" } },
+                        ].map((a) => (
+                            <button
+                                key={a.label}
+                                type="button"
+                                onClick={() => setActiveTab(a.tab, a.extra)}
+                                className="p-3.5 rounded-2xl bg-surface-card border border-black/10 hover:border-primary/40 text-left text-xs font-semibold text-foreground transition-colors"
+                            >
+                                {a.label}
+                            </button>
+                        ))}
                     </div>
 
                     {/* NEEDS ATTENTION — only items that truly need a human */}
@@ -487,10 +566,10 @@ export default function OperatorClient() {
                                 <div className="p-5 rounded-2xl bg-surface/90 border border-black/10 text-center shrink-0 min-w-[240px]">
                                     <span className="text-xs text-muted block mb-1">Checkouts por Confirmar</span>
                                     <span className="font-heading text-3xl sm:text-4xl font-extrabold text-warning block tracking-tight">
-                                        {formatCOP(orderSummary?.pendingRevenueCop ?? 0)}
+                                        {orderSummary ? formatCOP(orderSummary.pendingRevenueCop) : "—"}
                                     </span>
                                     <span className="text-[11px] text-muted mt-1 block">
-                                        {orderSummary?.pendingCount ?? 0} pedidos en pago pendiente
+                                        {orderSummary ? orderSummary.pendingCount : "—"} pedidos en pago pendiente
                                     </span>
                                 </div>
                             </div>
@@ -499,7 +578,7 @@ export default function OperatorClient() {
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-black/10">
                                     <span className="text-muted block mb-1">Pedidos Pagados</span>
                                     <span className="font-bold text-foreground text-sm">
-                                        {orderSummary?.paidCount ?? 0}
+                                        {orderSummary ? orderSummary.paidCount : "—"}
                                     </span>
                                     <span className="text-[10px] text-success block mt-0.5">Confirmados por pasarela</span>
                                 </div>
@@ -507,7 +586,7 @@ export default function OperatorClient() {
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-black/10">
                                     <span className="text-muted block mb-1">Entregados</span>
                                     <span className="font-bold text-foreground text-sm">
-                                        {orderSummary?.deliveredCount ?? 0}
+                                        {orderSummary ? orderSummary.deliveredCount : "—"}
                                     </span>
                                     <span className="text-[10px] text-accent-dark block mt-0.5">Ciclo completado</span>
                                 </div>
@@ -515,7 +594,7 @@ export default function OperatorClient() {
                                 <div className="p-3.5 rounded-xl bg-surface/50 border border-black/10">
                                     <span className="text-muted block mb-1">Pagos en Revisión</span>
                                     <span className="font-bold text-foreground text-sm">
-                                        {orderSummary?.reviewCount ?? 0}
+                                        {orderSummary ? orderSummary.reviewCount : "—"}
                                     </span>
                                     <span className="text-[10px] text-accent-dark block mt-0.5">Requieren verificación manual</span>
                                 </div>
@@ -666,10 +745,15 @@ export default function OperatorClient() {
             )}
 
             {/* TAB: TENDENCIAS */}
-            {activeTab === "trends" && <TrendPanel />}
+            {activeTab === "trends" && (
+                <TrendPanel onOpenCatalog={() => setActiveTab("products")} />
+            )}
 
             {/* TAB: PRODUCTOS */}
             {activeTab === "products" && <ProductsPanel />}
+
+            {/* TAB: RESEÑAS */}
+            {activeTab === "reviews" && <ReviewsPanel />}
 
             {/* TAB: EQUIPO ADMIN */}
             {activeTab === "team" && (

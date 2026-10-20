@@ -2,7 +2,6 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, PackageCheck, RefreshCw, Truck } from "lucide-react";
-import ReviewsPanel from "@/components/operator/ReviewsPanel";
 import { formatCOP } from "@/lib/utils";
 import {
     FULFILLMENT_STATUS_LABELS,
@@ -625,7 +624,13 @@ export default function OrdersPanel() {
                 </div>
             </div>
 
-            <ReviewsPanel />
+            <p className="text-xs text-muted">
+                ¿Buscas moderación de reseñas? Está en{" "}
+                <a href="/operator?tab=reviews" className="text-accent-dark hover:underline">
+                    Reseñas
+                </a>
+                .
+            </p>
 
             {/* Refund modal */}
             {refundFor && (

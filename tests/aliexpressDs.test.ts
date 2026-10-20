@@ -1238,3 +1238,53 @@ test("ds feed refresh re-reads the selected feed inside the lease", async () => 
         clearDsEnv();
     }
 });
+
+test("normalizeDsProduct accepts the wrapped ae_item_sku_info_d_t_o envelope", () => {
+    const wrapped = productFixture();
+    (wrapped.aliexpress_ds_product_get_response.result as Record<string, unknown>)
+        .ae_item_sku_info_dtos = {
+        ae_item_sku_info_d_t_o: [
+            { sku_id: "w1", sku_attr: "size:m", offer_sale_price: "9.90", sku_price: "10.00", sku_available_stock: "5", currency_code: "USD" },
+        ],
+    };
+    const product = normalizeDsProduct(wrapped, "1005001234567890");
+    assert.ok(product);
+    assert.equal(product.skus.length, 1);
+    assert.equal(product.skus[0].skuId, "w1");
+    assert.equal(product.skus[0].offerSalePrice, 9.9);
+    // an unrecognized container shape yields no variants, never a crash
+    const odd = productFixture();
+    (odd.aliexpress_ds_product_get_response.result as Record<string, unknown>)
+        .ae_item_sku_info_dtos = { something_else: [] };
+    assert.equal(normalizeDsProduct(odd, "1005001234567890")?.skus.length, 0);
+});
+
+test("expired request deadline stops the product lookup before any provider fetch", async () => {
+    dsEnv();
+    try {
+        const secret = "a".repeat(64);
+        const db = new FakeDb();
+        db.tables.provider_connections = [
+            {
+                provider: "aliexpress_ds",
+                status: "connected",
+                access_token_encrypted: encryptSecret("tok", secret),
+                refresh_token_encrypted: encryptSecret("rt", secret),
+                token_expires_at: new Date(Date.now() + 86400_000).toISOString(),
+            },
+        ];
+        let calls = 0;
+        const fetchImpl: FetchLike = async () => {
+            calls++;
+            return new Response("{}", { status: 200 });
+        };
+        const result = await lookupDsProduct(
+            db.asClient(), "1005001234567890", fetchImpl, Date.now() - 1000
+        );
+        assert.ok("error" in result);
+        assert.equal(calls, 0); // deadline enforced before any provider HTTP call
+        assert.equal(db.leases.size, 0);
+    } finally {
+        clearDsEnv();
+    }
+});

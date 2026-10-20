@@ -3,7 +3,11 @@ import { authorizeAdmin } from "@/lib/auth/server";
 import { importDraft, listCatalogProducts, listDrafts } from "@/lib/catalog/repository";
 import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeImportFields, sanitizeSupplierVariant } from "@/lib/catalog/validate";
 
-const IMPORT_SOURCES = new Set(["mercadolibre", "aliexpress", "aliexpress_ds", "cjdropshipping"]);
+// Legacy/manual imports stay here; AliExpress DS and CJ must go through
+// POST /api/admin/catalog/import-supplier, which refetches authoritative
+// provider data server-side and never trusts client-supplied fields.
+const IMPORT_SOURCES = new Set(["mercadolibre"]);
+const SUPPLIER_SOURCES = new Set(["aliexpress", "aliexpress_ds", "cjdropshipping"]);
 const PAGE_MAX = 100;
 
 function boundedInt(raw: string | null, fallback: number, max: number): number {
@@ -50,6 +54,12 @@ export async function POST(request: Request) {
     }
 
     const source = body.source;
+    if (typeof source === "string" && SUPPLIER_SOURCES.has(source)) {
+        return NextResponse.json(
+            { error: "supplier imports must use /api/admin/catalog/import-supplier" },
+            { status: 400 }
+        );
+    }
     if (typeof source !== "string" || !IMPORT_SOURCES.has(source)) {
         return NextResponse.json({ error: "invalid source" }, { status: 400 });
     }

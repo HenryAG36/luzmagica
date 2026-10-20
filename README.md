@@ -126,11 +126,46 @@ source's status and the age of the last successful snapshot. Snapshots refresh
 automatically when an admin opens the panel if older than 6 hours; refreshes are
 serialized across instances with database leases.
 
-### Currency conversion (manual FX review)
+### Supplier import workflow (AliExpress DS / CJ Dropshipping)
 
-Imported products keep their original `listing_currency`. The draft `fx_rate` /
-`fx_rate_date` fields record the conversion the reviewer used; there is no live
-FX feed. Reviewers must enter a current rate and date manually before publishing.
+The operator panel (`/operator`, tab *Tendencias*) splits into
+**Descubrir** (loaded trend signals — AliExpress Affiliate/DS, CJ, MercadoLibre),
+**Importar** (server-verified product preview + draft import),
+**Borradores** (draft review, edit, publish gate) and **Conexiones**
+(provider OAuth/feed/diagnostics status).
+
+- `POST /api/admin/suppliers/preview` — `{source, productId, variantId?}` returns
+  a `SupplierPreview` assembled server-side from the provider's official API:
+  detail, variant stock (CJ CN warehouses only), a freight quote (CJ quotes
+  specifically CN→CO; AliExpress DS quotes to the destination configured in the
+  DS integration), and a USD→COP rate. `productId` also accepts pasted
+  `aliexpress.com/item/<id>.html` or `cjdropshipping.com/…-p-<id>.html` URLs
+  (parsed, never fetched; shorteners and lookalike hosts rejected).
+- `POST /api/admin/catalog/import-supplier` — refetches the preview and builds
+  the draft with `buildSupplierImport`; price, stock and images always come from
+  the provider API response, never from the client. Body keys are allowlisted:
+  `source`, `productId`, `variantId`, `freightId`, `marginPercent` (15–50), and
+  an optional explicit `priceCop` that overrides the suggested selling price.
+  Duplicates return `{created:false}` without overwriting.
+- `POST /api/admin/catalog/[id]/supplier-sync` — manual "Actualizar costo y
+  stock" re-query for imported rows. Requires `expectedUpdatedAt` (optimistic
+  concurrency), refuses archived/manual rows and unverifiable stock/cost, and
+  only updates `stock`, `listing_*`, `supplier_cost_cop`, `fx_*` and the
+  `supplier_variant` snapshot — never the copy, images, sale price or publish
+  state. No automatic repricing or cron.
+- Legacy `POST /api/admin/catalog` remains only for MercadoLibre reference
+  drafts; it rejects `aliexpress`, `aliexpress_ds`, `cjdropshipping` and any
+  other source (they must go through `import-supplier`).
+
+### Currency conversion (import-time FX + manual review)
+
+Supplier previews fetch the USD→COP rate once per request from
+[ExchangeRate-API](https://www.exchangerate-api.com) (`open.er-api.com`, 8s
+timeout, 6h cache, rates older than 72h rejected — UI shows rate, date and the
+required attribution link). If the rate is unavailable, cost/shipping stay `null`
+and the price suggestion is skipped — no hardcoded fallback. The draft keeps the
+original `listing_currency`; `fx_rate`/`fx_rate_date` record the applied
+snapshot, and reviewers can still override the COP price before publishing.
 
 ### Supabase free-tier notes
 

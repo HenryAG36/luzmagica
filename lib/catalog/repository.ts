@@ -1,5 +1,7 @@
 import type { Product } from "../types";
 import type { SupabaseClientLike } from "../supabase/types";
+import type { SupplierPreview } from "./supplierImport.ts";
+import { supplierPricing } from "./supplierImport.ts";
 import {
     buildDraftInsert,
     toPublicProduct,
@@ -397,4 +399,119 @@ export async function publishCatalogProduct(
         return { error: "product changed during review; reload and retry" };
     }
     return { ok: true };
+}
+
+type SupplierLookup = (
+    service: SupabaseClientLike,
+    source: "aliexpress_ds" | "cjdropshipping",
+    productId: string,
+    variantId?: string
+) => Promise<{ preview: SupplierPreview } | { error: string }>;
+
+const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+
+// Re-reads the provider's current price/stock for a catalog row and updates
+// only supplier fields. Customer-facing text/images/sale price/status/rights
+// are never touched by a sync.
+export async function refreshSupplierProduct(
+    id: string,
+    expectedUpdatedAt: string,
+    client?: SupabaseClientLike,
+    lookup?: SupplierLookup
+): Promise<{ ok: true; warnings: string[]; fetchedAt: string | null } | { error: string }> {
+    const service = await serviceClient(client);
+    if (!service) return { error: "service unavailable" };
+    if (!lookup) {
+        const mod = await import("../suppliers/importService.ts");
+        lookup = mod.lookupSupplierPreview;
+    }
+
+    const { data, error } = await service
+        .from("catalog_products")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+    if (error) return { error: error.message };
+    const row = data as CatalogRow | null;
+    if (!row) return { error: "product not found" };
+    if (row.status === "archived") return { error: "product is archived" };
+    if (row.status !== "draft" && row.status !== "published") {
+        return { error: "product status does not allow sync" };
+    }
+    if (row.updated_at !== expectedUpdatedAt) {
+        return { error: "product changed during review; reload and retry" };
+    }
+    if (!SUPPLIER_SOURCES.has(row.source) || !row.supplier_variant) {
+        return { error: "product has no supplier variant to sync" };
+    }
+    const variantRef = row.supplier_variant as Record<string, unknown>;
+    const productId = variantRef.product_id;
+    const variantId = row.source === "aliexpress_ds" ? variantRef.sku_id : variantRef.vid;
+    if (typeof productId !== "string" || !productId) {
+        return { error: "supplier variant reference is incomplete" };
+    }
+    // Never guess the variant: a missing stored sku_id/vid must abort the sync
+    // rather than letting the lookup auto-choose a different variant.
+    if (typeof variantId !== "string" || !variantId) {
+        return { error: "supplier variant reference is incomplete" };
+    }
+
+    const result = await lookup(
+        service,
+        row.source as "aliexpress_ds" | "cjdropshipping",
+        productId,
+        variantId
+    );
+    if ("error" in result) return { error: result.error };
+    const preview = result.preview;
+    if (
+        preview.product.source !== row.source ||
+        preview.product.productId !== productId ||
+        preview.selectedVariantId !== variantId
+    ) {
+        return { error: "provider returned a different product or variant; nothing was updated" };
+    }
+    const pricing = supplierPricing(preview, { marginPercent: 15, freightId: null });
+    const variant = pricing.variant;
+    if (!variant) return { error: "supplier variant no longer exists at the provider" };
+    if (variant.stock === null || pricing.cost === null) {
+        return { error: "provider did not return verifiable stock and cost; nothing was updated" };
+    }
+
+    const { data: changed, error: writeError } = await service
+        .from("catalog_products")
+        .update({
+            stock: variant.stock,
+            listing_price: variant.price,
+            listing_currency: variant.currency,
+            supplier_cost_cop: pricing.cost,
+            fx_rate: preview.fx?.rate ?? null,
+            fx_rate_date: preview.fx?.date ?? null,
+            supplier_variant: {
+                ...variantRef,
+                ...variant.attributes,
+                provider_stock: variant.stock,
+                provider_price: variant.price,
+                currency_code: variant.currency,
+                fetched_at: preview.product.fetchedAt,
+            },
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("status", row.status)
+        .eq("updated_at", row.updated_at)
+        .select("id");
+    if (writeError) return { error: writeError.message };
+    if (!changed || (changed as unknown[]).length === 0) {
+        return { error: "product changed during review; reload and retry" };
+    }
+
+    const warnings: string[] = [];
+    if (preview.freight.length === 0) {
+        warnings.push("La cotización de envío del proveedor no está disponible en esta consulta.");
+    }
+    if (pricing.cost !== null && row.price_cop > 0 && pricing.cost >= row.price_cop) {
+        warnings.push("El nuevo costo del proveedor es igual o mayor que el precio de venta actual; revisa el margen manualmente.");
+    }
+    return { ok: true, warnings, fetchedAt: preview.product.fetchedAt };
 }

@@ -24,7 +24,7 @@ export interface CjResult<T> {
     deferSeconds?: number;
 }
 
-async function cjFetch<T>(url: string, init: RequestInit, deadlineMs?: number, fetchImpl?: FetchLike) {
+export async function cjFetch<T>(url: string, init: RequestInit, deadlineMs?: number, fetchImpl?: FetchLike) {
     const { fetchJson } = await import("../trends/http.ts");
     return fetchJson<T>(url, init, { fetchImpl, deadlineMs });
 }

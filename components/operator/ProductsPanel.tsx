@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, ExternalLink, PackageSearch } from "lucide-react";
 import { formatCOP } from "@/lib/utils";
 import type { CatalogRow } from "@/lib/catalog/validate";
-import { isHttpUrl } from "@/lib/catalog/validate";
+import { isHttpUrl, validatePublishable } from "@/lib/catalog/validate";
 import { describePublishError } from "@/lib/catalog/publishFeedback";
 import { usdToCop } from "@/lib/catalog/pricing";
 import PricingControls from "@/components/operator/PricingControls";
@@ -104,24 +104,55 @@ function listingCostCop(row: CatalogRow, form: ManageForm): number | null {
 const inputClass =
     "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
 
-export default function ProductsPanel() {
+const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+
+const MISSING_LABELS: Record<string, string> = {
+    name: "título", category: "categoría", room: "habitación", type: "tipo",
+    description: "descripción", images: "imágenes", price_cop: "precio",
+    stock: "stock", supplier_rights_confirmed: "derechos",
+    customer_shipping_cop: "envío cliente", shipping_estimate_city: "ciudad envío",
+    shipping_checked_at: "fecha cotización",
+};
+
+function publishReadiness(row: CatalogRow): { ready: boolean; missing: string[] } {
+    const result = validatePublishable(row, { allowSoldOut: row.status === "published" });
+    return { ready: result.valid, missing: result.missing };
+}
+
+export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boolean }) {
     const [products, setProducts] = useState<CatalogRow[]>([]);
     const [offset, setOffset] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [sourceFilter, setSourceFilter] = useState("");
+    const [readinessFilter, setReadinessFilter] = useState("");
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<ManageForm | null>(null);
     const [formError, setFormError] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [archiveConfirmId, setArchiveConfirmId] = useState<string | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [syncingId, setSyncingId] = useState<string | null>(null);
+    const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
     const load = useCallback(async (nextOffset: number) => {
         setLoading(true);
         setError("");
         try {
+            if (draftOnly) {
+                const res = await fetch("/api/admin/catalog");
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setError(body.error || "No se pudieron cargar los borradores.");
+                    return;
+                }
+                setProducts(Array.isArray(body.drafts) ? body.drafts : []);
+                setOffset(0);
+                return;
+            }
             const res = await fetch(`/api/admin/catalog?scope=all&limit=${PAGE}&offset=${nextOffset}`);
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -135,13 +166,14 @@ export default function ProductsPanel() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [draftOnly]);
 
     useEffect(() => {
         void load(0);
     }, [load]);
 
     const patch = async (row: CatalogRow, action: string, fields?: Record<string, unknown>) => {
+        if (syncingId !== null) return false;
         setSubmitting(true);
         setFormError("");
         setNotice("");
@@ -197,7 +229,40 @@ export default function ProductsPanel() {
         }
     };
 
+    const handleSupplierSync = async (row: CatalogRow) => {
+        if (submitting || syncingId !== null || editingId !== null) return;
+        setSyncingId(row.id);
+        setFormError("");
+        setNotice("");
+        setRowErrors((prev) => ({ ...prev, [row.id]: "" }));
+        try {
+            const res = await fetch(`/api/admin/catalog/${row.id}/supplier-sync`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ expectedUpdatedAt: row.updated_at }),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setRowErrors((prev) => ({
+                    ...prev,
+                    [row.id]: body.error || `No se pudo sincronizar (HTTP ${res.status}).`,
+                }));
+                return;
+            }
+            const warns = Array.isArray(body.warnings) && body.warnings.length
+                ? ` Avisos: ${body.warnings.join(" ")}`
+                : "";
+            setNotice(`Costo y stock de "${row.name}" actualizados desde el proveedor.${warns}`);
+            void load(offset);
+        } catch {
+            setRowErrors((prev) => ({ ...prev, [row.id]: "Error de red al sincronizar." }));
+        } finally {
+            setSyncingId(null);
+        }
+    };
+
     const handleDelete = async (row: CatalogRow) => {
+        if (syncingId !== null) return;
         setDeleteConfirmId(null);
         setSubmitting(true);
         setFormError("");
@@ -220,14 +285,19 @@ export default function ProductsPanel() {
     };
 
     const query = search.trim().toLowerCase();
-    const filtered = query
-        ? products.filter(
-              (p) =>
-                  p.name.toLowerCase().includes(query) ||
-                  p.id.toLowerCase().includes(query) ||
-                  (SOURCE_LABELS[p.source] ?? p.source).toLowerCase().includes(query)
-          )
-        : products;
+    const sourceOptions = [...new Set(products.map((p) => p.source))].sort();
+    const filtered = products.filter((p) => {
+        if (statusFilter && p.status !== statusFilter) return false;
+        if (sourceFilter && p.source !== sourceFilter) return false;
+        if (readinessFilter === "ready" && !publishReadiness(p).ready) return false;
+        if (readinessFilter === "incomplete" && publishReadiness(p).ready) return false;
+        if (!query) return true;
+        return (
+            p.name.toLowerCase().includes(query) ||
+            p.id.toLowerCase().includes(query) ||
+            (SOURCE_LABELS[p.source] ?? p.source).toLowerCase().includes(query)
+        );
+    });
 
     return (
         <div className="space-y-6">
@@ -235,23 +305,24 @@ export default function ProductsPanel() {
                 <div>
                     <h3 className="font-heading text-xl font-bold text-foreground flex items-center gap-2">
                         <PackageSearch className="w-5 h-5 text-accent-dark" />
-                        Productos del catálogo
+                        {draftOnly ? "Borradores de importación" : "Productos del catálogo"}
                     </h3>
                     <p className="text-xs text-muted mt-1">
-                        Gestiona borradores, productos publicados y retirados. Los cambios en productos
-                        publicados se validan como si se republicaran.
+                        {draftOnly
+                            ? "Borradores importados de proveedores. Revisa costos, derechos y envío antes de publicar."
+                            : "Gestiona borradores, productos publicados y retirados. Los cambios en productos publicados se validan como si se republicaran."}
                     </p>
                 </div>
             </div>
 
             {error && (
-                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-danger/30 text-red-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-red-500/15 border border-danger/30 text-danger text-xs flex items-center gap-2.5">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{error}</span>
                 </div>
             )}
             {notice && (
-                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-success/30 text-green-200 text-xs flex items-center gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-green-500/15 border border-success/30 text-success text-xs flex items-center gap-2.5">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{notice}</span>
                 </div>
@@ -265,6 +336,41 @@ export default function ProductsPanel() {
                         placeholder="Buscar por nombre, id o fuente (solo esta página)..."
                         className={inputClass}
                     />
+                    {!draftOnly && (
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className={`${inputClass} sm:w-40`}
+                            aria-label="Filtrar por estado"
+                        >
+                            <option value="">Todos los estados</option>
+                            <option value="draft">Borrador</option>
+                            <option value="published">Publicado</option>
+                            <option value="archived">Retirado</option>
+                        </select>
+                    )}
+                    <select
+                        value={sourceFilter}
+                        onChange={(e) => setSourceFilter(e.target.value)}
+                        className={`${inputClass} sm:w-44`}
+                        aria-label="Filtrar por fuente"
+                    >
+                        <option value="">Todas las fuentes</option>
+                        {sourceOptions.map((s) => (
+                            <option key={s} value={s}>{SOURCE_LABELS[s] ?? s}</option>
+                        ))}
+                    </select>
+                    <select
+                        value={readinessFilter}
+                        onChange={(e) => setReadinessFilter(e.target.value)}
+                        className={`${inputClass} sm:w-44`}
+                        aria-label="Filtrar por estado de publicación"
+                    >
+                        <option value="">Cualquier estado</option>
+                        <option value="ready">Listo para publicar</option>
+                        <option value="incomplete">Datos incompletos</option>
+                    </select>
+                    {!draftOnly && (
                     <div className="flex gap-2 shrink-0">
                         <button
                             type="button"
@@ -283,6 +389,7 @@ export default function ProductsPanel() {
                             Siguiente
                         </button>
                     </div>
+                    )}
                 </div>
 
                 {loading ? (
@@ -298,6 +405,18 @@ export default function ProductsPanel() {
                         {filtered.map((row) => {
                             const isEditing = editingId === row.id;
                             const badge = STATUS_BADGES[row.status] ?? STATUS_BADGES.archived;
+                            const readiness = publishReadiness(row);
+                            const isSupplier =
+                                (row.status === "draft" || row.status === "published") &&
+                                SUPPLIER_SOURCES.has(row.source) &&
+                                typeof row.supplier_variant?.product_id === "string" &&
+                                typeof row.supplier_variant?.[
+                                    row.source === "aliexpress_ds" ? "sku_id" : "vid"
+                                ] === "string";
+                            const fetchedAt =
+                                row.supplier_variant && typeof row.supplier_variant.fetched_at === "string"
+                                    ? row.supplier_variant.fetched_at
+                                    : null;
                             return (
                                 <div
                                     key={row.id}
@@ -305,7 +424,7 @@ export default function ProductsPanel() {
                                 >
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="text-sm font-semibold text-foreground truncate">
                                                     {row.name}
                                                 </span>
@@ -314,6 +433,24 @@ export default function ProductsPanel() {
                                                 >
                                                     {badge.label}
                                                 </span>
+                                                {(row.status === "draft" || row.status === "published") && (
+                                                    <span
+                                                        className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
+                                                            readiness.ready
+                                                                ? "bg-green-500/15 text-success border-success/30"
+                                                                : "bg-amber-500/15 text-warning border-warning/30"
+                                                        }`}
+                                                        title={
+                                                            readiness.ready
+                                                                ? "Listo para publicar"
+                                                                : `Falta: ${readiness.missing.map((m) => MISSING_LABELS[m] ?? m).join(", ")}`
+                                                        }
+                                                    >
+                                                        {readiness.ready
+                                                            ? "Listo"
+                                                            : `Falta: ${readiness.missing.slice(0, 2).map((m) => MISSING_LABELS[m] ?? m).join(", ")}${readiness.missing.length > 2 ? ` +${readiness.missing.length - 2}` : ""}`}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-[11px] text-muted mt-0.5">
                                                 {SOURCE_LABELS[row.source] ?? row.source} · {row.id}
@@ -323,6 +460,11 @@ export default function ProductsPanel() {
                                                     ? `envío ${formatCOP(row.customer_shipping_cop)}${row.shipping_estimate_city ? ` (${row.shipping_estimate_city})` : ""}`
                                                     : "envío pendiente"}
                                             </div>
+                                            {fetchedAt && (
+                                                <div className="text-[10px] text-muted mt-0.5">
+                                                    Proveedor consultado: {new Date(fetchedAt).toLocaleString("es-CO")}
+                                                </div>
+                                            )}
                                             {row.source_url && isHttpUrl(row.source_url) && (
                                                 <a
                                                     href={row.source_url}
@@ -335,6 +477,17 @@ export default function ProductsPanel() {
                                             )}
                                         </div>
                                         <div className="flex flex-wrap gap-2 shrink-0">
+                                            {isSupplier && (
+                                                <button
+                                                    type="button"
+                                                    title="Re-consulta stock y costo al proveedor; no cambia texto, imágenes ni precio de venta."
+                                                    onClick={() => void handleSupplierSync(row)}
+                                                    disabled={submitting || syncingId !== null || editingId !== null}
+                                                    className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-primary/15 text-muted hover:text-accent-dark text-xs font-semibold transition-colors disabled:opacity-50"
+                                                >
+                                                    {syncingId === row.id ? "Sincronizando..." : "Actualizar costo y stock"}
+                                                </button>
+                                            )}
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -342,18 +495,45 @@ export default function ProductsPanel() {
                                                     setEditingId(isEditing ? null : row.id);
                                                     setEditForm(isEditing ? null : seedForm(row));
                                                 }}
-                                                className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold transition-colors"
+                                                disabled={syncingId !== null}
+                                                className="px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-accent-dark text-xs font-semibold transition-colors disabled:opacity-50"
                                             >
                                                 {isEditing ? "Cerrar" : "Editar"}
                                             </button>
-                                            {(row.status === "draft" || row.status === "published") && (
+                                            {row.status === "draft" && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setDeleteConfirmId(null);
+                                                            setArchiveConfirmId(row.id);
+                                                        }}
+                                                        disabled={submitting || syncingId !== null}
+                                                        className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-warning/10 text-muted hover:text-warning text-xs transition-colors disabled:opacity-50"
+                                                    >
+                                                        Retirar
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setArchiveConfirmId(null);
+                                                            setDeleteConfirmId(row.id);
+                                                        }}
+                                                        disabled={submitting || syncingId !== null}
+                                                        className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-danger/10 text-muted hover:text-danger text-xs transition-colors disabled:opacity-50"
+                                                    >
+                                                        Descartar borrador
+                                                    </button>
+                                                </>
+                                            )}
+                                            {row.status === "published" && (
                                                 <button
                                                     type="button"
                                                     onClick={() => {
                                                         setDeleteConfirmId(null);
                                                         setArchiveConfirmId(row.id);
                                                     }}
-                                                    disabled={submitting}
+                                                    disabled={submitting || syncingId !== null}
                                                     className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-warning/10 text-muted hover:text-warning text-xs transition-colors disabled:opacity-50"
                                                 >
                                                     Retirar del catálogo
@@ -366,7 +546,7 @@ export default function ProductsPanel() {
                                                         setArchiveConfirmId(null);
                                                         setDeleteConfirmId(row.id);
                                                     }}
-                                                    disabled={submitting}
+                                                    disabled={submitting || syncingId !== null}
                                                     className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-danger/10 text-muted hover:text-danger text-xs transition-colors disabled:opacity-50"
                                                 >
                                                     Eliminar
@@ -374,6 +554,11 @@ export default function ProductsPanel() {
                                             )}
                                         </div>
                                     </div>
+                                    {rowErrors[row.id] && (
+                                        <p role="alert" className="mt-2 text-xs text-danger">
+                                            {rowErrors[row.id]}
+                                        </p>
+                                    )}
 
                                     {archiveConfirmId === row.id && (
                                         <div className="mt-3 p-3 rounded-xl border border-warning/30 bg-warning/10 flex flex-col sm:flex-row sm:items-center gap-2">
@@ -385,7 +570,7 @@ export default function ProductsPanel() {
                                                 <button
                                                     type="button"
                                                     onClick={() => void handleArchive(row)}
-                                                    disabled={submitting}
+                                                    disabled={submitting || syncingId !== null}
                                                     className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold disabled:opacity-50"
                                                 >
                                                     Confirmar retiro
@@ -404,18 +589,18 @@ export default function ProductsPanel() {
                                     {deleteConfirmId === row.id && (
                                         <div className="mt-3 p-3 rounded-xl border border-danger/30 bg-danger/10 flex flex-col sm:flex-row sm:items-center gap-2">
                                             <p className="text-[11px] text-danger flex-1">
-                                                ¿Eliminar &quot;{row.name}&quot; permanentemente? Borra el
-                                                registro y sus reseñas; no se puede deshacer. El historial
-                                                de pedidos no se afecta.
+                                                {row.status === "draft"
+                                                    ? `¿Descartar el borrador "${row.name}"? Se elimina el borrador sin publicar; no se puede deshacer.`
+                                                    : `¿Eliminar "${row.name}" permanentemente? Borra el registro y sus reseñas; no se puede deshacer. El historial de pedidos no se afecta.`}
                                             </p>
                                             <div className="flex gap-2 shrink-0">
                                                 <button
                                                     type="button"
                                                     onClick={() => void handleDelete(row)}
-                                                    disabled={submitting}
+                                                    disabled={submitting || syncingId !== null}
                                                     className="px-3 py-1.5 rounded-xl bg-danger hover:bg-danger/90 text-white text-xs font-semibold disabled:opacity-50"
                                                 >
-                                                    Confirmar eliminación
+                                                    {row.status === "draft" ? "Confirmar descarte" : "Confirmar eliminación"}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -503,7 +688,7 @@ export default function ProductsPanel() {
                                                 <button
                                                     type="button"
                                                     onClick={() => void handleSave(row)}
-                                                    disabled={submitting}
+                                                    disabled={submitting || syncingId !== null}
                                                     className="px-4 py-2.5 rounded-xl border border-black/10 bg-black/5 hover:bg-black/5 text-foreground text-xs font-semibold transition-colors disabled:opacity-50"
                                                 >
                                                     {submitting ? "Guardando..." : "Guardar cambios"}
@@ -512,7 +697,7 @@ export default function ProductsPanel() {
                                                     <button
                                                         type="button"
                                                         onClick={() => void handlePublish(row)}
-                                                        disabled={submitting}
+                                                        disabled={submitting || syncingId !== null}
                                                         className="px-5 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-xs font-semibold transition-colors disabled:opacity-50"
                                                     >
                                                         {submitting ? "Publicando..." : row.status === "archived" ? "Republicar" : "Publicar al catálogo"}

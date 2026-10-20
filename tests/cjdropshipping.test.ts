@@ -298,3 +298,160 @@ test("cj refresh writes a snapshot on success", async () => {
         clearCjEnv();
     }
 });
+
+// --- Catalog lookup (product/query, stock/queryByVid, freightCalculate) -----
+
+import {
+    normalizeCjCatalogProduct,
+    normalizeCjStock,
+    normalizeCjFreightOptions,
+} from "../lib/suppliers/cjCatalog.ts";
+
+function cjDetailFixture(overrides: Record<string, unknown> = {}) {
+    return {
+        code: 200,
+        result: true,
+        data: {
+            pid: "PID-1",
+            productNameEn: "Galaxy Projector",
+            bigImage: "https://img.example.com/main.jpg",
+            productImageSet: ["https://img.example.com/a.jpg", "javascript:alert(1)", "notaurl"],
+            productSku: "CJ-SKU-1",
+            categoryName: "Electronics / Lighting > Projectors",
+            description: "<p>Star <b>projector</b></p><script>alert(1)</script>",
+            productWeight: "0.5",
+            productUnit: "piece",
+            materialNameEnSet: ["ABS", "PC"],
+            productProEnSet: ["No battery"],
+            variants: [
+                {
+                    vid: "VID-1",
+                    pid: "PID-1",
+                    variantNameEn: "White",
+                    variantSku: "CJ-W",
+                    variantKey: "color:white",
+                    variantImage: "https://img.example.com/w.jpg",
+                    variantSellPrice: "12.50",
+                    variantWeight: "0.4",
+                    variantLength: "10",
+                    variantWidth: "8",
+                    variantHeight: "5",
+                    inventories: [
+                        { countryCode: "CN", totalInventory: 12912, cjInventory: 0, factoryInventory: 12912 },
+                        { countryCode: "US", totalInventory: 50, cjInventory: 50, factoryInventory: 0 },
+                    ],
+                },
+                {
+                    vid: "VID-2",
+                    variantNameEn: "Black",
+                    variantSellPrice: "13.00",
+                    inventories: [{ countryCode: "CN", totalInventory: 3 }],
+                },
+            ],
+            ...overrides,
+        },
+    };
+}
+
+test("cj catalog detail maps variants, strips HTML and filters unsafe images", () => {
+    const product = normalizeCjCatalogProduct(cjDetailFixture(), "PID-1");
+    assert.ok(product);
+    assert.equal(product.source, "cjdropshipping");
+    assert.equal(product.productId, "PID-1");
+    assert.equal(product.title, "Galaxy Projector");
+    assert.equal(product.category, "Projectors");
+    assert.equal(product.description.includes("<script"), false);
+    assert.equal(product.description, "Star projector");
+    assert.deepEqual(product.images, [
+        "https://img.example.com/main.jpg",
+        "https://img.example.com/a.jpg",
+    ]);
+    assert.equal(product.sourceUrl, null);
+    assert.equal(product.variants.length, 2);
+    const v1 = product.variants[0];
+    assert.equal(v1.id, "VID-1");
+    assert.equal(v1.label, "White");
+    assert.equal(v1.price, 12.5);
+    assert.equal(v1.currency, "USD");
+    assert.equal(v1.stock, 12912); // CN total only, never CN+US or total+subtotals
+    assert.equal(v1.attributes.weight_g, 0.4);
+    assert.equal(product.details.product_sku, "CJ-SKU-1");
+});
+
+test("cj catalog detail rejects pid mismatch and provider errors", () => {
+    assert.equal(normalizeCjCatalogProduct(cjDetailFixture(), "OTHER"), null);
+    assert.equal(normalizeCjCatalogProduct({ code: 1600200, result: false, data: {} }, "PID-1"), null);
+    assert.equal(normalizeCjCatalogProduct(null, "PID-1"), null);
+    assert.equal(
+        normalizeCjCatalogProduct(cjDetailFixture({ productNameEn: "   " }), "PID-1"),
+        null
+    );
+    // missing sell price → price null, not fabricated
+    const noPrice = normalizeCjCatalogProduct(
+        cjDetailFixture({ variants: [{ vid: "V9", variantSellPrice: "abc" }] }),
+        "PID-1"
+    );
+    assert.equal(noPrice?.variants[0].price, null);
+});
+
+test("cj stock reads flat country rows; nested warehouse stock never summed", () => {
+    const raw = {
+        code: 200,
+        result: true,
+        data: [
+            {
+                vid: "VID-1",
+                countryCode: "CN",
+                totalInventoryNum: 10877,
+                cjInventoryNum: 700,
+                factoryInventoryNum: 10177,
+                // nested per-warehouse leaves — must be ignored entirely
+                stock: [{ stockId: "x", inventory: 0, factoryInventory: 11092 }],
+            },
+            { vid: "VID-1", countryCode: "US", totalInventoryNum: 99, stock: [] },
+        ],
+    };
+    assert.equal(normalizeCjStock(raw, "VID-1"), 10877); // not 11092, not 10877+99, not 10877+700+10177
+
+    // any row naming a different vid → reject whole response
+    assert.equal(normalizeCjStock({ ...raw, data: [...raw.data, { vid: "OTHER", countryCode: "CN", totalInventoryNum: 1 }] }, "VID-1"), null);
+    // no CN row → null
+    assert.equal(normalizeCjStock({ code: 200, result: true, data: [{ vid: "V", countryCode: "US", totalInventoryNum: 9 }] }, "V"), null);
+    // CN zero is real stock data, not "unknown"
+    assert.equal(normalizeCjStock({ code: 200, result: true, data: [{ vid: "V", countryCode: "CN", totalInventoryNum: 0 }] }, "V"), 0);
+    // CN row without a usable total → null
+    assert.equal(normalizeCjStock({ code: 200, result: true, data: [{ vid: "V", countryCode: "CN" }] }, "V"), null);
+    // malformed total → null, never a guess
+    assert.equal(normalizeCjStock({ code: 200, result: true, data: [{ vid: "V", countryCode: "CN", totalInventoryNum: "x" }] }, "V"), null);
+    assert.equal(normalizeCjStock({ code: 200, result: true, data: "x" }, "VID-1"), null);
+    assert.equal(normalizeCjStock({ code: 500, result: false }, "VID-1"), null);
+});
+
+test("cj freight uses totalPostageFee or USD fee parts, dedupes, rejects invalid", () => {
+    const raw = {
+        code: 200,
+        result: true,
+        data: [
+            { logisticName: "CJ Packet", logisticPrice: 2.5, logisticAging: "10-15", totalPostageFee: 3.2 },
+            { logisticName: "CJ Packet", logisticPrice: 999 },
+            { logisticName: "Postal", logisticPrice: 2.5, taxesFee: 1, clearanceOperationFee: 0.5 },
+            { logisticName: "BadFee", logisticPrice: 4, taxesFee: "abc" },
+            { logisticName: "BadTotal", logisticPrice: 4, totalPostageFee: "bad" },
+            { logisticName: "ZeroTotal", logisticPrice: 4, totalPostageFee: 0 },
+            { logisticName: "NoPrice" },
+            { logisticPrice: 5 },
+        ],
+    };
+    const options = normalizeCjFreightOptions(raw);
+    assert.ok(options);
+    assert.deepEqual(options.map((o) => o.id), ["CJ Packet", "Postal", "BadFee", "BadTotal", "ZeroTotal", "NoPrice"]);
+    assert.equal(options[0].feeUsd, 3.2);
+    assert.equal(options[0].delivery, "10-15");
+    assert.equal(options[1].feeUsd, 4);
+    assert.equal(options[2].feeUsd, null); // supplied-but-invalid fee voids the price
+    assert.equal(options[3].feeUsd, null); // invalid totalPostageFee must NOT fall back to parts
+    assert.equal(options[4].feeUsd, 0);    // supplied zero total is a real 0
+    assert.equal(options[5].feeUsd, null);
+    assert.equal(normalizeCjFreightOptions({ code: 500 }), null);
+    assert.equal(normalizeCjFreightOptions({ code: 200, result: true, data: {} }), null);
+});

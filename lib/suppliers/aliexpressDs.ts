@@ -292,9 +292,15 @@ export function normalizeDsProduct(raw: unknown, productId: string): DsProduct |
     if (!title) return null;
 
     const result = resp.result as Record<string, unknown>;
-    const skuList = Array.isArray(result.ae_item_sku_info_dtos)
-        ? result.ae_item_sku_info_dtos
-        : [];
+    // The API returns either a bare array or a wrapped
+    // { ae_item_sku_info_d_t_o: [...] } envelope — normalize both strictly.
+    const skuRaw = result.ae_item_sku_info_dtos;
+    const skuList = Array.isArray(skuRaw)
+        ? skuRaw
+        : typeof skuRaw === "object" && skuRaw !== null &&
+            Array.isArray((skuRaw as Record<string, unknown>).ae_item_sku_info_d_t_o)
+          ? ((skuRaw as Record<string, unknown>).ae_item_sku_info_d_t_o as unknown[])
+          : [];
     const skus = skuList.map(normalizeSku).filter((s): s is DsSku => s !== null).slice(0, MAX_SKUS);
 
     const multimedia = typeof result.ae_multimedia_info_dto === "object" && result.ae_multimedia_info_dto !== null

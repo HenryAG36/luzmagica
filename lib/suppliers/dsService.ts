@@ -64,7 +64,8 @@ export async function getDsAccessToken(
 export async function lookupDsProduct(
     service: SupabaseClientLike,
     productId: string,
-    fetchImpl?: FetchLike
+    fetchImpl?: FetchLike,
+    requestDeadlineMs?: number
 ): Promise<{ product: ds.DsProduct } | { error: string }> {
     if (!ds.isValidDsProductId(productId)) return { error: "invalid product id" };
     if (!getAliExpressDsEnv() || !getEncryptionSecret()) return { error: "aliexpress ds not configured" };
@@ -74,7 +75,10 @@ export async function lookupDsProduct(
     if (!acquired) return { error: "another ds request is in progress" };
 
     try {
-        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const deadlineMs = Math.min(
+            requestDeadlineMs ?? Infinity,
+            Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000)
+        );
         const tokenResult = await getDsAccessToken(service, fetchImpl, deadlineMs);
         if ("error" in tokenResult) return { error: tokenResult.error };
 
@@ -195,7 +199,8 @@ export async function lookupDsFreight(
     service: SupabaseClientLike,
     productId: string,
     skuId: string,
-    fetchImpl?: FetchLike
+    fetchImpl?: FetchLike,
+    requestDeadlineMs?: number
 ): Promise<{ quote: ds.DsFreightQuote } | { error: string }> {
     if (!ds.isValidDsProductId(productId)) return { error: "invalid product id" };
     if (typeof skuId !== "string" || skuId.length === 0 || skuId.length > 64) {
@@ -208,7 +213,10 @@ export async function lookupDsFreight(
     if (!acquired) return { error: "another ds request is in progress" };
 
     try {
-        const deadlineMs = Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000);
+        const deadlineMs = Math.min(
+            requestDeadlineMs ?? Infinity,
+            Date.now() + Math.min(REFRESH_DEADLINE_MS, LEASE_TTL_SECONDS * 1000 - 5000)
+        );
         const tokenResult = await getDsAccessToken(service, fetchImpl, deadlineMs);
         if ("error" in tokenResult) return { error: tokenResult.error };
 
