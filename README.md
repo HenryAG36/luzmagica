@@ -280,14 +280,15 @@ connections, and snapshots are unaffected. The `20261007120000_orders` and
 tables, indexes, and unique constraints exist, RLS is enabled with zero
 policies, and only `postgres`/`service_role` hold table privileges.
 
-**Pending migrations (apply in this order, before enabling COD):**
-1. `supabase/migrations/20261019120000_local_sourcing_policy.sql` (prepared,
-   **not yet applied**) recreates the `published_products` view to exclude
-   research-only sources and require the Mastershop quote fields.
-2. `supabase/migrations/20261020130000_mastershop_cod.sql` (prepared, **not
-   yet applied**) adds `payment_method`/`checkout_attempt_id`/`mastershop_status`
-   + COD consistency checks, the `cash_on_delivery_eligible` view flag and the
-   atomic `create_cod_order` RPC (service-role-only execute).
+**Sourcing migrations (applied and verified remotely):**
+1. `supabase/migrations/20261019120000_local_sourcing_policy.sql` — recreates
+   the `published_products` view to exclude research-only sources and require
+   the Mastershop quote fields.
+2. `supabase/migrations/20261020130000_mastershop_cod.sql` — adds
+   `payment_method`/`checkout_attempt_id`/`mastershop_status` + COD
+   consistency checks, the `cash_on_delivery_eligible` view flag and the
+   atomic `create_cod_order` RPC (service-role-only execute, verified:
+   only `postgres`/`service_role` hold EXECUTE).
 
 The app-level policy already fails closed, but the view guard is the last line
 of defense for public reads; COD checkout also requires
