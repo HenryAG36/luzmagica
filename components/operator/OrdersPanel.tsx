@@ -12,6 +12,7 @@ import {
     type OrderRow,
     type PaymentStatus,
 } from "@/lib/orders/types";
+import { RESEARCH_ONLY_SOURCES } from "@/lib/suppliers/policy";
 
 interface AdminOrder extends OrderRow {
     items: OrderItemRow[];
@@ -27,7 +28,22 @@ const FULFILLMENT_SEQUENCE: FulfillmentStatus[] = [
     "delivered",
 ];
 
-function nextStatuses(current: FulfillmentStatus): FulfillmentStatus[] {
+// COD orders advance on their own forward-only sequence — prepaid stages and
+// manual cancellation are unreachable (remote cancellation syncs down).
+const COD_FULFILLMENT_SEQUENCE: FulfillmentStatus[] = [
+    "awaiting_confirmation",
+    "supplier_processing",
+    "domestic_transit",
+    "local_delivery",
+    "delivered",
+];
+
+function nextStatuses(current: FulfillmentStatus, cashOnDelivery = false): FulfillmentStatus[] {
+    if (cashOnDelivery) {
+        const idx = COD_FULFILLMENT_SEQUENCE.indexOf(current);
+        if (current === "delivered" || current === "cancelled") return [];
+        return idx >= 0 ? COD_FULFILLMENT_SEQUENCE.slice(idx + 1) : [];
+    }
     const idx = FULFILLMENT_SEQUENCE.indexOf(current);
     const forward = idx >= 0 ? FULFILLMENT_SEQUENCE.slice(idx + 1) : [];
     if (current === "delivered" || current === "cancelled") return [];
@@ -44,6 +60,8 @@ function paymentBadge(status: PaymentStatus) {
             return "bg-danger/10 text-danger border-danger/40";
         case "payment_failed":
             return "bg-danger/10 text-danger border-red-500/20";
+        case "cod_pending":
+            return "bg-accent/10 text-accent-dark border-accent/30";
         default:
             return "bg-black/5 text-muted border-black/10";
     }
@@ -55,6 +73,7 @@ const FILTERS: { value: string; label: string }[] = [
     { value: "pending_payment", label: "Pago pendiente" },
     { value: "payment_review", label: "Revisión" },
     { value: "payment_failed", label: "Fallidos" },
+    { value: "cod_pending", label: "Contraentrega" },
     { value: "cancelled", label: "Cancelados" },
     { value: "refunded", label: "Reembolsados" },
 ];
@@ -147,7 +166,20 @@ export default function OrdersPanel() {
         o.items.reduce((sum, i) => sum + (i.unit_supplier_cost_cop ?? 0) * i.quantity, 0);
 
     const hasSupplierItems = (o: AdminOrder) =>
-        o.items.some((i) => i.source === "aliexpress_ds" || i.source === "cjdropshipping");
+        o.items.some(
+            (i) =>
+                RESEARCH_ONLY_SOURCES.has(i.source) ||
+                i.source === "mastershop"
+        );
+
+    const hasMastershopItems = (o: AdminOrder) => o.items.some((i) => i.source === "mastershop");
+    const hasResearchItems = (o: AdminOrder) => o.items.some((i) => RESEARCH_ONLY_SOURCES.has(i.source));
+
+    // Sourcing policy: AliExpress/CJ are research-only. Mastershop is manual
+    // EXCEPT for COD orders, which use the dedicated provider submission flow.
+    const isCod = (o: AdminOrder) => o.payment_method === "cash_on_delivery";
+    const hasManualSupplierItems = (o: AdminOrder) =>
+        hasResearchItems(o) || (hasMastershopItems(o) && !isCod(o));
 
     const placeSupplierOrder = async (order: AdminOrder) => {
         setFulfilling(order.id);
@@ -446,8 +478,9 @@ export default function OrdersPanel() {
                                                         <div className="space-y-3">
                                                             {(o.payment_status === "paid" ||
                                                                 o.payment_status === "payment_failed" ||
-                                                                o.payment_status === "pending_payment") &&
-                                                                nextStatuses(o.fulfillment_status).length > 0 && (
+                                                                o.payment_status === "pending_payment" ||
+                                                                o.payment_status === "cod_pending") &&
+                                                                nextStatuses(o.fulfillment_status, isCod(o)).length > 0 && (
                                                                     <div className="p-4 rounded-xl bg-surface-card border border-primary/20 space-y-3">
                                                                         <h5 className="font-semibold text-foreground text-xs flex items-center gap-2">
                                                                             <Truck className="w-4 h-4 text-accent-dark" />
@@ -460,7 +493,7 @@ export default function OrdersPanel() {
                                                                                 className={inputClass}
                                                                             >
                                                                                 <option value="">Estado…</option>
-                                                                                {nextStatuses(o.fulfillment_status).map((s) => (
+                                                                                {nextStatuses(o.fulfillment_status, isCod(o)).map((s) => (
                                                                                     <option key={s} value={s}>
                                                                                         {FULFILLMENT_STATUS_LABELS[s]}
                                                                                     </option>
@@ -495,7 +528,9 @@ export default function OrdersPanel() {
                                                                     </div>
                                                                 )}
 
-                                                            {o.payment_status === "paid" && hasSupplierItems(o) && (
+                                                            {(o.payment_status === "paid" ||
+                                                                (o.payment_status === "cod_pending" && hasMastershopItems(o))) &&
+                                                                hasSupplierItems(o) && (
                                                                 <div className="p-4 rounded-xl bg-surface-card border border-black/10 space-y-2">
                                                                     <h5 className="font-semibold text-foreground text-xs flex items-center gap-2">
                                                                         <PackageCheck className="w-4 h-4 text-accent-dark" />
@@ -513,33 +548,100 @@ export default function OrdersPanel() {
                                                                     )}
                                                                     {o.supplier_order_status === "queued" && (
                                                                         <p className="text-[11px] text-warning">
-                                                                            En cola — se enviará automáticamente.
+                                                                            {isCod(o)
+                                                                                ? "Pendiente de registro en Mastershop."
+                                                                                : hasManualSupplierItems(o)
+                                                                                  ? "Automatización deshabilitada; requiere revisión."
+                                                                                  : "En cola — se enviará automáticamente."}
+                                                                        </p>
+                                                                    )}
+                                                                    {o.supplier_order_status === "reconciliation_required" && (
+                                                                        <p className="text-[11px] text-danger">
+                                                                            Requiere reconciliación: el envío a Mastershop quedó ambiguo; usa el
+                                                                            botón para consultar el estado remoto (nunca reenvía a ciegas).
                                                                         </p>
                                                                     )}
                                                                     {o.supplier_order_status === "submitting" && (
                                                                         <p className="text-[11px] text-muted">Enviando al proveedor…</p>
+                                                                    )}
+                                                                    {o.mastershop_status && (
+                                                                        <p className="text-[11px] text-muted">
+                                                                            Estado Mastershop: <span className="font-semibold text-foreground">{o.mastershop_status}</span>
+                                                                        </p>
                                                                     )}
                                                                     {o.supplier_order_error && (
                                                                         <p className="text-[11px] text-danger">
                                                                             {o.supplier_order_error}
                                                                         </p>
                                                                     )}
+                                                                    {isCod(o) && (
+                                                                        <p className="text-[11px] text-muted">
+                                                                            El registro en Mastershop no confirma despacho ni recaudo: confirma
+                                                                            el despacho en el panel del proveedor y verifica la liquidación
+                                                                            aparte. El pedido se cobra al entregar.
+                                                                        </p>
+                                                                    )}
+                                                                    {hasManualSupplierItems(o) && !o.tracking_number && (
+                                                                        <p className="text-[11px] text-warning">
+                                                                            Gestión manual: confirma el pedido en{" "}
+                                                                            {hasMastershopItems(o)
+                                                                                ? "Mastershop"
+                                                                                : "el proveedor"}{" "}
+                                                                            y registra la guía en el
+                                                                            seguimiento. No hay envío automático.
+                                                                        </p>
+                                                                    )}
+                                                                    {hasResearchItems(o) && !hasMastershopItems(o) && (
+                                                                        <p className="text-[11px] text-muted">
+                                                                            Solo investigación: este proveedor ya no
+                                                                            genera pedidos nuevos.
+                                                                        </p>
+                                                                    )}
                                                                     <div className="flex gap-2 flex-wrap">
-                                                                        {o.supplier_order_status !== "submitted" && o.supplier_order_status !== "submitting" && (
-                                                                            <button
-                                                                                onClick={() => void placeSupplierOrder(o)}
-                                                                                disabled={fulfilling === o.id}
-                                                                                className="px-3 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent-dark text-xs font-semibold border border-secondary/30 disabled:opacity-50"
-                                                                            >
-                                                                                {fulfilling === o.id
-                                                                                    ? "Enviando…"
-                                                                                    : o.supplier_order_status === "failed" ||
-                                                                                        o.supplier_order_status === "partial"
-                                                                                      ? "Reintentar envío"
-                                                                                      : "Enviar a proveedor"}
-                                                                            </button>
-                                                                        )}
-                                                                        {(o.supplier_order_status === "submitted" || o.supplier_order_status === "partial") && (
+                                                                        {(() => {
+                                                                            // After any create attempt the
+                                                                            // action is always a GET: label it
+                                                                            // honestly instead of promising a
+                                                                            // retry. A stale 'submitting' also
+                                                                            // gets a query button (never POST).
+                                                                            const staleSubmitting =
+                                                                                o.supplier_order_status === "submitting" &&
+                                                                                Date.now() - Date.parse(o.updated_at) > 2 * 60 * 1000;
+                                                                            const attempted =
+                                                                                o.supplier_order_status === "reconciliation_required" ||
+                                                                                staleSubmitting ||
+                                                                                ((o.auto_fulfill_attempts ?? 0) > 0 &&
+                                                                                    o.supplier_order_status !== "queued");
+                                                                            const canAct =
+                                                                                !hasManualSupplierItems(o) &&
+                                                                                o.supplier_order_status !== "submitted" &&
+                                                                                (o.supplier_order_status !== "submitting" || staleSubmitting);
+                                                                            if (!canAct) return null;
+                                                                            return (
+                                                                                <button
+                                                                                    onClick={() => void placeSupplierOrder(o)}
+                                                                                    disabled={fulfilling === o.id}
+                                                                                    className="px-3 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent-dark text-xs font-semibold border border-secondary/30 disabled:opacity-50"
+                                                                                >
+                                                                                    {fulfilling === o.id
+                                                                                        ? "Enviando…"
+                                                                                        : isCod(o)
+                                                                                          ? attempted
+                                                                                              ? "Consultar en Mastershop"
+                                                                                              : o.supplier_order_status === "failed"
+                                                                                                ? "Reintentar registro"
+                                                                                                : "Registrar en Mastershop"
+                                                                                          : o.supplier_order_status === "failed" ||
+                                                                                              o.supplier_order_status === "partial"
+                                                                                            ? "Reintentar envío"
+                                                                                            : "Enviar a proveedor"}
+                                                                                </button>
+                                                                            );
+                                                                        })()}
+                                                                        {(o.supplier_order_status === "submitted" ||
+                                                                            o.supplier_order_status === "partial" ||
+                                                                            (o.supplier_order_status === "reconciliation_required" &&
+                                                                                !!o.supplier_order_id)) && (
                                                                             <button
                                                                                 onClick={() => void syncTracking(o)}
                                                                                 disabled={syncing === o.id}
@@ -580,6 +682,25 @@ export default function OrdersPanel() {
                                                                     >
                                                                         Cancelar pedido
                                                                     </button>
+                                                                )}
+                                                                {/* COD: local cancel is offered ONLY while the
+                                                                    order was never sent to the provider. */}
+                                                                {isCod(o) &&
+                                                                    o.payment_status === "cod_pending" &&
+                                                                    (o.auto_fulfill_attempts ?? 0) === 0 &&
+                                                                    !o.supplier_order_id &&
+                                                                    (o.supplier_order_status === "queued" ||
+                                                                        o.supplier_order_status === "failed") && (
+                                                                    <span className="flex items-center gap-2">
+                                                                        <button
+                                                                            onClick={() => void patch(o.id, { action: "cancel" }, o.updated_at)}
+                                                                            disabled={saving}
+                                                                            className="px-3 py-2 rounded-xl bg-danger/10 hover:bg-danger/10 text-danger text-xs font-semibold border border-red-500/20 disabled:opacity-50"
+                                                                        >
+                                                                            Cancelar pedido
+                                                                        </button>
+                                                                        <span className="text-[10px] text-muted">No enviado al proveedor</span>
+                                                                    </span>
                                                                 )}
                                                                 {o.payment_status === "paid" && (
                                                                     <button

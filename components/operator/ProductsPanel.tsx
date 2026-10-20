@@ -12,9 +12,10 @@ import PricingControls from "@/components/operator/PricingControls";
 const SOURCE_LABELS: Record<string, string> = {
     manual: "Manual",
     mercadolibre: "Mercado Libre",
-    aliexpress: "AliExpress",
-    aliexpress_ds: "AliExpress DS",
-    cjdropshipping: "CJ Dropshipping",
+    aliexpress: "AliExpress (solo investigación)",
+    aliexpress_ds: "AliExpress DS (solo investigación)",
+    cjdropshipping: "CJ Dropshipping (solo investigación)",
+    mastershop: "Mastershop",
 };
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -43,6 +44,7 @@ interface ManageForm {
     shippingCheckedAt: string;
     fxRate: string;
     fxRateDate: string;
+    mastershopWeight: string;
     supplierRightsConfirmed: boolean;
 }
 
@@ -65,12 +67,20 @@ function seedForm(row: CatalogRow): ManageForm {
         shippingCheckedAt: row.shipping_checked_at ?? "",
         fxRate: row.fx_rate ? String(row.fx_rate) : "",
         fxRateDate: row.fx_rate_date ?? "",
+        mastershopWeight:
+            row.source === "mastershop" &&
+            typeof row.supplier_variant?.mastershop_weight === "number"
+                ? String(row.supplier_variant.mastershop_weight)
+                : "",
         supplierRightsConfirmed: row.supplier_rights_confirmed === true,
     };
 }
 
-function formFields(form: ManageForm) {
-    return {
+function formFields(
+    form: ManageForm,
+    row: CatalogRow
+): { ok: true; fields: Record<string, unknown> } | { ok: false; error: string } {
+    const base: Record<string, unknown> = {
         name: form.name,
         category: form.category,
         room: form.room,
@@ -90,6 +100,23 @@ function formFields(form: ManageForm) {
         fx_rate_date: form.fxRateDate || null,
         supplier_rights_confirmed: form.supplierRightsConfirmed,
     };
+    // Mastershop weight is required for COD submission; it lives inside the
+    // supplier_variant snapshot so the other ids survive the save.
+    if (row.source === "mastershop") {
+        const variant = { ...(row.supplier_variant ?? {}) };
+        const raw = form.mastershopWeight.trim();
+        if (raw === "") {
+            delete variant.mastershop_weight;
+        } else {
+            const weight = Number(raw);
+            if (!Number.isFinite(weight) || weight <= 0 || weight > 1_000_000) {
+                return { ok: false, error: "El peso para Mastershop debe ser un número positivo." };
+            }
+            variant.mastershop_weight = weight;
+        }
+        base.supplier_variant = variant;
+    }
+    return { ok: true, fields: base };
 }
 
 function listingCostCop(row: CatalogRow, form: ManageForm): number | null {
@@ -104,7 +131,10 @@ function listingCostCop(row: CatalogRow, form: ManageForm): number | null {
 const inputClass =
     "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
 
-const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+// Only local-supplier rows can sync against a live supplier; AliExpress/CJ
+// are research/historical under the sourcing policy.
+const SUPPLIER_SOURCES = new Set(["mastershop"]);
+const RESEARCH_SOURCES = new Set(["aliexpress", "aliexpress_ds", "cjdropshipping"]);
 
 const MISSING_LABELS: Record<string, string> = {
     name: "título", category: "categoría", room: "habitación", type: "tipo",
@@ -112,6 +142,7 @@ const MISSING_LABELS: Record<string, string> = {
     stock: "stock", supplier_rights_confirmed: "derechos",
     customer_shipping_cop: "envío cliente", shipping_estimate_city: "ciudad envío",
     shipping_checked_at: "fecha cotización",
+    research_only_source: "fuente solo de investigación (sin importación)",
 };
 
 function publishReadiness(row: CatalogRow): { ready: boolean; missing: string[] } {
@@ -203,7 +234,12 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
 
     const handleSave = async (row: CatalogRow) => {
         if (!editForm) return;
-        if (await patch(row, "update", formFields(editForm))) {
+        const fields = formFields(editForm, row);
+        if (!fields.ok) {
+            setFormError(fields.error);
+            return;
+        }
+        if (await patch(row, "update", fields.fields)) {
             setNotice(`"${row.name}" guardado.`);
             setEditingId(null);
             setEditForm(null);
@@ -213,7 +249,12 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
 
     const handlePublish = async (row: CatalogRow) => {
         if (!editForm) return;
-        if (await patch(row, "publish", formFields(editForm))) {
+        const fields = formFields(editForm, row);
+        if (!fields.ok) {
+            setFormError(fields.error);
+            return;
+        }
+        if (await patch(row, "publish", fields.fields)) {
             setNotice(`"${row.name}" publicado en el catálogo.`);
             setEditingId(null);
             setEditForm(null);
@@ -410,9 +451,8 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
                                 (row.status === "draft" || row.status === "published") &&
                                 SUPPLIER_SOURCES.has(row.source) &&
                                 typeof row.supplier_variant?.product_id === "string" &&
-                                typeof row.supplier_variant?.[
-                                    row.source === "aliexpress_ds" ? "sku_id" : "vid"
-                                ] === "string";
+                                typeof row.supplier_variant?.variation_id === "string";
+                            const isResearch = RESEARCH_SOURCES.has(row.source);
                             const fetchedAt =
                                 row.supplier_variant && typeof row.supplier_variant.fetched_at === "string"
                                     ? row.supplier_variant.fetched_at
@@ -433,7 +473,12 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
                                                 >
                                                     {badge.label}
                                                 </span>
-                                                {(row.status === "draft" || row.status === "published") && (
+                                                {isResearch && row.status !== "archived" && (
+                                                    <span className="px-2 py-0.5 rounded-full border border-black/10 bg-black/5 text-muted text-[10px] font-semibold">
+                                                        Solo investigación — no publicable
+                                                    </span>
+                                                )}
+                                                {!isResearch && (row.status === "draft" || row.status === "published") && (
                                                     <span
                                                         className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
                                                             readiness.ready
@@ -666,6 +711,29 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
                                                     className={inputClass}
                                                 />
                                             </div>
+                                            {row.source === "mastershop" && (
+                                                <div>
+                                                    <label className="text-[11px] text-muted block mb-1">
+                                                        Peso para Mastershop (contraentrega)
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        step="any"
+                                                        value={editForm.mastershopWeight}
+                                                        onChange={(e) => setEditForm({ ...editForm, mastershopWeight: e.target.value })}
+                                                        className={inputClass}
+                                                        placeholder="Ej: 0.5"
+                                                    />
+                                                    <p className="text-[10px] text-muted mt-1">
+                                                        Copia el peso y la unidad usados en la ficha de
+                                                        Mastershop; no es un costo ni un peso estimado. Usa el
+                                                        valor de peso que Mastershop espera en su API; confirma
+                                                        la unidad con el proveedor. Sin este dato el producto no
+                                                        puede venderse contraentrega.
+                                                    </p>
+                                                </div>
+                                            )}
                                             <div>
                                                 <label className="text-[11px] text-muted block mb-1">Descripción *</label>
                                                 <textarea
@@ -693,7 +761,7 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
                                                 >
                                                     {submitting ? "Guardando..." : "Guardar cambios"}
                                                 </button>
-                                                {(row.status === "draft" || row.status === "archived") && (
+                                                {(row.status === "draft" || row.status === "archived") && !isResearch && (
                                                     <button
                                                         type="button"
                                                         onClick={() => void handlePublish(row)}
@@ -702,6 +770,11 @@ export default function ProductsPanel({ draftOnly = false }: { draftOnly?: boole
                                                     >
                                                         {submitting ? "Publicando..." : row.status === "archived" ? "Republicar" : "Publicar al catálogo"}
                                                     </button>
+                                                )}
+                                                {isResearch && (
+                                                    <p className="text-[10px] text-muted">
+                                                        Fuente de solo investigación: no se puede publicar ni sincronizar. Puedes retirarla o eliminarla.
+                                                    </p>
                                                 )}
                                                 {formError && (
                                                     <p role="alert" className="text-xs text-danger">

@@ -18,6 +18,12 @@ import type {
 import { FULFILLMENT_STATUS_LABELS } from "./types.ts";
 import { normalizePhone } from "./validate.ts";
 import {
+    MANUAL_FULFILLMENT_MESSAGES,
+    MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+    RESEARCH_ONLY_MESSAGE,
+    RESEARCH_ONLY_SOURCES,
+} from "../suppliers/policy.ts";
+import {
     awardPointsForOrder,
     redeemPointsForOrder,
     restorePointsForOrder,
@@ -31,12 +37,28 @@ async function serviceClient(provided?: SupabaseClientLike) {
 }
 
 const DEDUPE_WINDOW_MS = 10 * 60 * 1000;
-export const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+// Supplier-backed order items. AliExpress/CJ stay here for historical orders
+// and claims context even though new purchases are blocked by policy.
+export const SUPPLIER_SOURCES = new Set([
+    "aliexpress",
+    "aliexpress_ds",
+    "cjdropshipping",
+    "mastershop",
+]);
 const FULFILLMENT_SEQUENCE: FulfillmentStatus[] = [
     "payment_confirmed",
     "supplier_processing",
     "international_transit",
     "customs_cleared",
+    "local_delivery",
+    "delivered",
+];
+// COD orders never touch gateway-prepaid stages; Mastershop remote statuses
+// map onto this forward-only sequence (see mastershopOrders.ts).
+const COD_FULFILLMENT_SEQUENCE: FulfillmentStatus[] = [
+    "awaiting_confirmation",
+    "supplier_processing",
+    "domestic_transit",
     "local_delivery",
     "delivered",
 ];
@@ -300,6 +322,16 @@ export async function applyWompiEvent(
         await recordMarker(order!.id);
     };
 
+    // Gateway events must never mutate a COD order — even if a stale link id
+    // somehow resolved to one, COD has no Wompi lifecycle.
+    if (order.payment_method === "cash_on_delivery") {
+        await note(
+            "Evento de pago ignorado",
+            "Wompi reportó un evento para un pedido contraentrega; no se aplicó ningún cambio."
+        );
+        return { ok: true, outcome: "ignored_cod" };
+    }
+
     if (order.payment_status !== "pending_payment") {
         await note(
             "Evento de pago recibido",
@@ -358,13 +390,36 @@ export async function applyWompiEvent(
         const items = await loadOrderItems(service, order.id);
         await decrementStock(service, items);
         // Queue supplier placement when the order has provider-backed items;
-        // the webhook caller (or the retry cron) executes it.
+        // the webhook caller (or the retry cron) executes it. Research-only
+        // sources and prepaid Mastershop have NO automatic provider order API:
+        // they are marked failed+manual immediately with attempts exhausted so
+        // the retry worker never picks them up and the operator sees the
+        // manual action required.
         if (items.some((i) => SUPPLIER_SOURCES.has(i.source))) {
-            await service
-                .from("orders")
-                .update({ supplier_order_status: "queued" })
-                .eq("id", order.id)
-                .is("supplier_order_status", null);
+            const hasResearch = items.some((i) => RESEARCH_ONLY_SOURCES.has(i.source));
+            const hasMastershop = items.some((i) => i.source === "mastershop");
+            const manualReason = hasResearch
+                ? RESEARCH_ONLY_MESSAGE
+                : hasMastershop
+                  ? MASTERSHOP_PREPAID_MANUAL_MESSAGE
+                  : null;
+            if (manualReason !== null) {
+                await service
+                    .from("orders")
+                    .update({
+                        supplier_order_status: "failed",
+                        supplier_order_error: manualReason,
+                        auto_fulfill_attempts: 3,
+                    })
+                    .eq("id", order.id)
+                    .is("supplier_order_status", null);
+            } else {
+                await service
+                    .from("orders")
+                    .update({ supplier_order_status: "queued" })
+                    .eq("id", order.id)
+                    .is("supplier_order_status", null);
+            }
         }
         await recordMarker(order.id);
         const awarded = await awardPointsForOrder({ ...order, payment_status: "paid" }, service);
@@ -416,6 +471,7 @@ export function toPublicOrder(
         createdAt: order.created_at,
         city: order.city,
         paymentStatus: order.payment_status,
+        paymentMethod: order.payment_method ?? "wompi",
         fulfillmentStatus: order.fulfillment_status,
         reviewedProductIds: items
             .map((i) => i.product_id)
@@ -701,11 +757,16 @@ export async function getOrderSummary(
     return summary;
 }
 
-export function canTransitionFulfillment(from: FulfillmentStatus, to: FulfillmentStatus): boolean {
+export function canTransitionFulfillment(
+    from: FulfillmentStatus,
+    to: FulfillmentStatus,
+    cashOnDelivery = false
+): boolean {
     if (from === to) return false;
     if (to === "cancelled") return from !== "delivered" && from !== "cancelled";
-    const fromIdx = FULFILLMENT_SEQUENCE.indexOf(from);
-    const toIdx = FULFILLMENT_SEQUENCE.indexOf(to);
+    const sequence = cashOnDelivery ? COD_FULFILLMENT_SEQUENCE : FULFILLMENT_SEQUENCE;
+    const fromIdx = sequence.indexOf(from);
+    const toIdx = sequence.indexOf(to);
     return fromIdx >= 0 && toIdx > fromIdx;
 }
 
@@ -748,6 +809,48 @@ export async function updateOrderAdmin(
     const now = new Date().toISOString();
 
     if (action === "cancel") {
+        if (order.payment_method === "cash_on_delivery") {
+            // A COD order may be closed locally only while it was NEVER sent
+            // to the provider (no attempt, no remote ref, startable status).
+            // Anything past that point must be cancelled inside Mastershop
+            // and reconciled by authenticated polling — a local close could
+            // strand a remote COD dispatch that still collects at the door.
+            const safeLocalCancel =
+                order.payment_status === "cod_pending" &&
+                (order.auto_fulfill_attempts ?? 0) === 0 &&
+                !order.supplier_order_id &&
+                (order.supplier_order_status === "queued" || order.supplier_order_status === "failed");
+            if (!safeLocalCancel) {
+                return {
+                    error: "Cancela en Mastershop y sincroniza el estado antes de cerrar este pedido.",
+                };
+            }
+            const { data: updated, error } = await service
+                .from("orders")
+                .update({ payment_status: "cancelled", fulfillment_status: "cancelled", updated_at: now })
+                .eq("id", id)
+                .eq("updated_at", order.updated_at)
+                .eq("auto_fulfill_attempts", 0)
+                .eq("payment_method", "cash_on_delivery")
+                .eq("payment_status", "cod_pending")
+                .in("supplier_order_status", ["queued", "failed"])
+                .is("supplier_order_id", null)
+                .select("id");
+            if (error) return { error: error.message };
+            if (((updated as { id: string }[] | null) ?? []).length === 0) {
+                // A concurrent submission won the CAS — keep the order.
+                return { error: "order changed during edit; reload and retry" };
+            }
+            await insertOrderEvent(
+                service,
+                id,
+                "payment",
+                "cancelled",
+                "Pedido cancelado",
+                "El pedido fue cancelado por el operador; no fue enviado al proveedor."
+            );
+            return { ok: true, order: { ...order, payment_status: "cancelled", fulfillment_status: "cancelled" } };
+        }
         if (order.payment_status !== "pending_payment" && order.payment_status !== "payment_failed") {
             return { error: "only unpaid orders can be cancelled" };
         }
@@ -805,13 +908,36 @@ export async function updateOrderAdmin(
 
     const fields: Record<string, unknown> = {};
     if (input.fulfillmentStatus !== undefined) {
-        if (!canTransitionFulfillment(order.fulfillment_status, input.fulfillmentStatus)) {
+        const isCod = order.payment_method === "cash_on_delivery";
+        // Setting 'cancelled' via a generic fulfillment update bypasses the
+        // cancel action's COD safety checks — force it through the action.
+        if (isCod && input.fulfillmentStatus === "cancelled") {
+            return { error: "Los pedidos contraentrega solo se cierran con la acción de cancelar." };
+        }
+        if (!canTransitionFulfillment(order.fulfillment_status, input.fulfillmentStatus, isCod)) {
             return { error: "invalid fulfillment transition" };
         }
         fields.fulfillment_status = input.fulfillmentStatus;
     }
     if (input.trackingNumber !== undefined) fields.tracking_number = input.trackingNumber;
     if (input.carrier !== undefined) fields.carrier = input.carrier;
+    // Manual fulfillment resolves when the operator records the guide: the
+    // failed+manual flag is cleared once a real tracking number AND carrier
+    // exist. No fake supplier state or reference is created.
+    const nextCarrier = input.carrier === undefined ? order.carrier : input.carrier;
+    if (
+        order.payment_status === "paid" &&
+        order.supplier_order_status === "failed" &&
+        order.supplier_order_error !== null &&
+        MANUAL_FULFILLMENT_MESSAGES.has(order.supplier_order_error) &&
+        typeof input.trackingNumber === "string" &&
+        input.trackingNumber.trim() !== "" &&
+        typeof nextCarrier === "string" &&
+        nextCarrier.trim() !== ""
+    ) {
+        fields.supplier_order_status = null;
+        fields.supplier_order_error = null;
+    }
     if (Object.keys(fields).length === 0) return { ok: true, order };
 
     const { data: updated, error } = await service
@@ -1037,7 +1163,7 @@ export async function getAttentionQueue(
 
     const { data, error } = await service
         .from("orders")
-        .select("id,ref,payment_status,fulfillment_status,supplier_order_status,supplier_order_id,tracking_number,supplier_order_placed_at,updated_at,auto_fulfill_attempts");
+        .select("id,ref,payment_status,fulfillment_status,supplier_order_status,supplier_order_id,supplier_order_error,tracking_number,supplier_order_placed_at,updated_at,auto_fulfill_attempts");
     if (error) return { error: error.message };
 
     const orders = (data as Partial<OrderRow>[] | null) ?? [];
@@ -1057,14 +1183,33 @@ export async function getAttentionQueue(
             queue.orders.push({ id: o.id as string, ref: o.ref as string, issue: "Monto de pago no coincide" });
             continue;
         }
+        // Terminal orders never need supplier attention — a cancelled,
+        // refunded or delivered order must not nag about old failures.
+        if (
+            o.payment_status === "cancelled" ||
+            o.payment_status === "refunded" ||
+            o.fulfillment_status === "delivered" ||
+            o.fulfillment_status === "cancelled"
+        ) {
+            continue;
+        }
         const status = o.supplier_order_status;
         const updatedAt = o.updated_at ? Date.parse(o.updated_at) : 0;
-        if (status === "failed" || status === "partial") {
+        // reconciliation_required (e.g. an ambiguous Mastershop create) is an
+        // operator-attention state — surfaced like a failed placement.
+        if (status === "failed" || status === "partial" || status === "reconciliation_required") {
             queue.supplierFailed += 1;
             queue.orders.push({
                 id: o.id as string,
                 ref: o.ref as string,
-                issue: status === "partial" ? "Proveedor: envío parcial" : "Proveedor: envío falló",
+                // Surface the recorded operator-facing reason (e.g. manual
+                // fulfillment required) instead of a bare "failed" label.
+                issue:
+                    typeof o.supplier_order_error === "string" && o.supplier_order_error.trim() !== ""
+                        ? o.supplier_order_error.slice(0, 200)
+                        : status === "partial"
+                          ? "Proveedor: envío parcial"
+                          : "Proveedor: envío falló",
             });
         } else if (
             (status === "queued" || status === "submitting") &&

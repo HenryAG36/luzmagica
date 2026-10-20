@@ -30,8 +30,18 @@ export default function TerminosPage() {
                         <ul className="list-disc list-inside space-y-1">
                             <li>Todos los precios se muestran en pesos colombianos (COP).</li>
                             <li>El total cobrado incluye producto, descuentos aplicables y envío confirmado al momento del pedido.</li>
-                            <li>El pago se procesa de forma segura a través de Wompi; la tienda nunca recibe ni almacena datos de tarjetas.</li>
-                            <li>Un pedido solo se confirma cuando la pasarela verifica el pago.</li>
+                            <li>
+                                El pago en línea se procesa de forma segura a través de Wompi; la tienda nunca
+                                recibe ni almacena datos de tarjetas.
+                            </li>
+                            <li>
+                                Cuando la contraentrega está disponible, puedes elegir pagar al recibir; el
+                                pedido queda sujeto a confirmación de cobertura y despacho por el proveedor.
+                            </li>
+                            <li>
+                                Un pedido de pago en línea solo se confirma cuando la pasarela verifica el
+                                pago; un pedido contraentrega se confirma cuando el proveedor acepta el despacho.
+                            </li>
                         </ul>
                     </section>
 
@@ -39,11 +49,11 @@ export default function TerminosPage() {
                         <h2 className="font-heading text-lg font-bold text-foreground mb-3">3. Envíos y tiempos de entrega</h2>
                         <ul className="list-disc list-inside space-y-1">
                             <li>
-                                Los productos marcados como <strong className="text-foreground">envío internacional</strong>{" "}
-                                se despachan desde proveedores en el exterior y tienen tiempos de entrega
-                                estimados de 15 a 30 días hábiles.
+                                Los productos marcados como <strong className="text-foreground">envío cotizado</strong>{" "}
+                                se despachan a través de proveedores aliados; el costo se cobra por
+                                unidad según la cotización confirmada.
                             </li>
-                            <li>Los tiempos de entrega son estimados y pueden variar por aduana y transportadora.</li>
+                            <li>Los tiempos de entrega son estimados y dependen del destino y la transportadora.</li>
                             <li>El estado del pedido puede consultarse en la página de rastreo con la referencia y el dato de contacto de compra.</li>
                         </ul>
                     </section>
@@ -51,9 +61,10 @@ export default function TerminosPage() {
                     <section className="glass rounded-2xl p-6">
                         <h2 className="font-heading text-lg font-bold text-foreground mb-3">4. Disponibilidad</h2>
                         <p>
-                            El stock se descuenta al confirmarse el pago. Si un producto pagado deja de estar
-                            disponible con el proveedor, te contactaremos para ofrecer reembolso completo o un
-                            producto equivalente.
+                            El stock se descuenta al confirmarse el pago. La disponibilidad de productos de
+                            proveedores aliados queda sujeta a su confirmación — un pedido contraentrega no
+                            reserva stock. Si un producto pagado deja de estar disponible con el proveedor, te
+                            contactaremos para ofrecer reembolso completo o un producto equivalente.
                         </p>
                     </section>
 

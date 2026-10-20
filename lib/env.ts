@@ -77,6 +77,18 @@ export function getCjApiKey(): string | null {
     return process.env.CJ_API_KEY || null;
 }
 
+// Server-only; presence does not establish provider access.
+export function getMastershopApiKey(): string | null {
+    const key = process.env.MASTERSHOP_API_KEY;
+    return typeof key === "string" && key.trim() !== "" ? key.trim() : null;
+}
+
+// COD checkout is feature-flagged and additionally requires the API key.
+// OFF by default — a missing or non-"true" value disables the whole path.
+export function isMastershopCodEnabled(): boolean {
+    return process.env.MASTERSHOP_COD_ENABLED === "true" && getMastershopApiKey() !== null;
+}
+
 export interface WompiEnv {
     privateKey: string;
     eventsSecret: string;

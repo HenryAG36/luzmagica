@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { FakeDb } from "./fakeSupabase.ts";
 import {
     createPendingOrder,
+    getAttentionQueue,
     listApprovedReviewsForProduct,
     listReviewsForAdmin,
     lookupForGuest,
@@ -10,6 +11,7 @@ import {
     submitOrderReview,
     updateOrderAdmin,
 } from "../lib/orders/repository.ts";
+import { MASTERSHOP_PREPAID_MANUAL_MESSAGE } from "../lib/suppliers/policy.ts";
 import {
     awardPointsForOrder,
     getLoyaltyBalance,
@@ -259,7 +261,7 @@ test("supplier placement requires a verified paid order", async () => {
     assert.ok("error" in noItems && noItems.error.includes("no supplier-backed"));
 });
 
-test("supplier placement rejects DS items without a variant snapshot", async () => {
+test("supplier placement rejects research sources before any provider call", async () => {
     const db = newDb();
     const order = await seedOrder(db, {
         payment_status: "paid",
@@ -269,31 +271,143 @@ test("supplier placement rejects DS items without a variant snapshot", async () 
     (db.table("order_items")[0] as { supplier_variant: unknown }).supplier_variant = null;
 
     const res = await placeSupplierOrder(order.id, db.asClient());
-    assert.ok("error" in res && res.error.includes("snapshot"));
+    assert.ok("error" in res && res.error.includes("investigación"));
+    // parked with exhausted attempts so the retry cron leaves it alone
+    const row = db.table("orders")[0] as unknown as OrderRow;
+    assert.equal(row.supplier_order_status, "failed");
+    assert.equal(row.auto_fulfill_attempts, 3);
 });
 
-test("supplier placement records provider failure honestly", async () => {
+test("paid Mastershop orders surface the manual-fulfillment boundary honestly", async () => {
     const db = newDb();
     const order = await seedOrder(db, {
         payment_status: "paid",
         fulfillment_status: "payment_confirmed",
     });
     const item = db.table("order_items")[0] as { source: string; supplier_variant: unknown };
-    item.source = "aliexpress_ds";
-    item.supplier_variant = { product_id: "123", sku_id: "sku-1", sku_attr: "attr" };
+    item.source = "mastershop";
+    item.supplier_variant = { product_id: "12345", variation_id: "simple" };
 
-    // no DS credentials configured → provider error, never a fake success
     const res = await placeSupplierOrder(order.id, db.asClient());
-    assert.ok("error" in res);
+    assert.ok("error" in res && res.error.includes("Mastershop"));
     const row = db.table("orders")[0] as unknown as OrderRow;
     assert.equal(row.supplier_order_status, "failed");
     assert.ok(typeof row.supplier_order_error === "string" && row.supplier_order_error.length > 0);
-    assert.ok(db.table("order_events").some((e) => e.label === "Pedido a proveedor falló"));
+    assert.equal(row.auto_fulfill_attempts, 3);
+});
 
-    // a submitted order never re-places
-    row.supplier_order_status = "submitted";
-    row.supplier_order_id = "aliexpress_ds:abc";
+test("a submitted supplier order never re-places", async () => {
+    const db = newDb();
+    const order = await seedOrder(db, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "submitted",
+        supplier_order_id: "aliexpress_ds:abc",
+    });
     const again = await placeSupplierOrder(order.id, db.asClient());
     assert.ok("ok" in again && again.alreadyPlaced);
     assert.equal(again.supplierOrderId, "aliexpress_ds:abc");
+});
+
+test("recording a guide clears the manual flag without faking a provider order", async () => {
+    const db = newDb();
+    const order = await seedOrder(db, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+    });
+    const res = await updateOrderAdmin(
+        order.id,
+        { trackingNumber: "GUIA-9", carrier: "Servientrega" },
+        db.asClient()
+    );
+    assert.ok("ok" in res);
+    const row = db.table("orders")[0] as unknown as OrderRow;
+    assert.equal(row.supplier_order_status, null);
+    assert.equal(row.supplier_order_error, null);
+    assert.equal(row.supplier_order_id ?? null, null); // no fabricated provider reference
+    assert.equal(row.auto_fulfill_attempts, 3); // attempts are not reset
+});
+
+test("blank guide or unrelated provider failure does not clear the flag", async () => {
+    const db = newDb();
+    const order = await seedOrder(db, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+    });
+    await updateOrderAdmin(order.id, { trackingNumber: "   " }, db.asClient());
+    const row = db.table("orders")[0] as unknown as OrderRow;
+    assert.equal(row.supplier_order_status, "failed");
+    assert.equal(row.supplier_order_error, MASTERSHOP_PREPAID_MANUAL_MESSAGE);
+
+    // a guide on a non-manual-fulfillment failure must not clear it either
+    const db2 = newDb();
+    const order2 = await seedOrder(db2, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "failed",
+        supplier_order_error: "Proveedor: error desconocido",
+    });
+    await updateOrderAdmin(
+        order2.id,
+        { trackingNumber: "G-1", carrier: "Servientrega" },
+        db2.asClient()
+    );
+    const row2 = db2.table("orders")[0] as unknown as OrderRow;
+    assert.equal(row2.supplier_order_status, "failed");
+    assert.equal(row2.supplier_order_error, "Proveedor: error desconocido");
+
+    // explicitly clearing the carrier must not let a stale stored carrier
+    // satisfy the manual-resolution check
+    const db3 = newDb();
+    const order3 = await seedOrder(db3, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+        carrier: "Servientrega",
+    });
+    await updateOrderAdmin(
+        order3.id,
+        { trackingNumber: "G-NEW", carrier: null },
+        db3.asClient()
+    );
+    const row3 = db3.table("orders")[0] as unknown as OrderRow;
+    assert.equal(row3.carrier, null);
+    assert.equal(row3.supplier_order_status, "failed");
+    assert.equal(row3.supplier_order_error, MASTERSHOP_PREPAID_MANUAL_MESSAGE);
+});
+
+test("terminal orders drop out of the supplier attention queue", async () => {
+    const db = newDb();
+    await seedOrder(db, {
+        payment_status: "paid",
+        fulfillment_status: "delivered",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+    });
+    await seedOrder(db, {
+        payment_status: "refunded",
+        fulfillment_status: "cancelled",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+    });
+    await seedOrder(db, {
+        payment_status: "paid",
+        fulfillment_status: "payment_confirmed",
+        supplier_order_status: "failed",
+        supplier_order_error: MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+        auto_fulfill_attempts: 3,
+    });
+    const queue = await getAttentionQueue(db.asClient());
+    assert.ok("supplierFailed" in queue);
+    assert.equal(queue.supplierFailed, 1); // only the live manual order remains
 });

@@ -73,15 +73,57 @@ administrator cannot be removed (enforced by a database trigger).
 
 ### Trend provider credentials
 
+- **Mastershop** (the only importable supplier): configure `MASTERSHOP_API_KEY`
+  (server-only); it is sent as the `ms-api-key` header to
+  `https://prod.api.mastershop.com`. Contract verified against the official
+  [Postman documentation](https://documenter.getpostman.com/view/33212980/2sB3WnxNAk):
+  `POST /api/products/market?page={offset}&limit=20` for marketplace search
+  (`page` is a **row offset** incremented by 20, body `{valueToSearch}` for a
+  non-empty term or `{}` for an empty one, plain-array response),
+  `GET /api/products/market/{id}` for the authoritative detail (always
+  refetched — the summary `variantsCount` is not fulfillment truth), and
+  `GET /api/products/{id}?includeAllVariations=true` for account membership
+  (404 = product not in «Mis productos»). Your own product list may be empty
+  until you add products to «Mis productos» in Mastershop — that is a setup
+  state, not an outage. The collection also documents order endpoints
+  (`POST /api/orders`, `GET /api/orders?externalOrderId=…`,
+  `POST /api/orders/list`, `PUT /api/orders/{idOrder}`); only the COD create
+  and lookup paths are wired today.
+  **Capability boundary:** catalog search/detail is available, there is no
+  documented external freight endpoint (shipping is confirmed manually per
+  city before publish), and prepaid orders stay manual.
+
+  **Contraentrega (feature-flagged, OFF by default):** set
+  `MASTERSHOP_COD_ENABLED=true` plus `MASTERSHOP_API_KEY` to enable COD
+  checkout for carts that are 100% Mastershop. Semantics:
+  `POST /api/orders` registers the remote order in `Por Confirmar` — provider
+  creation is **not** payment collection and **not** dispatch confirmation;
+  an operator confirms the shipment inside Mastershop (no automatic guide or
+  dispatch is promised). Local orders stay `cod_pending` and can never become
+  `paid` from provider statuses alone — COD collection/settlement is verified
+  manually (Mastershop `Entregada` only logs «recaudo sin verificar»).
+  Remote `Cancelada` cancels the local order (authenticated polling is the
+  proof); `Devuelta` parks the order in reconciliation, never auto-refunded.
+  COD rejects coupons/loyalty points, requires a numeric CC document, a real
+  department and an operator-registered `mastershop_weight` per product (the
+  docs do not state the weight unit — copy the value Mastershop expects).
+  Checkout creation is idempotent via `checkout_attempt_id` + the
+  `create_cod_order` RPC (per-phone ≤3 COD orders/hour, atomic
+  order/items/event insert). After any create attempt, retries are GET-only —
+  an ambiguous POST is reconciled by lookup, never re-POSTed blindly.
+  Webhooks are not registered (the docs lack origin verification and
+  guaranteed payload semantics); tracking reconciles via authenticated
+  polling on the daily cron + manual sync. **Wallet settlement is not
+  implemented** — revenue summaries continue counting `paid` only.
 - **Mercado Libre**: create a free app at developers.mercadolibre.com.co, set the
   redirect URI to `…/api/admin/providers/meli/callback`, then connect it from the
   Tendencias tab ("Conectar Mercado Libre"). Tokens are stored encrypted using
   `PROVIDER_TOKEN_ENCRYPTION_KEY`.
-- **AliExpress Affiliate**: create an app at open.aliexpress.com to obtain
+- **AliExpress Affiliate** *(research-only)*: create an app at open.aliexpress.com to obtain
   `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` / `ALIEXPRESS_TRACKING_ID`.
   Verify Colombia (`ship_to_country=CO`) support and display/storage terms before
   enabling.
-- **AliExpress Dropshipping (DS)**: a separate app registration (not the
+- **AliExpress Dropshipping (DS)** *(research-only)*: a separate app registration (not the
   affiliate keys). Configure `ALIEXPRESS_DS_APP_KEY`, `ALIEXPRESS_DS_APP_SECRET`,
   and `ALIEXPRESS_DS_REDIRECT_URI` matching the `callback_url` registered in the
   DS app console, then connect from the Tendencias tab ("Conectar AliExpress
@@ -106,66 +148,109 @@ administrator cannot be removed (enforced by a database trigger).
   a feed explicitly (`aliexpress.ds.feedname.get` lists provider feeds; the
   choice is stored in `provider_connections.meta.ds_feed_name`) — no feed is
   assumed, and provider feed names are not verified market truth.
-- **CJ Dropshipping**: configure `CJ_API_KEY` (server-only). The token obtained
+  DS product/freight lookup remains available for research and historical rows
+  only — importing DS products is disabled by policy.
+- **CJ Dropshipping** *(research-only)*: configure `CJ_API_KEY` (server-only). The token obtained
   from `authentication/getAccessToken` is stored encrypted under the provider
   lease and the trending product list (`product/listV2`) is refreshed at most
   once every 6 hours with a ≥1s gap between auth and list calls. `listedNum`
   is shown as the provider's listing count — it is not sales data.
+  CJ product/stock/freight lookup remains available for research only —
+  importing CJ products is disabled by policy.
 
-Publishing (or saving edits to a published row) for `aliexpress_ds` /
-`cjdropshipping` products requires a confirmed customer shipping quote:
-`customer_shipping_cop` (explicit non-negative integer — 0 only when free
-shipping is knowingly confirmed), `shipping_estimate_city`, and
-`shipping_checked_at`. The `published_products` view hides international rows
-missing these fields until an admin corrects them in the operator **Productos**
-tab, which lists every status and supports editing, archiving (rows are kept),
-and republishing.
+`aliexpress`, `aliexpress_ds` and `cjdropshipping` are research-only sources
+(`lib/suppliers/policy.ts`): their trend/statistics retrieval still works, but
+import drafts, publication, checkout pricing and supplier placement reject
+them in every direct path — including historical catalog rows and mixed carts.
+Already-submitted tracking, refunds and claims remain functional.
+
+Publishing (or saving edits to a published row) for `mastershop` products
+requires a
+confirmed customer shipping quote: `customer_shipping_cop` (explicit
+non-negative integer — 0 only when free shipping is knowingly confirmed),
+`shipping_estimate_city`, and `shipping_checked_at`. Mastershop has no
+automatic shipping quote yet, so the operator confirms the cost manually before publish —
+and the quote is only valid for the city it was confirmed for: checkout
+compares the normalized destination city against `shipping_estimate_city` and
+rejects the order when they differ. There is no automatic nationwide tariff.
+The `published_products` view hides quoted-shipping rows missing these fields
+until an admin corrects them in the operator **Productos** tab, which lists
+every status and supports editing, archiving (rows are kept), and republishing.
 
 Missing provider configuration disables only that source — the panel shows each
 source's status and the age of the last successful snapshot. Snapshots refresh
 automatically when an admin opens the panel if older than 6 hours; refreshes are
 serialized across instances with database leases.
 
-### Supplier import workflow (AliExpress DS / CJ Dropshipping)
+### Supplier import workflow (Mastershop)
 
 The operator panel (`/operator`, tab *Tendencias*) splits into
-**Descubrir** (loaded trend signals — AliExpress Affiliate/DS, CJ, MercadoLibre),
-**Importar** (server-verified product preview + draft import),
-**Borradores** (draft review, edit, publish gate) and **Conexiones**
-(provider OAuth/feed/diagnostics status).
+**Descubrir** (loaded trend signals — research-only AliExpress Affiliate/DS, CJ,
+MercadoLibre), **Importar** (Mastershop catalog
+browse/search + server-verified
+product preview + draft import), **Borradores** (draft review, edit, publish
+gate) and **Conexiones** (provider status: Mastershop configured/verified,
+plus research-only AliExpress/CJ and DS feed diagnostics).
 
-- `POST /api/admin/suppliers/preview` — `{source, productId, variantId?}` returns
-  a `SupplierPreview` assembled server-side from the provider's official API:
-  detail, variant stock (CJ CN warehouses only), a freight quote (CJ quotes
-  specifically CN→CO; AliExpress DS quotes to the destination configured in the
-  DS integration), and a USD→COP rate. `productId` also accepts pasted
-  `aliexpress.com/item/<id>.html` or `cjdropshipping.com/…-p-<id>.html` URLs
-  (parsed, never fetched; shorteners and lookalike hosts rejected).
-- `POST /api/admin/catalog/import-supplier` — refetches the preview and builds
-  the draft with `buildSupplierImport`; price, stock and images always come from
-  the provider API response, never from the client. Body keys are allowlisted:
-  `source`, `productId`, `variantId`, `freightId`, `marginPercent` (15–50), and
-  an optional explicit `priceCop` that overrides the suggested selling price.
-  Duplicates return `{created:false}` without overwriting.
+- `GET /api/admin/suppliers/mastershop/products?query=&offset=` — server-side
+  Mastershop marketplace search (`POST /api/products/market` upstream with
+  `page` as a row offset and `limit=20`; `hasMore` follows the raw page size).
+  Search terms accept Unicode letters, digits and spaces (≤120 chars).
+- `GET /api/admin/suppliers/mastershop/status` — `{configured, country:"CO",
+  catalog:true, automaticOrders:false, shippingQuotes:false, tracking:false,
+  cashOnDelivery:false}`. `configured` only means `MASTERSHOP_API_KEY` is set;
+  "Probar acceso" performs one catalog request and is the only path to an
+  access-verified state.
+- `POST /api/admin/suppliers/preview` — `{source:"mastershop", productId,
+  variantId?}` refetches `GET /api/products/market/{id}` server-side: numeric
+  id, `nameProduct` required, only literal `COP` currency accepted, variant
+  prices/stock strictly from each variant (parent `providerPrice` is used only
+  when `variants` is empty → `simple` variant), and duplicate/malformed
+  variants invalidate the whole product. Preview ships no freight options and
+  no FX; warnings make the pending shipping quote and manual fulfillment
+  explicit (confirm city shipping and add the product to
+  «Mis productos» before selling).
+- `POST /api/admin/catalog/import-supplier` — refetches the provider product
+  and builds the draft with `buildSupplierImport`; cost, stock, images and
+  description always come from the provider response, never the client. Body
+  keys are allowlisted: `source`, `productId`, `variantId`, `freightId`,
+  `marginPercent` (15–50), and an optional explicit `priceCop` selling price.
+  The draft stores `supplier_variant = {product_id, variation_id, …}` plus the
+  recommended `suggested_price`. Duplicates return `{created:false}` without
+  overwriting operator edits.
 - `POST /api/admin/catalog/[id]/supplier-sync` — manual "Actualizar costo y
-  stock" re-query for imported rows. Requires `expectedUpdatedAt` (optimistic
-  concurrency), refuses archived/manual rows and unverifiable stock/cost, and
-  only updates `stock`, `listing_*`, `supplier_cost_cop`, `fx_*` and the
-  `supplier_variant` snapshot — never the copy, images, sale price or publish
-  state. No automatic repricing or cron.
+  stock" re-query for imported local-supplier rows. Requires `expectedUpdatedAt`
+  (optimistic concurrency), refuses archived/manual/research rows and
+  unverifiable stock/cost, verifies returned product/variant identity, and only
+  updates `stock`, `listing_*`, `supplier_cost_cop` and the `supplier_variant`
+  snapshot — never the copy, images, sale price, shipping or publish state. No
+  automatic repricing or cron.
 - Legacy `POST /api/admin/catalog` remains only for MercadoLibre reference
-  drafts; it rejects `aliexpress`, `aliexpress_ds`, `cjdropshipping` and any
-  other source (they must go through `import-supplier`).
+  drafts; it rejects `aliexpress`, `aliexpress_ds`, `cjdropshipping` (research
+  only), `mastershop` (must go through `import-supplier`) and any other
+  source.
+
+**Local-supplier fulfillment boundary:** paid orders containing research-only
+or prepaid Mastershop items are marked `supplier_order_status='failed'` with an
+explicit manual-handling message and `auto_fulfill_attempts=3` so the retry
+cron leaves them alone. `placeSupplierOrder` returns the manual-fulfillment
+message without any provider call for research/prepaid items — there is no
+verified automatic prepaid-dispatch API for Mastershop, so none is
+implemented. The only automated supplier path is Mastershop COD
+(`cash_on_delivery` + all-Mastershop items + `MASTERSHOP_COD_ENABLED`),
+handled by the dedicated contraentrega flow described above; wallet
+settlement/recaudo reconciliation is **not** implemented — collection is
+verified manually.
 
 ### Currency conversion (import-time FX + manual review)
 
-Supplier previews fetch the USD→COP rate once per request from
+Mastershop prices are already COP — no FX is involved in Mastershop
+previews/imports.
+Legacy USD-based provider helpers still fetch the USD→COP rate from
 [ExchangeRate-API](https://www.exchangerate-api.com) (`open.er-api.com`, 8s
-timeout, 6h cache, rates older than 72h rejected — UI shows rate, date and the
-required attribution link). If the rate is unavailable, cost/shipping stay `null`
-and the price suggestion is skipped — no hardcoded fallback. The draft keeps the
-original `listing_currency`; `fx_rate`/`fx_rate_date` record the applied
-snapshot, and reviewers can still override the COP price before publishing.
+timeout, 6h cache, rates older than 72h rejected) for research previews only.
+If the rate is unavailable, converted cost/shipping stay `null` — no hardcoded
+fallback.
 
 ### Supabase free-tier notes
 
@@ -195,13 +280,28 @@ connections, and snapshots are unaffected. The `20261007120000_orders` and
 tables, indexes, and unique constraints exist, RLS is enabled with zero
 policies, and only `postgres`/`service_role` hold table privileges.
 
+**Pending migrations (apply in this order, before enabling COD):**
+1. `supabase/migrations/20261019120000_local_sourcing_policy.sql` (prepared,
+   **not yet applied**) recreates the `published_products` view to exclude
+   research-only sources and require the Mastershop quote fields.
+2. `supabase/migrations/20261020130000_mastershop_cod.sql` (prepared, **not
+   yet applied**) adds `payment_method`/`checkout_attempt_id`/`mastershop_status`
+   + COD consistency checks, the `cash_on_delivery_eligible` view flag and the
+   atomic `create_cod_order` RPC (service-role-only execute).
+
+The app-level policy already fails closed, but the view guard is the last line
+of defense for public reads; COD checkout also requires
+`MASTERSHOP_COD_ENABLED=true` after the migrations are verified.
+
 ### Orders and payments (Wompi)
 
 - Checkout submits item ids + quantities + customer fields to `POST /api/orders`.
   The server reloads the catalog and recomputes every price, discount, and
-  shipping amount — client totals are informational only. Orders are created as
-  `pending_payment` and the customer is redirected to a single-use Wompi
-  payment link.
+  shipping amount — client totals are informational only. Prepaid orders are
+  created as `pending_payment` and the customer is redirected to a single-use
+  Wompi payment link; Mastershop-only carts may instead choose contraentrega
+  (feature-flagged, see the Mastershop section) which creates a `cod_pending`
+  order without any Wompi link or charge.
 - `POST /api/webhooks/wompi` verifies the `signature.checksum` (SHA-256 over the
   `signature.properties` values + timestamp + `WOMPI_EVENTS_SECRET`) before
   touching state. Only `APPROVED` events with a matching `amount_in_cents` mark
@@ -227,7 +327,9 @@ policies, and only `postgres`/`service_role` hold table privileges.
   (`/legal/privacidad`, Ley 1581) and records `consent_at`. Puntos Honesty
   redemption at checkout uses the server-verified balance
   (`/api/loyalty/balance`) and is re-validated + debited at order creation.
-  Contraentrega is not offered.
+  Coupons and points apply to online payment only — contraentrega rejects
+  them, and its collection is verified outside this app (the order stays
+  `cod_pending` and is never counted as revenue).
 - The browser-local order store was removed; account order history comes from
   `GET /api/orders/mine` (session email match) and reorder flows re-fetch
   current published prices rather than trusting order snapshots.

@@ -15,6 +15,7 @@ export interface Product {
     shippingEstimateCity?: string | null;
     shippingCheckedAt?: string | null;
     shippingQuoteRequired?: boolean;
+    cashOnDeliveryEligible?: boolean;
     reviewsAvg?: number;
     reviewsCount?: number;
 }

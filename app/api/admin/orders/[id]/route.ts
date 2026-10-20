@@ -12,9 +12,11 @@ interface RouteContext {
 const FULFILLMENT_STATUSES = new Set<FulfillmentStatus>([
     "awaiting_payment",
     "payment_confirmed",
+    "awaiting_confirmation",
     "supplier_processing",
     "international_transit",
     "customs_cleared",
+    "domestic_transit",
     "local_delivery",
     "delivered",
     "cancelled",

@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { authorizeAdmin } from "@/lib/auth/server";
+import { checkAdminOrigin } from "@/lib/api/guards";
 import { importDraft, listCatalogProducts, listDrafts } from "@/lib/catalog/repository";
 import { isHttpUrl, isPlainObject, isValidProviderItemId, sanitizeImageList, sanitizeImportFields, sanitizeSupplierVariant } from "@/lib/catalog/validate";
+import { RESEARCH_ONLY_MESSAGE, RESEARCH_ONLY_SOURCES } from "@/lib/suppliers/policy";
 
-// Legacy/manual imports stay here; AliExpress DS and CJ must go through
+// Legacy/manual imports stay here. Mastershop must go through
 // POST /api/admin/catalog/import-supplier, which refetches authoritative
 // provider data server-side and never trusts client-supplied fields.
+// AliExpress/CJ are research-only — rejected outright, not redirected.
 const IMPORT_SOURCES = new Set(["mercadolibre"]);
-const SUPPLIER_SOURCES = new Set(["aliexpress", "aliexpress_ds", "cjdropshipping"]);
+const SUPPLIER_SOURCES = new Set(["mastershop"]);
 const PAGE_MAX = 100;
 
 function boundedInt(raw: string | null, fallback: number, max: number): number {
@@ -42,6 +45,8 @@ export async function POST(request: Request) {
     if (!auth.ok) {
         return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
     }
+    const forbidden = checkAdminOrigin(request);
+    if (forbidden) return forbidden;
 
     let body: unknown;
     try {
@@ -54,6 +59,9 @@ export async function POST(request: Request) {
     }
 
     const source = body.source;
+    if (typeof source === "string" && RESEARCH_ONLY_SOURCES.has(source)) {
+        return NextResponse.json({ error: RESEARCH_ONLY_MESSAGE }, { status: 400 });
+    }
     if (typeof source === "string" && SUPPLIER_SOURCES.has(source)) {
         return NextResponse.json(
             { error: "supplier imports must use /api/admin/catalog/import-supplier" },

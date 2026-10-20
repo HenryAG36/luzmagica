@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     AlertCircle,
     CheckCircle2,
@@ -42,7 +42,21 @@ function statusLine(status: SourceStatus | undefined, label: string) {
     );
 }
 
+interface MastershopStatus {
+    configured: boolean;
+    country: string;
+    catalog: boolean;
+    automaticOrders: boolean;
+    shippingQuotes: boolean;
+    tracking: boolean;
+    cashOnDelivery: boolean;
+}
+
 export default function SupplierConnectionsPanel({ statuses, onRefresh, dsConnectResult }: Props) {
+    const [mastershopStatus, setMastershopStatus] = useState<MastershopStatus | null>(null);
+    const [mastershopStatusError, setMastershopStatusError] = useState("");
+    const [mastershopVerified, setMastershopVerified] = useState<boolean | null>(null);
+    const [mastershopProbing, setMastershopProbing] = useState(false);
     const [dsFeeds, setDsFeeds] = useState<DsFeedInfo[]>([]);
     const [dsFeedChoice, setDsFeedChoice] = useState("");
     const [dsFeedsBusy, setDsFeedsBusy] = useState(false);
@@ -51,6 +65,58 @@ export default function SupplierConnectionsPanel({ statuses, onRefresh, dsConnec
     const [dsDiagCopied, setDsDiagCopied] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
+
+    // Mastershop config status — fetched once on mount (StrictMode-safe: the
+    // effect's own cleanup aborts the obsolete request, the reissued one
+    // completes). Catalog access is only claimed after an explicit
+    // "Probar acceso" probe succeeds.
+    useEffect(() => {
+        const controller = new AbortController();
+        let active = true;
+        void (async () => {
+            try {
+                const res = await fetch("/api/admin/suppliers/mastershop/status", {
+                    signal: controller.signal,
+                });
+                if (!res.ok) throw new Error("No se pudo consultar la configuración de Mastershop.");
+                const body = (await res.json()) as MastershopStatus;
+                if (active) setMastershopStatus(body);
+            } catch (e) {
+                if (active && !controller.signal.aborted) {
+                    setMastershopStatusError(
+                        e instanceof Error ? e.message : "No se pudo consultar la configuración de Mastershop."
+                    );
+                }
+            }
+        })();
+        return () => {
+            active = false;
+            controller.abort();
+        };
+    }, []);
+
+    // Probes the protected catalog query — a successful request (even an empty
+    // page) proves access for this session only. Never reads or shows the key.
+    const probeMastershopAccess = async () => {
+        setMastershopProbing(true);
+        setError("");
+        try {
+            const res = await fetch("/api/admin/suppliers/mastershop/products?offset=0");
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setMastershopVerified(false);
+                setError(body.error || "Mastershop no respondió al acceso de prueba.");
+                return;
+            }
+            setMastershopVerified(true);
+            setNotice(`Acceso Mastershop verificado (${Array.isArray(body.products) ? body.products.length : 0} productos listados).`);
+        } catch {
+            setMastershopVerified(false);
+            setError("Error de red al probar el acceso Mastershop.");
+        } finally {
+            setMastershopProbing(false);
+        }
+    };
 
     const dsStatus = statuses.find((s) => s.source === "aliexpress_ds");
     const cjStatus = statuses.find((s) => s.source === "cjdropshipping");
@@ -163,11 +229,80 @@ export default function SupplierConnectionsPanel({ statuses, onRefresh, dsConnec
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Mastershop — the only importable supplier */}
+                <div className="glass rounded-3xl p-6 space-y-3">
+                    <h4 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
+                        <Link2 className="w-4 h-4 text-accent-dark" />
+                        Mastershop
+                    </h4>
+                    <p className="text-[11px]">
+                        {mastershopStatus === null ? (
+                            mastershopStatusError ? (
+                                <span role="alert" className="text-danger">
+                                    Estado: {mastershopStatusError}
+                                </span>
+                            ) : (
+                                <span className="text-muted">Estado: consultando configuración…</span>
+                            )
+                        ) : mastershopStatus.configured ? (
+                            <span className={mastershopVerified === true ? "text-success" : "text-warning"}>
+                                {mastershopVerified === true
+                                    ? "Clave configurada · acceso verificado"
+                                    : "Clave configurada · acceso pendiente de verificación"}
+                            </span>
+                        ) : (
+                            <span className="text-danger">Falta MASTERSHOP_API_KEY en el servidor.</span>
+                        )}
+                        {mastershopStatus?.configured === true && mastershopVerified === false && (
+                            <span className="text-warning"> · la última prueba no fue verificada</span>
+                        )}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                        Catálogo habilitado · el envío se confirma manualmente según la ciudad del
+                        cliente. Contraentrega:{" "}
+                        {mastershopStatus?.cashOnDelivery === true ? (
+                            <span className="text-success">
+                                habilitada — el registro en Mastershop no confirma despacho ni
+                                recaudo; confirma el despacho en el panel del proveedor.
+                            </span>
+                        ) : (
+                            "deshabilitada (MASTERSHOP_COD_ENABLED). Pedidos prepagados se gestionan manualmente."
+                        )}
+                    </p>
+                    <div className="space-y-1.5 text-[11px] text-muted">
+                        <p>Lista manual de configuración:</p>
+                        <ol className="list-decimal ml-4 space-y-0.5">
+                            <li>
+                                Define <code className="text-foreground">MASTERSHOP_API_KEY</code>{" "}
+                                en las variables de entorno del servidor (Vercel) y vuelve a desplegar.
+                                No pegues la clave aquí.
+                            </li>
+                            <li>
+                                Agrega los productos que vas a vender a «Mis productos» en tu cuenta
+                                de Mastershop.
+                            </li>
+                            <li>Prueba el acceso con el botón de abajo.</li>
+                        </ol>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => void probeMastershopAccess()}
+                        disabled={mastershopProbing}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-foreground text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                        {mastershopProbing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                        {mastershopProbing ? "Probando..." : "Probar acceso"}
+                    </button>
+                </div>
+
                 {/* AliExpress DS */}
                 <div className="glass rounded-3xl p-6 space-y-3">
                     <h4 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
                         <Link2 className="w-4 h-4 text-accent-dark" />
                         AliExpress Dropshipping
+                        <span className="px-2 py-0.5 rounded-full border border-black/10 text-[10px] font-semibold text-muted">
+                            Solo estadísticas
+                        </span>
                     </h4>
                     <p className="text-[11px]">
                         {statusLine(dsStatus, "Estado")}
@@ -267,6 +402,9 @@ export default function SupplierConnectionsPanel({ statuses, onRefresh, dsConnec
                     <h4 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
                         <Link2 className="w-4 h-4 text-accent-dark" />
                         CJ Dropshipping
+                        <span className="px-2 py-0.5 rounded-full border border-black/10 text-[10px] font-semibold text-muted">
+                            Solo estadísticas
+                        </span>
                     </h4>
                     <p className="text-[11px]">{statusLine(cjStatus, "Estado")}</p>
                     <p className="text-[11px] text-muted">
@@ -283,6 +421,9 @@ export default function SupplierConnectionsPanel({ statuses, onRefresh, dsConnec
                     <h4 className="font-heading text-base font-bold text-foreground flex items-center gap-2">
                         <Link2 className="w-4 h-4 text-accent-dark" />
                         AliExpress Afiliados
+                        <span className="px-2 py-0.5 rounded-full border border-black/10 text-[10px] font-semibold text-muted">
+                            Solo estadísticas
+                        </span>
                     </h4>
                     <p className="text-[11px]">{statusLine(affiliateStatus, "Estado")}</p>
                     <p className="text-[11px] text-muted">

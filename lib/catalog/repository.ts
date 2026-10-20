@@ -8,6 +8,12 @@ import {
     validatePublishable,
 } from "./validate.ts";
 import type { CatalogRow, PublicProductRow } from "./validate.ts";
+import {
+    IMPORTABLE_SUPPLIER_SOURCES,
+    RESEARCH_ONLY_MESSAGE,
+    RESEARCH_ONLY_SOURCES,
+} from "../suppliers/policy.ts";
+import type { ImportSource } from "./supplierImport.ts";
 
 async function anonClient(provided?: SupabaseClientLike) {
     if (provided) return provided;
@@ -111,6 +117,11 @@ export async function importDraft(
     input: ImportDraftInput,
     client?: SupabaseClientLike
 ): Promise<{ created: boolean; id: string } | { error: string }> {
+    // Policy gate before any client work or insert: research sources can never
+    // create catalog rows, no matter which endpoint calls this.
+    if (RESEARCH_ONLY_SOURCES.has(input.source)) {
+        return { error: RESEARCH_ONLY_MESSAGE };
+    }
     const service = await serviceClient(client);
     if (!service) return { error: "service unavailable" };
 
@@ -403,12 +414,14 @@ export async function publishCatalogProduct(
 
 type SupplierLookup = (
     service: SupabaseClientLike,
-    source: "aliexpress_ds" | "cjdropshipping",
+    source: ImportSource,
     productId: string,
     variantId?: string
 ) => Promise<{ preview: SupplierPreview } | { error: string }>;
 
-const SUPPLIER_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
+// Only importable-supplier rows can be synced against a live supplier;
+// AliExpress/CJ rows are research/historical under the sourcing policy.
+const SUPPLIER_SOURCES = IMPORTABLE_SUPPLIER_SOURCES;
 
 // Re-reads the provider's current price/stock for a catalog row and updates
 // only supplier fields. Customer-facing text/images/sale price/status/rights
@@ -446,19 +459,19 @@ export async function refreshSupplierProduct(
     }
     const variantRef = row.supplier_variant as Record<string, unknown>;
     const productId = variantRef.product_id;
-    const variantId = row.source === "aliexpress_ds" ? variantRef.sku_id : variantRef.vid;
+    const variantId = variantRef.variation_id;
     if (typeof productId !== "string" || !productId) {
         return { error: "supplier variant reference is incomplete" };
     }
-    // Never guess the variant: a missing stored sku_id/vid must abort the sync
-    // rather than letting the lookup auto-choose a different variant.
+    // Never guess the variant: a missing stored variation_id must abort the
+    // sync rather than letting the lookup auto-choose a different variant.
     if (typeof variantId !== "string" || !variantId) {
         return { error: "supplier variant reference is incomplete" };
     }
 
     const result = await lookup(
         service,
-        row.source as "aliexpress_ds" | "cjdropshipping",
+        row.source as ImportSource,
         productId,
         variantId
     );

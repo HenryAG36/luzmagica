@@ -238,7 +238,7 @@ export default function CartDrawer() {
                             )}
                             {breakdown.dsItemCount > 0 && (
                                 <div className="flex justify-between">
-                                    <dt className="text-muted">Envío internacional</dt>
+                                    <dt className="text-muted">Envío cotizado</dt>
                                     <dd>
                                         {breakdown.dsShippingCop === null ? (
                                             <span className="text-warning">Pendiente de cotización</span>
@@ -271,7 +271,7 @@ export default function CartDrawer() {
                         <div className="mt-4 space-y-2">
                             {total === null ? (
                                 <p className="text-center text-xs text-warning">
-                                    El envío internacional debe cotizarse antes de pagar.
+                                    El envío cotizado debe confirmarse antes de pagar.
                                 </p>
                             ) : (
                                 <Link

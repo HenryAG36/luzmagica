@@ -1,6 +1,8 @@
 import type { SupabaseClientLike } from "../supabase/types.ts";
 import type { CatalogRow, PublicProductRow } from "../catalog/validate.ts";
-import { INTERNATIONAL_SHIPPING_SOURCES, toPublicProduct } from "../catalog/validate.ts";
+import { toPublicProduct } from "../catalog/validate.ts";
+import { QUOTED_SHIPPING_SOURCES, RESEARCH_ONLY_SOURCES } from "../suppliers/policy.ts";
+import { shippingQuoteMatchesCity } from "../cart/shippingQuote.ts";
 import { computeCartTotals } from "../cart/totals.ts";
 import { resolveCoupon } from "../cart/coupons.ts";
 import type { CartItem } from "../types.ts";
@@ -18,7 +20,8 @@ async function serviceClient(provided?: SupabaseClientLike) {
 export async function priceOrder(
     items: OrderItemInput[],
     couponCodeRaw: string | null,
-    provided?: SupabaseClientLike
+    provided?: SupabaseClientLike,
+    destinationCity?: string
 ): Promise<{ ok: true; pricing: OrderPricing } | { ok: false; error: string }> {
     const service = await serviceClient(provided);
     if (!service) return { ok: false, error: "service unavailable" };
@@ -46,7 +49,11 @@ export async function priceOrder(
         if (!Number.isInteger(row.price_cop) || row.price_cop <= 0) {
             return { ok: false, error: "Precio de catálogo inválido." };
         }
-        if (INTERNATIONAL_SHIPPING_SOURCES.has(row.source)) {
+        // Research-only sources can never be purchased, even in mixed carts.
+        if (RESEARCH_ONLY_SOURCES.has(row.source)) {
+            return { ok: false, error: `"${row.name}" ya no está disponible para la venta.` };
+        }
+        if (QUOTED_SHIPPING_SOURCES.has(row.source)) {
             const shippingOk =
                 Number.isInteger(row.customer_shipping_cop) &&
                 (row.customer_shipping_cop as number) >= 0 &&
@@ -56,6 +63,13 @@ export async function priceOrder(
                 !Number.isNaN(Date.parse(row.shipping_checked_at));
             if (!shippingOk) {
                 return { ok: false, error: `"${row.name}" no tiene cotización de envío confirmada.` };
+            }
+            // A confirmed quote is only valid for the city it was quoted for.
+            if (!shippingQuoteMatchesCity(row.shipping_estimate_city, destinationCity)) {
+                return {
+                    ok: false,
+                    error: `La cotización de envío de "${row.name}" no corresponde a tu ciudad; solicita confirmación antes de pagar.`,
+                };
             }
         }
     }
@@ -69,7 +83,7 @@ export async function priceOrder(
         const row = byId.get(item.productId)!;
         const publicRow = {
             ...row,
-            shipping_quote_required: INTERNATIONAL_SHIPPING_SOURCES.has(row.source),
+            shipping_quote_required: QUOTED_SHIPPING_SOURCES.has(row.source),
         } as PublicProductRow;
         return { product: toPublicProduct(publicRow), quantity: item.quantity };
     });
@@ -81,13 +95,13 @@ export async function priceOrder(
 
     const pricedItems: PricedItem[] = items.map((item) => {
         const row = byId.get(item.productId)!;
-        const isInternational = INTERNATIONAL_SHIPPING_SOURCES.has(row.source);
+        const isQuoted = QUOTED_SHIPPING_SOURCES.has(row.source);
         return {
             productId: row.id,
             name: row.name,
             unitPriceCop: row.price_cop,
             quantity: item.quantity,
-            unitShippingCop: isInternational ? (row.customer_shipping_cop as number) : 0,
+            unitShippingCop: isQuoted ? (row.customer_shipping_cop as number) : 0,
             unitSupplierCostCop: Number.isInteger(row.supplier_cost_cop) ? row.supplier_cost_cop : null,
             source: row.source,
             supplierVariant: row.supplier_variant,

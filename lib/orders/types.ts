@@ -3,15 +3,18 @@ export type PaymentStatus =
     | "paid"
     | "payment_failed"
     | "payment_review"
+    | "cod_pending"
     | "cancelled"
     | "refunded";
 
 export type FulfillmentStatus =
     | "awaiting_payment"
     | "payment_confirmed"
+    | "awaiting_confirmation"
     | "supplier_processing"
     | "international_transit"
     | "customs_cleared"
+    | "domestic_transit"
     | "local_delivery"
     | "delivered"
     | "cancelled";
@@ -19,9 +22,11 @@ export type FulfillmentStatus =
 export const FULFILLMENT_STATUS_LABELS: Record<FulfillmentStatus, string> = {
     awaiting_payment: "Esperando pago",
     payment_confirmed: "Pago confirmado",
+    awaiting_confirmation: "Pendiente de confirmación",
     supplier_processing: "Procesando con proveedor",
     international_transit: "Tránsito internacional",
     customs_cleared: "Liberado de aduana",
+    domestic_transit: "En tránsito nacional",
     local_delivery: "En reparto local",
     delivered: "Entregado",
     cancelled: "Cancelado",
@@ -32,6 +37,7 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
     paid: "Pagado",
     payment_failed: "Pago fallido",
     payment_review: "Revisión de pago",
+    cod_pending: "Contraentrega · recaudo por verificar",
     cancelled: "Cancelado",
     refunded: "Reembolsado",
 };
@@ -92,6 +98,11 @@ export interface OrderRow {
     coupon_code: string | null;
     payment_status: PaymentStatus;
     fulfillment_status: FulfillmentStatus;
+    // Defaults to 'wompi' for rows predating the COD phase.
+    payment_method?: "wompi" | "cash_on_delivery";
+    checkout_attempt_id?: string | null;
+    // Last provider-reported Mastershop status (polling dedupe).
+    mastershop_status?: string | null;
     payment_link_id: string | null;
     payment_link_url: string | null;
     wompi_transaction_id: string | null;
@@ -153,6 +164,7 @@ export interface PublicOrder {
     createdAt: string;
     city: string;
     paymentStatus: PaymentStatus;
+    paymentMethod: "wompi" | "cash_on_delivery";
     fulfillmentStatus: FulfillmentStatus;
     items: PublicOrderItem[];
     subtotalCop: number;

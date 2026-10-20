@@ -20,10 +20,13 @@ interface Props {
     onOpenCatalog?: () => void;
 }
 
-const SOURCE_OPTIONS: { value: ImportSource; label: string }[] = [
-    { value: "aliexpress_ds", label: "AliExpress DS" },
-    { value: "cjdropshipping", label: "CJ Dropshipping" },
-];
+// Mastershop is the only importable supplier under the current sourcing
+// policy; AliExpress/CJ remain research/trend sources handled elsewhere.
+const PROVIDER_LABEL = "Mastershop";
+const SOURCE: ImportSource = "mastershop";
+
+// COP-native suppliers: no FX conversion is ever shown for them.
+const COP_NATIVE_SOURCES = new Set(["mastershop"]);
 
 const inputClass =
     "w-full px-3 py-2 rounded-xl bg-surface-card border border-black/10 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary";
@@ -54,8 +57,23 @@ function cheapestFreight(preview: SupplierPreview): string | null {
     return known.reduce((a, b) => ((a.feeUsd ?? 0) <= (b.feeUsd ?? 0) ? a : b)).id;
 }
 
+// Recommended retail from the selected variant's attributes first, then the
+// product-level detail — strictly a positive integer COP amount.
+function localSuggestedPrice(preview: SupplierPreview): number | null {
+    const variant = preview.product.variants.find((v) => v.id === preview.selectedVariantId);
+    const candidates = [
+        variant?.attributes?.suggested_price,
+        preview.product.details?.suggested_price,
+    ];
+    for (const c of candidates) {
+        // Normalized values are already numbers — no coercion.
+        if (typeof c === "number" && Number.isSafeInteger(c) && c > 0 && c <= 2147483647) return c;
+    }
+    return null;
+}
+
 export default function SupplierImportPanel({ selection, onImported, onOpenCatalog }: Props) {
-    const [source, setSource] = useState<ImportSource>("aliexpress_ds");
+    const source = SOURCE;
     const [input, setInput] = useState("");
     const [preview, setPreview] = useState<SupplierPreview | null>(null);
     const [previewKey, setPreviewKey] = useState("");
@@ -149,7 +167,11 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                 setPreviewKey(`${src}:${next.product.productId}:${next.selectedVariantId ?? ""}`);
                 setVariantId(next.selectedVariantId ?? "");
                 setFreightId(cheapestFreight(next));
-                setPriceOverride("");
+                // The provider's recommended retail seeds the override when the
+                // operator hasn't typed anything (a new preview always resets
+                // the field first, so a user edit is never clobbered).
+                const suggested = localSuggestedPrice(next);
+                setPriceOverride(suggested !== null ? String(suggested) : "");
                 setImportedId(null);
             } catch (e) {
                 if ((e as Error).name === "AbortError") return;
@@ -171,7 +193,6 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
     // re-invoked effect issues the real one.
     useEffect(() => {
         if (!selection) return;
-        setSource(selection.source);
         setInput(selection.productId);
         resetLookupView();
         void fetchPreview(selection.source, selection.productId);
@@ -287,27 +308,11 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                     Consultar producto del proveedor
                 </h4>
                 <p className="text-[11px] text-muted">
-                    Pega un ID de producto o una URL de producto (aliexpress.com/item/… o
-                    cjdropshipping.com/…-p-….html). El servidor consulta la API oficial y
-                    devuelve precio, stock y variantes verificados.
+                    Ingresa el ID numérico del producto en {PROVIDER_LABEL}.
+                    El servidor consulta la API oficial y devuelve precio de proveedor (COP),
+                    stock y variantes verificados.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2">
-                    <select
-                        value={source}
-                        onChange={(e) => {
-                            setSource(e.target.value as ImportSource);
-                            invalidateLookup();
-                        }}
-                        disabled={importing}
-                        className={`${inputClass} sm:w-48`}
-                        aria-label="Proveedor"
-                    >
-                        {SOURCE_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                                {o.label}
-                            </option>
-                        ))}
-                    </select>
                     <input
                         value={input}
                         onChange={(e) => {
@@ -315,7 +320,7 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                             invalidateLookup();
                         }}
                         disabled={importing}
-                        placeholder="ID de producto o URL del proveedor"
+                        placeholder={`ID numérico de producto ${PROVIDER_LABEL}`}
                         className={inputClass}
                         maxLength={2048}
                         onKeyDown={(e) => {
@@ -489,20 +494,40 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                         )}
                     </div>
 
-                    {/* FX */}
-                    <p className="text-[10px] text-muted">
-                        {preview.fx
-                            ? `Tasa USD→COP ${preview.fx.rate} (${preview.fx.date}) · `
-                            : "Tasa USD→COP no disponible · "}
-                        <a
-                            href="https://www.exchangerate-api.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-accent-dark hover:underline"
-                        >
-                            Rates By Exchange Rate API
-                        </a>
-                    </p>
+                    {/* FX — local supplier prices are already COP; no conversion shown */}
+                    {!COP_NATIVE_SOURCES.has(product.source) && (
+                        <p className="text-[10px] text-muted">
+                            {preview.fx
+                                ? `Tasa USD→COP ${preview.fx.rate} (${preview.fx.date}) · `
+                                : "Tasa USD→COP no disponible · "}
+                            <a
+                                href="https://www.exchangerate-api.com"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-accent-dark hover:underline"
+                            >
+                                Rates By Exchange Rate API
+                            </a>
+                        </p>
+                    )}
+
+                    {/* Capability boundary notices */}
+                    {COP_NATIVE_SOURCES.has(product.source) && (
+                        <div className="rounded-xl border border-warning/30 bg-amber-500/10 p-3 space-y-1">
+                            <p className="text-[11px] font-semibold text-warning flex items-center gap-1.5">
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                Cotización, pedido y rastreo automáticos aún no implementados
+                            </p>
+                            <p className="text-[11px] text-muted">
+                                La cotización automática de envío no está disponible: define el costo
+                                de envío al cliente en el borrador antes de publicar. El pedido al
+                                proveedor se confirma manualmente en el panel de{" "}
+                                {PROVIDER_LABEL} y la guía se
+                                registra en Pedidos.
+                                {" "}En Mastershop, agrega el producto a «Mis productos» antes de vender.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Pricing */}
                     {pricing?.variant && (
@@ -518,14 +543,19 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                                         max={50}
                                         step={1}
                                         value={margin}
-                                        disabled={importing}
+                                        disabled={importing || pricing.shipping === null}
                                         onChange={(e) => setMargin(Number(e.target.value))}
                                         className="w-full accent-primary"
                                     />
+                                    {pricing.shipping === null && (
+                                        <p className="text-[10px] text-muted mt-1">
+                                            El margen se calcula tras confirmar el envío en el borrador.
+                                        </p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-muted block mb-1">
-                                        Precio de venta COP (vacío = sugerido)
+                                        Precio de venta COP
                                     </label>
                                     <input
                                         type="number"
@@ -543,6 +573,15 @@ export default function SupplierImportPanel({ selection, onImported, onOpenCatal
                                     {!manualPriceValid && (
                                         <p role="alert" className="text-[10px] text-danger mt-1">
                                             Ingresa un precio entero en COP mayor que 0.
+                                        </p>
+                                    )}
+                                    {manualPriceValid && COP_NATIVE_SOURCES.has(product.source) && (
+                                        <p className="text-[10px] text-muted mt-1">
+                                            {manualPrice !== undefined &&
+                                            localSuggestedPrice(preview) !== null &&
+                                            manualPrice === localSuggestedPrice(preview)
+                                                ? `Precio sugerido por ${PROVIDER_LABEL}; revisa envío y margen.`
+                                                : "Precio definido por ti."}
                                         </p>
                                     )}
                                 </div>

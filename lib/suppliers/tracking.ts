@@ -132,6 +132,13 @@ export async function syncOrderTracking(
         };
     }
 
+    // Mastershop COD orders reconcile through authenticated polling with
+    // their own remote-status mapping and COD transition rules.
+    if (order.supplier_order_id.startsWith("mastershop:")) {
+        const mod = await import("./mastershopOrders.ts");
+        return mod.syncMastershopTracking(order, service, fetchImpl);
+    }
+
     const refs = parseSupplierRefs(order.supplier_order_id);
     const errors: string[] = [];
     let best: ProviderSnapshot | null = null;
@@ -221,10 +228,14 @@ export async function syncDueOrders(
     const service = await serviceClient(provided);
     if (!service) return { error: "service unavailable" };
 
+    // reconciliation_required rows WITH a remote ref poll like any submitted
+    // order — the remote state may resolve them (transit) or park them
+    // further (Devuelta). Rows without a remote ref are skipped: those get
+    // query-only reconciliation via placement, not tracking polling.
     const { data, error } = await service
         .from("orders")
         .select("id,supplier_order_id,supplier_synced_at,fulfillment_status")
-        .in("supplier_order_status", ["submitted", "partial"])
+        .in("supplier_order_status", ["submitted", "partial", "reconciliation_required"])
         .limit(limit * 2);
     if (error) return { error: error.message };
 

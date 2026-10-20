@@ -8,7 +8,6 @@ import {
     Bookmark,
     CheckCircle2,
     Link2,
-    PackagePlus,
     RefreshCw,
     Search,
     TrendingUp,
@@ -18,6 +17,7 @@ import { describeEmptyFeed } from "@/lib/trends/emptyFeed";
 import type { ImportSource } from "@/lib/catalog/supplierImport";
 import type { TrendItem, TrendsPayload } from "@/lib/trends/types";
 import SupplierImportPanel from "@/components/operator/SupplierImportPanel";
+import LocalSupplierCatalogPanel from "@/components/operator/LocalSupplierCatalogPanel";
 import SupplierConnectionsPanel from "@/components/operator/SupplierConnectionsPanel";
 import ProductsPanel from "@/components/operator/ProductsPanel";
 
@@ -43,9 +43,11 @@ const SOURCE_LABELS: Record<string, string> = {
     aliexpress: "AliExpress Afiliados",
     aliexpress_ds: "AliExpress DS",
     cjdropshipping: "CJ Dropshipping",
+    mastershop: "Mastershop",
 };
 
-const SUPPLIER_SOURCES = new Set(["aliexpress", "aliexpress_ds", "cjdropshipping"]);
+// Research/statistics sources — never importable under the sourcing policy.
+const RESEARCH_SOURCES = new Set(["aliexpress", "aliexpress_ds", "cjdropshipping"]);
 
 function isView(v: string | null): v is View {
     return v === "discover" || v === "import" || v === "drafts" || v === "connections";
@@ -163,9 +165,8 @@ export default function TrendPanel({ onOpenCatalog }: { onOpenCatalog?: () => vo
         }
     };
 
-    const openImport = (item: TrendItem) => {
-        const source: ImportSource = item.source === "cjdropshipping" ? "cjdropshipping" : "aliexpress_ds";
-        setSelection({ source, productId: item.sourceId });
+    const openImport = (selection: { source: ImportSource; productId: string }) => {
+        setSelection(selection);
         setView("import");
     };
 
@@ -194,8 +195,9 @@ export default function TrendPanel({ onOpenCatalog }: { onOpenCatalog?: () => vo
                         Tendencias &amp; Abastecimiento
                     </h3>
                     <p className="text-xs text-muted mt-1">
-                        Descubre señales de demanda, consulta precio y stock reales del proveedor e
-                        importa borradores listos para revisar.
+                        Descubre señales de demanda e importa borradores desde Mastershop. AliExpress y
+                        CJ son solo fuentes de investigación; su importación y pedidos están
+                        deshabilitados.
                     </p>
                 </div>
                 <button
@@ -332,7 +334,7 @@ export default function TrendPanel({ onOpenCatalog }: { onOpenCatalog?: () => vo
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {filteredItems.map((item) => {
-                                        const isSupplier = SUPPLIER_SOURCES.has(item.source);
+                                        const isResearch = RESEARCH_SOURCES.has(item.source);
                                         return (
                                             <article
                                                 key={item.id}
@@ -371,15 +373,10 @@ export default function TrendPanel({ onOpenCatalog }: { onOpenCatalog?: () => vo
                                                         : ""}
                                                 </p>
                                                 <div className="flex gap-2 mt-auto pt-1">
-                                                    {isSupplier ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => openImport(item)}
-                                                            className="flex-1 px-3 py-2 rounded-xl bg-primary hover:bg-primary-light text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
-                                                        >
-                                                            <PackagePlus className="w-3.5 h-3.5" />
-                                                            Consultar e importar
-                                                        </button>
+                                                    {isResearch ? (
+                                                        <span className="flex-1 px-3 py-2 rounded-xl bg-black/5 text-muted text-xs font-semibold flex items-center justify-center gap-1.5">
+                                                            Solo investigación
+                                                        </span>
                                                     ) : (
                                                         <button
                                                             type="button"
@@ -420,11 +417,14 @@ export default function TrendPanel({ onOpenCatalog }: { onOpenCatalog?: () => vo
             )}
 
             {view === "import" && (
-                <SupplierImportPanel
-                    selection={selection}
-                    onImported={() => setView("drafts")}
-                    onOpenCatalog={onOpenCatalog}
-                />
+                <div className="space-y-6">
+                    <LocalSupplierCatalogPanel onSelect={openImport} />
+                    <SupplierImportPanel
+                        selection={selection}
+                        onImported={() => setView("drafts")}
+                        onOpenCatalog={onOpenCatalog}
+                    />
+                </div>
             )}
 
             {view === "drafts" && (

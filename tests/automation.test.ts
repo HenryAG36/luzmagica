@@ -10,6 +10,10 @@ import {
 } from "../lib/orders/repository.ts";
 import { submitCustomerClaim, listClaimsForAdmin } from "../lib/orders/claims.ts";
 import { retryQueuedSupplierOrders } from "../lib/suppliers/fulfillment.ts";
+import {
+    MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+    RESEARCH_ONLY_MESSAGE,
+} from "../lib/suppliers/policy.ts";
 import { syncOrderTracking, parseSupplierRefs } from "../lib/suppliers/tracking.ts";
 import { pickCjDisputeReasonId } from "../lib/suppliers/disputes.ts";
 import {
@@ -90,7 +94,7 @@ function wompiEvent(order: OrderRow, status = "APPROVED"): WompiEventInput {
 
 // ---------- auto-fulfillment trigger ----------
 
-test("paid webhook queues supplier placement only for supplier-backed items", async () => {
+test("paid webhook flags supplier items for manual handling, never auto-places", async () => {
     const db = newDb();
     const manual = await seedOrder(db, { payment_link_id: "link-1" });
     const manualItems = db.table("order_items").filter((i) => i.order_id === manual.id);
@@ -100,7 +104,7 @@ test("paid webhook queues supplier placement only for supplier-backed items", as
     assert.ok("ok" in res && res.outcome === "paid");
     assert.equal((db.table("orders")[0] as { supplier_order_status: unknown }).supplier_order_status ?? null, null);
 
-    // supplier-backed item → queued
+    // research-only item → failed with the policy message, retries exhausted
     const db2 = newDb();
     const order = await seedOrder(db2, { payment_link_id: "link-2" });
     const item = db2.table("order_items")[0] as unknown as OrderItemRow;
@@ -109,10 +113,35 @@ test("paid webhook queues supplier placement only for supplier-backed items", as
 
     const res2 = await applyWompiEvent(wompiEvent(order), db2.asClient());
     assert.ok("ok" in res2 && res2.outcome === "paid");
-    assert.equal((db2.table("orders")[0] as { supplier_order_status: unknown }).supplier_order_status, "queued");
+    const row2 = db2.table("orders")[0] as {
+        supplier_order_status: unknown;
+        supplier_order_error: unknown;
+        auto_fulfill_attempts: unknown;
+    };
+    assert.equal(row2.supplier_order_status, "failed");
+    assert.equal(row2.supplier_order_error, RESEARCH_ONLY_MESSAGE);
+    assert.equal(row2.auto_fulfill_attempts, 3);
+
+    // mastershop item → failed with the prepaid manual-fulfillment message
+    const db3 = newDb();
+    const msOrder = await seedOrder(db3, { payment_link_id: "link-3" });
+    const msItem = db3.table("order_items")[0] as unknown as OrderItemRow;
+    msItem.source = "mastershop";
+    msItem.supplier_variant = { product_id: "12345", variation_id: "simple" };
+
+    const res3 = await applyWompiEvent(wompiEvent(msOrder), db3.asClient());
+    assert.ok("ok" in res3 && res3.outcome === "paid");
+    const row3 = db3.table("orders")[0] as {
+        supplier_order_status: unknown;
+        supplier_order_error: unknown;
+        auto_fulfill_attempts: unknown;
+    };
+    assert.equal(row3.supplier_order_status, "failed");
+    assert.equal(row3.supplier_order_error, MASTERSHOP_PREPAID_MANUAL_MESSAGE);
+    assert.equal(row3.auto_fulfill_attempts, 3);
 });
 
-test("retry cron picks up queued orders and caps attempts", async () => {
+test("retry cron parks capability-boundary orders instead of retrying forever", async () => {
     const db = newDb();
     await seedOrder(db, {
         payment_status: "paid",
@@ -123,15 +152,16 @@ test("retry cron picks up queued orders and caps attempts", async () => {
     item.source = "aliexpress_ds";
     item.supplier_variant = { product_id: "123", sku_id: "s1", sku_attr: "a" };
 
-    // No DS credentials → placement fails honestly, attempt counted
+    // A legacy queued order with research items is parked failed+maxed on the
+    // first cron pass — no provider call, no endless retry.
     const res = await retryQueuedSupplierOrders(db.asClient());
     assert.ok("attempted" in res && res.attempted === 1 && res.failed === 1);
     const row = db.table("orders")[0] as unknown as OrderRow;
     assert.equal(row.supplier_order_status, "failed");
-    assert.equal(row.auto_fulfill_attempts, 1);
+    assert.equal(row.supplier_order_error, RESEARCH_ONLY_MESSAGE);
+    assert.equal(row.auto_fulfill_attempts, 3);
 
-    // After the cap, the order is left for the attention queue
-    row.auto_fulfill_attempts = 3;
+    // Attempts exhausted → the order is left for the attention queue
     const res2 = await retryQueuedSupplierOrders(db.asClient());
     assert.ok("attempted" in res2 && res2.attempted === 0);
 });

@@ -1,7 +1,10 @@
 import { computePriceSuggestion, usdToCop } from "./pricing.ts";
 import type { ImportDraftInput } from "./repository.ts";
+import { IMPORTABLE_SUPPLIER_SOURCES, RESEARCH_ONLY_MESSAGE } from "../suppliers/policy.ts";
 
-export type ImportSource = "aliexpress_ds" | "cjdropshipping";
+// 'aliexpress_ds'/'cjdropshipping' stay in the union for research/parsing code
+// and historical rows, but only IMPORTABLE_SUPPLIER_SOURCES can build imports.
+export type ImportSource = "aliexpress_ds" | "cjdropshipping" | "mastershop";
 
 export interface SupplierVariant {
     id: string;
@@ -116,6 +119,9 @@ export function buildSupplierImport(
     pricing: ImportPricing,
     createdBy: string
 ): ImportDraftInput | { error: string } {
+    if (!IMPORTABLE_SUPPLIER_SOURCES.has(preview.product.source)) {
+        return { error: RESEARCH_ONLY_MESSAGE };
+    }
     if (!Number.isInteger(pricing.marginPercent) || pricing.marginPercent < 15 || pricing.marginPercent > 50) {
         return { error: "El margen debe estar entre 15% y 50%." };
     }
@@ -142,7 +148,11 @@ export function buildSupplierImport(
     const snapshot = {
         ...variant.attributes,
         product_id: preview.product.productId,
-        ...(preview.product.source === "aliexpress_ds" ? { sku_id: variant.id } : { vid: variant.id }),
+        ...(preview.product.source === "mastershop"
+            ? { variation_id: variant.id }
+            : preview.product.source === "aliexpress_ds"
+              ? { sku_id: variant.id }
+              : { vid: variant.id }),
         variant_label: variant.label,
         provider_stock: variant.stock,
         provider_price: variant.price,

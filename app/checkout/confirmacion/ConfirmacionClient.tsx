@@ -69,10 +69,23 @@ export default function ConfirmacionClient() {
                     icon: <CheckCircle2 className="w-10 h-10 text-success" />,
                     title: "¡Pago confirmado!",
                 };
+            case "cod_pending":
+                return {
+                    icon: <CheckCircle2 className="w-10 h-10 text-success" />,
+                    title: "Pedido contraentrega registrado",
+                };
             case "pending_payment":
                 return { icon: <Clock className="w-10 h-10 text-warning" />, title: "Pago en proceso" };
             case "payment_review":
                 return { icon: <Clock className="w-10 h-10 text-warning" />, title: "Pago en revisión" };
+            case "cancelled":
+                return {
+                    icon: <XCircle className="w-10 h-10 text-danger" />,
+                    title:
+                        order.paymentMethod === "cash_on_delivery"
+                            ? "Pedido cancelado"
+                            : "El pago no se completó",
+                };
             default:
                 return { icon: <XCircle className="w-10 h-10 text-danger" />, title: "El pago no se completó" };
         }
@@ -107,7 +120,19 @@ export default function ConfirmacionClient() {
                                 para consultar el despacho.
                             </p>
                         )}
-                        {order && order.paymentStatus !== "pending_payment" && order.paymentStatus !== "paid" && order.paymentStatus !== "payment_review" && (
+                        {order?.paymentStatus === "cod_pending" && order.fulfillmentStatus === "delivered" && (
+                            <p className="text-xs text-muted mb-4">
+                                Pedido entregado; el registro del recaudo sigue pendiente de verificación.
+                            </p>
+                        )}
+                        {order?.paymentStatus === "cod_pending" && order.fulfillmentStatus !== "delivered" && (
+                            <p className="text-xs text-muted mb-4">
+                                Pagarás <strong>{formatCOP(order.totalCop)}</strong> al recibir. El pedido queda
+                                sujeto a confirmación de cobertura y despacho por el proveedor — el recaudo
+                                contraentrega se verifica cuando llegue.
+                            </p>
+                        )}
+                        {order && order.paymentStatus !== "pending_payment" && order.paymentStatus !== "paid" && order.paymentStatus !== "payment_review" && order.paymentStatus !== "cod_pending" && order.paymentMethod !== "cash_on_delivery" && (
                             <p className="text-xs text-muted mb-4">
                                 Si el cargo aparece en tu cuenta, contáctanos con tu referencia y lo verificamos.
                             </p>
@@ -139,7 +164,7 @@ export default function ConfirmacionClient() {
                         {error && <p className="text-xs text-danger mb-4">{error}</p>}
 
                         <div className="flex flex-col gap-2">
-                            {order?.paymentStatus === "paid" && (
+                            {(order?.paymentStatus === "paid" || order?.paymentStatus === "cod_pending") && (
                                 <Link
                                     href="/tracking"
                                     className="w-full py-3 rounded-2xl bg-primary hover:bg-primary-light text-white font-semibold text-xs flex items-center justify-center gap-2 glow-purple"

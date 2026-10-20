@@ -8,6 +8,7 @@ const VALID_FILTERS = new Set([
     "paid",
     "payment_failed",
     "payment_review",
+    "cod_pending",
     "cancelled",
     "refunded",
 ]);

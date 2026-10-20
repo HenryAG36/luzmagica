@@ -16,6 +16,8 @@ import {
 import { useCartStore } from "@/store/useCartStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatCOP } from "@/lib/utils";
+import { codAttemptId } from "@/lib/cart/codAttempt";
+import { shippingQuoteMatchesCity } from "@/lib/cart/shippingQuote";
 import FadeIn from "@/components/common/FadeIn";
 import ProductImage from "@/components/common/ProductImage";
 
@@ -47,6 +49,10 @@ export default function CheckoutClient() {
     const [consent, setConsent] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
+    // Server-advertised COD capability (feature flag + API key); null while
+    // loading — treated as unavailable so no hidden COD submission happens.
+    const [codAvailable, setCodAvailable] = useState<boolean | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<"wompi" | "cash_on_delivery">("wompi");
     // Server-verified Puntos Honesty: balance comes from /api/loyalty/balance
     // and the server re-validates + debits on order creation.
     const [pointsBalance, setPointsBalance] = useState<number | null>(null);
@@ -59,6 +65,21 @@ export default function CheckoutClient() {
             applyCoupon("VUELVE10");
         }
     }, [recoverParam, couponCode, applyCoupon]);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/checkout/payment-methods")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((body: { cashOnDelivery?: boolean } | null) => {
+                if (!cancelled) setCodAvailable(body?.cashOnDelivery === true);
+            })
+            .catch(() => {
+                if (!cancelled) setCodAvailable(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -119,7 +140,19 @@ export default function CheckoutClient() {
     const shippingProgress = getFreeShippingProgress();
     const dsPending = breakdown.dsPending;
     const dsPresent = breakdown.dsItemCount > 0;
-    const cityIsBogota = /^\s*bogot/i.test(customerProfile.city || "");
+    // A confirmed shipping quote is only valid for the city it was quoted for.
+    const quotedCities = [
+        ...new Set(
+            items
+                .filter((i) => i.product.shippingQuoteRequired && i.product.shippingEstimateCity)
+                .map((i) => i.product.shippingEstimateCity as string)
+        ),
+    ];
+    const quoteCityMismatch = items.some(
+        (i) =>
+            i.product.shippingQuoteRequired &&
+            !shippingQuoteMatchesCity(i.product.shippingEstimateCity, customerProfile.city)
+    );
 
     // Display-side estimate only — the server re-caps against subtotal and
     // the verified balance at order creation.
@@ -130,6 +163,19 @@ export default function CheckoutClient() {
     const redeemablePoints = Math.min(pointsToUse, maxRedeemable);
     const pointsDiscountCop = redeemablePoints * 10;
     const total = breakdown.total === null ? null : Math.max(0, breakdown.total - pointsDiscountCop);
+
+    // COD is offered only when the server advertises it AND every cart item is
+    // Mastershop-sourced (capability flag from the published-products view).
+    // Promotions make COD unavailable — they are preserved, never cleared.
+    const allCodEligible =
+        items.length > 0 && items.every((i) => i.product.cashOnDeliveryEligible === true);
+    const promosInUse = couponCode !== null || redeemablePoints > 0;
+    const codSelectable = codAvailable === true && allCodEligible;
+    const codOptionDisabled = promosInUse;
+    // If items/promos changed after selection the truth falls back to Wompi —
+    // the radio and the submitted method always agree.
+    const effectiveMethod: "wompi" | "cash_on_delivery" =
+        codSelectable && !codOptionDisabled ? paymentMethod : "wompi";
 
     const handleApplyCoupon = (e: React.FormEvent) => {
         e.preventDefault();
@@ -151,8 +197,36 @@ export default function CheckoutClient() {
             setSubmitError("No se pudo confirmar el total del pedido.");
             return;
         }
+        if (quoteCityMismatch) {
+            setSubmitError(
+                "La cotización de envío no corresponde a tu ciudad; solicita confirmación antes de pagar."
+            );
+            return;
+        }
+        if (paymentMethod === "cash_on_delivery" && effectiveMethod !== "cash_on_delivery") {
+            // Selection became invalid (promos/items changed) — fail visibly.
+            setPaymentMethod("wompi");
+            setSubmitError("La contraentrega ya no está disponible para este pedido.");
+            return;
+        }
         setSubmitting(true);
         try {
+            // One idempotent attempt id per checkout request — reused across
+            // retries (lost responses), fresh when the payload changes. The
+            // server rejects a mismatched reuse anyway.
+            const attempt =
+                effectiveMethod === "cash_on_delivery"
+                    ? await codAttemptId({
+                          customer: customerProfile,
+                          items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
+                      })
+                    : undefined;
+            if (attempt && "error" in attempt) {
+                setSubmitError(attempt.error);
+                setSubmitting(false);
+                return;
+            }
+            const checkoutAttemptId = attempt?.attemptId;
             const res = await fetch("/api/orders", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -168,9 +242,16 @@ export default function CheckoutClient() {
                         department: customerProfile.department,
                         notes: customerProfile.notes,
                     },
-                    couponCode,
+                    couponCode: effectiveMethod === "cash_on_delivery" ? null : couponCode,
                     consent: true,
-                    pointsToRedeem: redeemablePoints > 0 ? redeemablePoints : undefined,
+                    pointsToRedeem:
+                        effectiveMethod === "cash_on_delivery"
+                            ? undefined
+                            : redeemablePoints > 0
+                              ? redeemablePoints
+                              : undefined,
+                    paymentMethod: effectiveMethod,
+                    checkoutAttemptId,
                 }),
             });
             const data = await res.json().catch(() => ({}));
@@ -240,7 +321,7 @@ export default function CheckoutClient() {
             )}
             {dsPresent && (
                 <div className="flex justify-between text-muted">
-                    <span>Envío internacional (estimado, por unidad, a Bogotá)</span>
+                    <span>Envío cotizado (estimado, por unidad)</span>
                     {breakdown.dsShippingCop === null ? (
                         <span className="text-warning">Pendiente de cotización</span>
                     ) : (
@@ -268,7 +349,7 @@ export default function CheckoutClient() {
                     <ArrowRight className="h-3 w-3" aria-hidden />
                     <span className="font-semibold text-foreground" aria-current="step">Datos</span>
                     <ArrowRight className="h-3 w-3" aria-hidden />
-                    <span>Pago en Wompi</span>
+                    <span>{effectiveMethod === "cash_on_delivery" ? "Contraentrega" : "Pago en Wompi"}</span>
                 </nav>
 
                 <h1 className="mb-8 font-heading text-3xl font-semibold sm:text-4xl">
@@ -311,10 +392,22 @@ export default function CheckoutClient() {
                     <div className="mb-6 flex items-start gap-2.5 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-xs text-warning">
                         <Truck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                         <span>
-                            Este pedido incluye productos de proveedor internacional: el envío se cobra
-                            por unidad según la cotización estimada a Bogotá y no participa del envío
-                            gratis. Entrega estimada de 15–30 días hábiles tras el despacho del proveedor
-                            {cityIsBogota ? "" : " — la cotización es a Bogotá y no está confirmada para tu ciudad"}.
+                            Este pedido incluye productos con envío cotizado: el envío se cobra
+                            por unidad según la cotización estimada y no participa del envío
+                            gratis. El tiempo de entrega depende del destino y la transportadora.
+                            {quotedCities.length > 0 && (
+                                <>
+                                    {" "}
+                                    Cotización confirmada para {quotedCities.join(", ")}.
+                                </>
+                            )}
+                            {quoteCityMismatch && (
+                                <>
+                                    {" "}
+                                    La cotización no corresponde a tu ciudad — solicita
+                                    confirmación antes de pagar.
+                                </>
+                            )}
                         </span>
                     </div>
                 )}
@@ -505,14 +598,56 @@ export default function CheckoutClient() {
                                     <div className="mb-2 flex items-center gap-3">
                                         <ShieldCheck className="h-5 w-5 shrink-0 text-accent-dark" aria-hidden />
                                         <span className="text-sm font-bold">
-                                            Pago procesado por Wompi
+                                            {effectiveMethod === "cash_on_delivery"
+                                                ? "Pago contraentrega"
+                                                : "Pago procesado por Wompi"}
                                         </span>
                                     </div>
-                                    <p className="mb-3 text-[11px] text-muted">
-                                        Al continuar serás redirigido a la página segura de Wompi,
-                                        donde podrás elegir tu método de pago. Medios disponibles
-                                        según Wompi al pagar.
-                                    </p>
+                                    <div role="radiogroup" aria-label="Método de pago" className="space-y-2">
+                                        <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+                                            <input
+                                                type="radio"
+                                                name="payment-method"
+                                                checked={effectiveMethod === "wompi"}
+                                                onChange={() => setPaymentMethod("wompi")}
+                                                className="mt-0.5 h-3.5 w-3.5 accent-foreground"
+                                            />
+                                            <span>
+                                                <span className="font-semibold">Pago en línea (Wompi)</span>
+                                                <span className="block text-[11px] text-muted">
+                                                    Serás redirigido a la página segura de Wompi para elegir
+                                                    tu método de pago.
+                                                </span>
+                                            </span>
+                                        </label>
+                                        {codSelectable && (
+                                            <label
+                                                className={`flex items-start gap-2.5 text-xs ${codOptionDisabled ? "opacity-60" : "cursor-pointer"}`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="payment-method"
+                                                    checked={effectiveMethod === "cash_on_delivery"}
+                                                    disabled={codOptionDisabled}
+                                                    onChange={() => setPaymentMethod("cash_on_delivery")}
+                                                    className="mt-0.5 h-3.5 w-3.5 accent-foreground"
+                                                />
+                                                <span>
+                                                    <span className="font-semibold">Contraentrega</span>
+                                                    <span className="block text-[11px] text-muted">
+                                                        Paga al recibir. El pedido queda sujeto a confirmación
+                                                        de cobertura y despacho. No admite cupones ni puntos y
+                                                        requiere cédula de ciudadanía (CC).
+                                                    </span>
+                                                    {codOptionDisabled && (
+                                                        <span className="block text-[11px] font-medium text-warning">
+                                                            Cupones y puntos disponibles con pago en línea.
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </label>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Coupon disclosure */}
@@ -648,12 +783,18 @@ export default function CheckoutClient() {
                                 {dsPending && (
                                     <p role="alert" className="mb-3 text-[11px] font-medium text-warning">
                                         No se puede completar el pedido: falta la cotización de envío
-                                        del proveedor internacional.
+                                        del proveedor.
+                                    </p>
+                                )}
+                                {quoteCityMismatch && !dsPending && (
+                                    <p role="alert" className="mb-3 text-[11px] font-medium text-warning">
+                                        No se puede completar el pedido: la cotización de envío no
+                                        corresponde a la ciudad indicada.
                                     </p>
                                 )}
                                 <button
                                     type="submit"
-                                    disabled={submitting || dsPending || total === null}
+                                    disabled={submitting || dsPending || quoteCityMismatch || total === null}
                                     className="motion-press flex w-full items-center justify-center gap-2 rounded-full bg-foreground py-4 text-sm font-semibold text-white transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:bg-black/30"
                                 >
                                     <Lock className="h-4 w-4" aria-hidden />
@@ -661,12 +802,18 @@ export default function CheckoutClient() {
                                         {submitting
                                             ? "Creando pedido…"
                                             : total === null
-                                              ? "Continuar a Wompi"
-                                              : `Continuar a Wompi · ${formatCOP(total)}`}
+                                              ? effectiveMethod === "cash_on_delivery"
+                                                  ? "Confirmar pedido contraentrega"
+                                                  : "Continuar a Wompi"
+                                              : effectiveMethod === "cash_on_delivery"
+                                                ? `Confirmar pedido contraentrega · ${formatCOP(total)}`
+                                                : `Continuar a Wompi · ${formatCOP(total)}`}
                                     </span>
                                 </button>
                                 <p className="mt-3 text-center text-[10px] text-muted">
-                                    Serás redirigido a Wompi para elegir tu método de pago.
+                                    {effectiveMethod === "cash_on_delivery"
+                                        ? "Paga al recibir. El pedido queda sujeto a confirmación de cobertura y despacho."
+                                        : "Serás redirigido a Wompi para elegir tu método de pago."}
                                 </p>
                             </div>
                         </div>
@@ -690,7 +837,11 @@ export default function CheckoutClient() {
                         className="motion-press flex shrink-0 items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-light disabled:cursor-not-allowed disabled:bg-black/30"
                     >
                         <ArrowRight className="h-4 w-4" aria-hidden />
-                        {submitting ? "Creando pedido…" : "Continuar a Wompi"}
+                        {submitting
+                            ? "Creando pedido…"
+                            : effectiveMethod === "cash_on_delivery"
+                              ? "Confirmar contraentrega"
+                              : "Continuar a Wompi"}
                     </button>
                 </div>
             </div>

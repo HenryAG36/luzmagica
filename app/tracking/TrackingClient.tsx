@@ -27,6 +27,10 @@ const PAYMENT_BADGE: Record<PaymentStatus, { label: string; className: string }>
     pending_payment: { label: "Pago pendiente", className: "bg-warning/10 text-warning border-warning/30" },
     payment_failed: { label: "Pago no aprobado", className: "bg-danger/10 text-danger border-danger/30" },
     payment_review: { label: "Pago en revisión", className: "bg-warning/10 text-warning border-warning/30" },
+    cod_pending: {
+        label: "Contraentrega · recaudo por verificar",
+        className: "bg-accent/10 text-accent-dark border-accent/30",
+    },
     cancelled: { label: "Cancelado", className: "bg-black/5 text-muted border-black/10" },
     refunded: { label: "Reembolsado", className: "bg-black/5 text-muted border-black/10" },
 };
@@ -34,8 +38,13 @@ const PAYMENT_BADGE: Record<PaymentStatus, { label: string; className: string }>
 const FULFILLMENT_BADGE: Record<FulfillmentStatus, { label: string; className: string }> = {
     delivered: { label: "Entregado", className: "bg-success/10 text-success border-success/30" },
     local_delivery: { label: "En Reparto Local", className: "bg-accent/10 text-accent-dark border-accent/30" },
+    domestic_transit: { label: "En tránsito nacional", className: "bg-warning/10 text-warning border-warning/30" },
     customs_cleared: { label: "Nacionalizado DIAN", className: "bg-accent/10 text-accent-dark border-accent/30" },
     international_transit: { label: "Tránsito Internacional", className: "bg-warning/10 text-warning border-warning/30" },
+    awaiting_confirmation: {
+        label: "Pendiente de confirmación",
+        className: "bg-warning/10 text-warning border-warning/30",
+    },
     supplier_processing: { label: "Procesando con Proveedor", className: "bg-primary/20 text-accent-dark border-primary/30" },
     payment_confirmed: { label: "Pago Confirmado", className: "bg-primary/20 text-accent-dark border-primary/30" },
     awaiting_payment: { label: "Esperando Pago", className: "bg-black/5 text-muted border-black/10" },

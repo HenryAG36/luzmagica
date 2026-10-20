@@ -175,7 +175,7 @@ test("import fields are allowlisted to pricing/shipping columns only", () => {
 function catalogRow(overrides: Partial<CatalogRow> = {}): FakeRow {
     return {
         id: "prod-1",
-        source: "aliexpress_ds",
+        source: "mastershop",
         provider_item_id: "1001",
         source_url: null,
         name: "Lamp",
@@ -209,7 +209,7 @@ function catalogRow(overrides: Partial<CatalogRow> = {}): FakeRow {
     };
 }
 
-test("international sources require confirmed customer shipping to publish", () => {
+test("quoted-shipping sources require confirmed customer shipping to publish", () => {
     const base = {
         name: "Lamp",
         category: "lamparas",
@@ -220,7 +220,7 @@ test("international sources require confirmed customer shipping to publish", () 
         supplier_rights_confirmed: true,
     };
 
-    const missingAll = validatePublishable({ ...base, source: "aliexpress_ds" });
+    const missingAll = validatePublishable({ ...base, source: "mastershop" });
     assert.equal(missingAll.valid, false);
     for (const f of ["customer_shipping_cop", "shipping_estimate_city", "shipping_checked_at"]) {
         assert.ok(missingAll.missing.includes(f), `expected ${f} missing`);
@@ -230,7 +230,7 @@ test("international sources require confirmed customer shipping to publish", () 
     assert.equal(
         validatePublishable({
             ...base,
-            source: "aliexpress_ds",
+            source: "mastershop",
             customer_shipping_cop: 0,
             shipping_estimate_city: "Bogotá",
             shipping_checked_at: "2026-10-07T00:00:00.000Z",
@@ -240,7 +240,7 @@ test("international sources require confirmed customer shipping to publish", () 
     assert.ok(
         validatePublishable({
             ...base,
-            source: "cjdropshipping",
+            source: "mastershop",
             customer_shipping_cop: null,
             shipping_estimate_city: "Bogotá",
             shipping_checked_at: "2026-10-07T00:00:00.000Z",
@@ -249,7 +249,7 @@ test("international sources require confirmed customer shipping to publish", () 
     assert.ok(
         validatePublishable({
             ...base,
-            source: "aliexpress_ds",
+            source: "mastershop",
             customer_shipping_cop: 5000,
             shipping_estimate_city: "   ",
             shipping_checked_at: "2026-10-07T00:00:00.000Z",
@@ -258,12 +258,23 @@ test("international sources require confirmed customer shipping to publish", () 
     assert.ok(
         validatePublishable({
             ...base,
-            source: "aliexpress_ds",
+            source: "mastershop",
             customer_shipping_cop: 5000,
             shipping_estimate_city: "Bogotá",
             shipping_checked_at: "not-a-date",
         }).missing.includes("shipping_checked_at")
     );
+
+    // research-only sources can never publish, even with a complete quote
+    const research = validatePublishable({
+        ...base,
+        source: "aliexpress_ds",
+        customer_shipping_cop: 0,
+        shipping_estimate_city: "Bogotá",
+        shipping_checked_at: "2026-10-07T00:00:00.000Z",
+    });
+    assert.equal(research.valid, false);
+    assert.ok(research.missing.includes("research_only_source"));
 
     // domestic sources are unaffected
     assert.equal(validatePublishable({ ...base, source: "mercadolibre" }).valid, true);

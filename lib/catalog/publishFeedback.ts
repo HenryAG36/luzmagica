@@ -19,6 +19,7 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
     customer_shipping_cop: "envío al cliente",
     shipping_estimate_city: "ciudad de envío estimada",
     shipping_checked_at: "fecha de verificación del envío",
+    research_only_source: "fuente solo de investigación (no publicable)",
 };
 
 const FALLBACK = "No se pudo publicar.";

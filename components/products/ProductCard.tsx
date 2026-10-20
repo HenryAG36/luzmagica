@@ -95,11 +95,11 @@ export default function ProductCard({ product }: ProductCardProps) {
                             <>
                                 <p className="mt-1 text-[10px] text-muted">
                                     {product.shippingEstimateCOP != null
-                                        ? `+${formatCOP(product.shippingEstimateCOP)} envío intl. est. por unidad${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""}`
-                                        : "Envío internacional por cotizar"}
+                                        ? `+${formatCOP(product.shippingEstimateCOP)} envío est. por unidad${product.shippingEstimateCity ? ` a ${product.shippingEstimateCity}` : ""}`
+                                        : "Envío por cotizar según destino"}
                                 </p>
                                 <p className="text-[10px] text-warning">
-                                    Entrega est. 15–30 días hábiles tras el despacho del proveedor
+                                    El tiempo de entrega lo confirma la transportadora según tu ciudad
                                 </p>
                             </>
                         )}

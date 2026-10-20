@@ -120,7 +120,7 @@ test("duplicate provider import resolves via unique constraint reread", async ()
     const db = new FakeDb();
     db.unique.catalog_products = [["source", "provider_item_id"]];
     const input = {
-        source: "aliexpress",
+        source: "mastershop",
         providerItemId: "1005001",
         title: "Lamp",
         createdBy: "admin-1",
@@ -131,7 +131,7 @@ test("duplicate provider import resolves via unique constraint reread", async ()
     ]);
     assert.equal("created" in first && first.created, true);
     assert.equal("created" in second && second.created, false);
-    assert.equal("id" in second && second.id, "imp-aliexpress-1005001");
+    assert.equal("id" in second && second.id, "imp-mastershop-1005001");
     assert.equal(db.tables.catalog_products.length, 1);
 });
 
@@ -155,8 +155,8 @@ test("publishing is atomic and rejects incomplete drafts", async () => {
     db.unique.catalog_products = [["source", "provider_item_id"]];
     db.tables.catalog_products = [
         {
-            id: "imp-aliexpress-1",
-            source: "aliexpress",
+            id: "imp-meli-1",
+            source: "mercadolibre",
             provider_item_id: "1",
             name: "Lamp",
             category: "lamparas",
@@ -170,12 +170,12 @@ test("publishing is atomic and rejects incomplete drafts", async () => {
         },
     ];
     const client = db.asClient();
-    const first = await publishDraft("imp-aliexpress-1", "admin-1", { price_cop: 60000 }, client);
+    const first = await publishDraft("imp-meli-1", "admin-1", { price_cop: 60000 }, client);
     assert.deepEqual(first, { ok: true });
     assert.equal(db.tables.catalog_products[0].status, "published");
     assert.equal(db.tables.catalog_products[0].price_cop, 60000);
 
-    const second = await publishDraft("imp-aliexpress-1", "admin-1", {}, client);
+    const second = await publishDraft("imp-meli-1", "admin-1", {}, client);
     assert.equal("error" in second && second.error, "draft not found");
 });
 

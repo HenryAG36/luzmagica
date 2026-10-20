@@ -27,6 +27,14 @@ import {
     fetchCjFreight,
     isValidCjId,
 } from "./cjCatalog.ts";
+import {
+    isValidMastershopProductId,
+    previewMastershopProduct,
+} from "./mastershop.ts";
+import {
+    IMPORTABLE_SUPPLIER_SOURCES,
+    RESEARCH_ONLY_MESSAGE,
+} from "./policy.ts";
 import type {
     ExchangeRate,
     ImportSource,
@@ -82,6 +90,12 @@ export function parseSupplierProductId(
     const trimmed = input.trim();
     if (!trimmed || trimmed.length > MAX_INPUT_LENGTH) return null;
 
+    // Mastershop accepts raw numeric ids only — pasted URLs are never parsed
+    // into product ids, and arbitrary URLs are never fetched.
+    if (source === "mastershop") {
+        return isValidMastershopProductId(trimmed) ? trimmed : null;
+    }
+
     if (/^https?:\/\//i.test(trimmed)) {
         let url: URL;
         try {
@@ -110,8 +124,13 @@ export function validatePreviewBody(
 ): { source: ImportSource; productId: string; variantId?: string } | { error: string } {
     if (!isPlainObject(body)) return { error: "invalid body" };
     const source = body.source;
-    if (source !== "aliexpress_ds" && source !== "cjdropshipping") {
+    if (source !== "aliexpress_ds" && source !== "cjdropshipping" &&
+        source !== "mastershop") {
         return { error: "invalid source" };
+    }
+    // Research-only sources fail before any provider access.
+    if (!IMPORTABLE_SUPPLIER_SOURCES.has(source)) {
+        return { error: RESEARCH_ONLY_MESSAGE };
     }
     if (typeof body.productId !== "string") return { error: "invalid product id" };
     const productId = parseSupplierProductId(source, body.productId);
@@ -318,7 +337,10 @@ function selectedWarnings(variant: SupplierVariant | undefined, warnings: string
 
 // --- Preview orchestration ---------------------------------------------------
 
-async function lookupAliExpressPreview(
+// Research-only legacy lookups retained for statistics/diagnostic flows and
+// pure-provider tests. They are unreachable through lookupSupplierPreview —
+// the policy gate below rejects their sources before any provider call.
+export async function lookupAliExpressPreview(
     service: SupabaseClientLike,
     productId: string,
     variantId: string | undefined,
@@ -382,7 +404,7 @@ async function lookupAliExpressPreview(
     };
 }
 
-async function lookupCjPreview(
+export async function lookupCjPreview(
     service: SupabaseClientLike,
     productId: string,
     variantId: string | undefined,
@@ -490,10 +512,17 @@ export async function lookupSupplierPreview(
     variantId?: string,
     fetchImpl?: FetchLike
 ): Promise<{ preview: SupplierPreview } | { error: string }> {
+    // Direct callers must fail before provider access for research sources.
+    if (!IMPORTABLE_SUPPLIER_SOURCES.has(source)) {
+        return { error: RESEARCH_ONLY_MESSAGE };
+    }
     const parsed = parseSupplierProductId(source, productId);
     if (!parsed) return { error: "invalid product id or url" };
     if (variantId !== undefined && !isValidVariantId(variantId)) {
         return { error: "invalid variant id" };
+    }
+    if (source === "mastershop") {
+        return previewMastershopProduct(parsed, variantId, fetchImpl);
     }
     const requestDeadlineMs = Date.now() + IMPORT_DEADLINE_MS;
     if (source === "aliexpress_ds") {

@@ -177,8 +177,8 @@ export default function ProductDetailClient({
                                         </div>
                                     )}
                                     <p className="text-[11px] font-medium text-warning">
-                                        Envío internacional: entrega estimada 15–30 días hábiles tras el
-                                        despacho del proveedor.
+                                        Envío cotizado por unidad: el tiempo de entrega depende del
+                                        destino y la transportadora.
                                     </p>
                                     <p className="text-[10px] text-muted">
                                         La cotización es indicativa por unidad
@@ -258,7 +258,7 @@ export default function ProductDetailClient({
                                 <span className="flex items-center gap-2">
                                     <Truck className="h-4 w-4 shrink-0 text-accent-dark" aria-hidden />
                                     {product.shippingQuoteRequired
-                                        ? "Envío internacional cotizado por unidad"
+                                        ? "Envío cotizado por unidad"
                                         : "El costo de envío se confirma antes del pago"}
                                 </span>
                                 <span className="flex items-center gap-2">

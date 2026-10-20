@@ -50,6 +50,7 @@ export interface PublicProductRow {
     shipping_estimate_city: string | null;
     shipping_checked_at: string | null;
     shipping_quote_required: boolean;
+    cash_on_delivery_eligible?: boolean;
 }
 
 export function toPublicProduct(row: PublicProductRow): Product {
@@ -69,6 +70,7 @@ export function toPublicProduct(row: PublicProductRow): Product {
         shippingEstimateCity: row.shipping_estimate_city,
         shippingCheckedAt: row.shipping_checked_at,
         shippingQuoteRequired: row.shipping_quote_required === true,
+        cashOnDeliveryEligible: row.cash_on_delivery_eligible === true,
     };
 }
 
@@ -273,6 +275,10 @@ export interface PublishValidationResult {
     missing: string[];
 }
 
+import { QUOTED_SHIPPING_SOURCES, RESEARCH_ONLY_SOURCES } from "../suppliers/policy.ts";
+
+// Legacy set kept for historical references; the active quote-required set is
+// QUOTED_SHIPPING_SOURCES from lib/suppliers/policy.
 export const INTERNATIONAL_SHIPPING_SOURCES = new Set(["aliexpress_ds", "cjdropshipping"]);
 
 export function validatePublishable(
@@ -303,9 +309,14 @@ export function validatePublishable(
         : draft.stock > 0;
     if (!stockOk) missing.push("stock");
     if (draft.supplier_rights_confirmed !== true) missing.push("supplier_rights_confirmed");
-    if (draft.source && INTERNATIONAL_SHIPPING_SOURCES.has(draft.source)) {
-        // international rows need an explicit confirmed customer quote; null is
-        // never treated as free — 0 must be entered deliberately
+    if (draft.source && RESEARCH_ONLY_SOURCES.has(draft.source)) {
+        // Research-only sources can never be (re)published under the sourcing
+        // policy — historical rows stay archived/manual until converted.
+        missing.push("research_only_source");
+    }
+    if (draft.source && QUOTED_SHIPPING_SOURCES.has(draft.source)) {
+        // quote-required rows need an explicit confirmed customer quote; null
+        // is never treated as free — 0 must be entered deliberately
         if (
             !Number.isInteger(draft.customer_shipping_cop) ||
             (draft.customer_shipping_cop as number) < 0

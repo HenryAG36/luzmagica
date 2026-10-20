@@ -6,8 +6,23 @@ import { getAliExpressDsEnv } from "../env.ts";
 import * as ds from "./aliexpressDs.ts";
 import { DS_PROVIDER, getDsAccessToken } from "./dsService.ts";
 import { CJ_PROVIDER, createCjOrder, fetchCjVariants, getCjAccessToken } from "./cjdropshipping.ts";
+import {
+    MASTERSHOP_PREPAID_MANUAL_MESSAGE,
+    RESEARCH_ONLY_MESSAGE,
+    RESEARCH_ONLY_SOURCES,
+} from "./policy.ts";
 
-const SUPPLIER_SOURCES = new Set([DS_PROVIDER, "aliexpress_ds", CJ_PROVIDER, "cjdropshipping"]);
+const SUPPLIER_SOURCES = new Set([
+    DS_PROVIDER,
+    "aliexpress_ds",
+    CJ_PROVIDER,
+    "cjdropshipping",
+    "mastershop",
+]);
+
+// Automatic retries are capped so a persistently failing provider does not
+// loop; capability-boundary failures (research/manual) are parked at the cap.
+const MAX_AUTO_ATTEMPTS = 3;
 
 async function serviceClient(provided?: SupabaseClientLike) {
     if (provided) return provided;
@@ -50,6 +65,13 @@ export async function placeSupplierOrder(
     const order = (data as OrderRow | null) ?? null;
     if (!order) return { error: "order not found" };
 
+    // All-Mastershop COD orders delegate to the dedicated COD flow BEFORE the
+    // paid guard — the handler itself re-verifies method, status and items.
+    if (order.payment_method === "cash_on_delivery") {
+        const mod = await import("./mastershopOrders.ts");
+        return mod.placeMastershopCodOrder(orderId, service, fetchImpl);
+    }
+
     if (order.payment_status !== "paid") {
         return { error: "supplier orders can only be placed for verified paid orders" };
     }
@@ -76,6 +98,32 @@ export async function placeSupplierOrder(
 
     const { data: itemRows } = await service.from("order_items").select("*").eq("order_id", orderId);
     const items = (itemRows as OrderItemRow[] | null) ?? [];
+
+    // Sourcing policy, after the paid/idempotency guards but before ANY
+    // provider call: research-only sources and prepaid Mastershop have no
+    // automatic provider order API. Applies to whole and mixed carts alike.
+    // The order is marked failed with attempts exhausted so the retry cron
+    // never picks it up again and the attention queue shows the manual action
+    // required.
+    const policyReason = items.some((i) => RESEARCH_ONLY_SOURCES.has(i.source))
+        ? RESEARCH_ONLY_MESSAGE
+        : items.some((i) => i.source === "mastershop")
+          ? MASTERSHOP_PREPAID_MANUAL_MESSAGE
+          : null;
+    if (policyReason !== null) {
+        await service
+            .from("orders")
+            .update({
+                supplier_order_status: "failed",
+                supplier_order_error: policyReason,
+                auto_fulfill_attempts: MAX_AUTO_ATTEMPTS,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("id", orderId)
+            .eq("updated_at", order.updated_at);
+        return { error: policyReason };
+    }
+
     const dsItems = items.filter((i) => i.source === "aliexpress_ds");
     const cjItems = items.filter((i) => i.source === "cjdropshipping");
     const manualItems = items.filter((i) => !SUPPLIER_SOURCES.has(i.source));
@@ -264,7 +312,6 @@ export async function placeSupplierOrder(
 }
 
 const RETRY_BATCH = 10;
-const MAX_AUTO_ATTEMPTS = 3;
 
 // Cron entrypoint: retries paid orders whose supplier placement is queued
 // or failed, capped at MAX_AUTO_ATTEMPTS so a persistently failing provider
@@ -297,5 +344,31 @@ export async function retryQueuedSupplierOrders(
         if ("error" in result) failed += 1;
         else succeeded += 1;
     }
+
+    // Separate bounded read for COD orders: fresh queued submissions plus
+    // GET-only reconciliation of ambiguous/stale attempts. Ambiguous orders
+    // are never re-POSTed — placeMastershopCodOrder enforces that.
+    const { data: codRows } = await service
+        .from("orders")
+        .select("id,supplier_order_status,updated_at")
+        .eq("payment_method", "cash_on_delivery")
+        .eq("payment_status", "cod_pending")
+        .in("supplier_order_status", ["queued", "reconciliation_required", "submitting"])
+        .limit(RETRY_BATCH);
+    const codCandidates = ((codRows as Pick<OrderRow, "id" | "supplier_order_status" | "updated_at">[] | null) ?? [])
+        .filter((o) => {
+            if (o.supplier_order_status !== "submitting") return true;
+            // Young 'submitting' rows may still be in flight — only stale
+            // ones get reconciled (the handler GETs, never POSTs again).
+            const updatedAt = o.updated_at ? Date.parse(o.updated_at) : 0;
+            return Date.now() - updatedAt > 2 * 60 * 1000;
+        });
+    for (const o of codCandidates) {
+        attempted += 1;
+        const result = await placeSupplierOrder(o.id, service, fetchImpl);
+        if ("error" in result) failed += 1;
+        else succeeded += 1;
+    }
+
     return { attempted, succeeded, failed };
 }

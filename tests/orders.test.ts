@@ -201,20 +201,28 @@ test("priceOrder applies shared coupon rules and free-shipping threshold", async
     assert.ok(!(await priceOrder([{ productId: "p-1", quantity: 1 }], "NOSUCH", db.asClient())).ok);
 });
 
-test("priceOrder rejects unpublished, out-of-stock, and unshipped international items", async () => {
+test("priceOrder rejects unpublished, out-of-stock, unquoted, and research items", async () => {
     const db = new FakeDb();
     db.table("catalog_products").push(
         catalogRow({ id: "arch", status: "archived" }),
         catalogRow({ id: "out", stock: 0 }),
         catalogRow({
             id: "intl",
-            source: "aliexpress_ds",
+            source: "mastershop",
             customer_shipping_cop: null,
         }),
         catalogRow({
             id: "intl-ok",
-            source: "aliexpress_ds",
+            source: "mastershop",
             customer_shipping_cop: 42000,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-06T00:00:00Z",
+        }),
+        // a historical research-source row can never be bought again
+        catalogRow({
+            id: "research",
+            source: "cjdropshipping",
+            customer_shipping_cop: 0,
             shipping_estimate_city: "Bogotá",
             shipping_checked_at: "2026-10-06T00:00:00Z",
         }),
@@ -222,12 +230,69 @@ test("priceOrder rejects unpublished, out-of-stock, and unshipped international 
     assert.ok(!(await priceOrder([{ productId: "arch", quantity: 1 }], null, db.asClient())).ok);
     assert.ok(!(await priceOrder([{ productId: "out", quantity: 1 }], null, db.asClient())).ok);
     assert.ok(!(await priceOrder([{ productId: "intl", quantity: 1 }], null, db.asClient())).ok);
-    const ok = await priceOrder([{ productId: "intl-ok", quantity: 2 }], null, db.asClient());
+    const research = await priceOrder([{ productId: "research", quantity: 1 }], null, db.asClient());
+    assert.ok(!research.ok);
+    if (!research.ok) assert.ok(research.error.includes("disponible"));
+    const ok = await priceOrder([{ productId: "intl-ok", quantity: 2 }], null, db.asClient(), "Bogotá");
     assert.ok(ok.ok);
     if (ok.ok) {
         assert.equal(ok.pricing.items[0].unitShippingCop, 42000);
         assert.equal(ok.pricing.shippingCop, 84000);
     }
+});
+
+test("shipping quote is only valid for the city it was confirmed for", async () => {
+    const db = new FakeDb();
+    db.table("catalog_products").push(
+        catalogRow({
+            id: "bog",
+            source: "mastershop",
+            customer_shipping_cop: 12000,
+            shipping_estimate_city: "Bogotá",
+            shipping_checked_at: "2026-10-06T00:00:00Z",
+        }),
+        catalogRow({
+            id: "med",
+            source: "mastershop",
+            customer_shipping_cop: 0, // explicit free shipping is still a quote
+            shipping_estimate_city: "Medellín",
+            shipping_checked_at: "2026-10-06T00:00:00Z",
+        }),
+        catalogRow({ id: "manual", source: "manual" }),
+    );
+    // accents / D.C. suffix / casing normalize away
+    for (const city of ["Bogotá", "bogota", "BOGOTÁ D.C.", "  Bogotá, DC "]) {
+        const ok = await priceOrder([{ productId: "bog", quantity: 1 }], null, db.asClient(), city);
+        assert.ok(ok.ok, city);
+    }
+    // a Medellín quote does not cover a Bogotá destination
+    const mismatched = await priceOrder(
+        [{ productId: "med", quantity: 1 }], null, db.asClient(), "Bogotá"
+    );
+    assert.ok(!mismatched.ok);
+    if (!mismatched.ok) assert.ok(mismatched.error.includes("ciudad"));
+    // no destination at all also blocks quoted items
+    const missing = await priceOrder([{ productId: "bog", quantity: 1 }], null, db.asClient());
+    assert.ok(!missing.ok);
+    // zero-confirmed shipping is fine for the same city
+    const free = await priceOrder([{ productId: "med", quantity: 1 }], null, db.asClient(), "medellín");
+    assert.ok(free.ok);
+    // a single mismatched item blocks an otherwise valid mixed cart
+    const mixed = await priceOrder(
+        [
+            { productId: "manual", quantity: 1 },
+            { productId: "med", quantity: 1 },
+        ],
+        null,
+        db.asClient(),
+        "Bogotá"
+    );
+    assert.ok(!mixed.ok);
+    // manual products stay city-agnostic
+    const manualOnly = await priceOrder(
+        [{ productId: "manual", quantity: 1 }], null, db.asClient(), "Cali"
+    );
+    assert.ok(manualOnly.ok);
 });
 
 // ---------- order creation + dedupe ----------

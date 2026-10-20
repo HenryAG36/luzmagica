@@ -226,7 +226,7 @@ export default function CartClient({ catalogProducts = [] }: CartClientProps) {
                                 )}
                                 {dsPresent && (
                                     <div className="flex justify-between text-muted">
-                                        <span>Envío internacional (estimado)</span>
+                                        <span>Envío cotizado (estimado)</span>
                                         {breakdown.dsShippingCop === null ? (
                                             <span className="text-warning">Pendiente de cotización</span>
                                         ) : (
